@@ -10,7 +10,7 @@ import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
-import { fetchUsers } from '../lib/data/users'
+import { fetchUsers, isUserSort, type UserSort } from '../lib/data/users'
 import type { AdminUserRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/format'
@@ -24,7 +24,7 @@ import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } f
 const router = useRouter()
 
 const query = ref('')
-const sort = ref('last_active')
+const sort = ref<UserSort>('last_active')
 const dir = ref<'asc' | 'desc'>('desc')
 const offset = ref(0)
 const density = ref('comfortable')
@@ -48,6 +48,12 @@ function onQuery(value: string) {
 }
 
 function onSort(key: string) {
+  // DataTable emits a bare string. This is the one place an unchecked key could
+  // reach the RPC, so it is the one place it is checked -- USER_SORTS mirrors
+  // the CASE arms in admin_list_users, and anything else would come back as a
+  // PostgREST 400 naming no column.
+  if (!isUserSort(key)) return
+
   if (sort.value === key) {
     dir.value = dir.value === 'asc' ? 'desc' : 'asc'
   } else {
@@ -59,7 +65,7 @@ function onSort(key: string) {
   offset.value = 0
 }
 
-const columns: Column[] = [
+const columns: Column<AdminUserRow>[] = [
   { key: 'display_name', label: 'Account', sortable: true, width: '26%' },
   { key: 'user_id', label: 'Clerk id', width: '16%', hideBelow: 1400 },
   { key: 'households', label: 'Households', numeric: true, sortable: true, width: '9%' },
@@ -71,12 +77,12 @@ const columns: Column[] = [
   { key: 'last_active', label: 'Last active', sortable: true, width: '11%' },
 ]
 
-const rows = computed(() => (users.data.value?.rows ?? []) as unknown as Record<string, unknown>[])
+const rows = computed(() => users.data.value?.rows ?? [])
 const total = computed(() => users.data.value?.total ?? 0)
 const error = computed(() => (users.error.value ? describeError(users.error.value).detail : ''))
 
-function open(row: Record<string, unknown>) {
-  void router.push(`/users/${encodeURIComponent(String((row as unknown as AdminUserRow).user_id))}`)
+function open(row: AdminUserRow) {
+  void router.push(`/users/${encodeURIComponent(row.user_id)}`)
 }
 
 /** Inactive for longer than this reads as dormant rather than quiet. */

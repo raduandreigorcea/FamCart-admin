@@ -35,7 +35,7 @@ const revoking = ref<AdminRow | null>(null)
 const revokeBusy = ref(false)
 const revokeError = ref('')
 
-const columns: Column[] = [
+const columns: Column<AdminRow>[] = [
   { key: 'display_name', label: 'Account', width: '28%' },
   { key: 'user_id', label: 'Clerk id', width: '22%' },
   { key: 'note', label: 'Note', width: '20%' },
@@ -43,7 +43,7 @@ const columns: Column[] = [
   { key: 'granted_at', label: 'Granted', width: '15%' },
 ]
 
-const rows = computed(() => (admins.data.value ?? []) as unknown as Record<string, unknown>[])
+const rows = computed(() => admins.data.value ?? [])
 
 const canGrant = computed(() => /^user_[A-Za-z0-9]{10,}$/.test(newUserId.value.trim()))
 
@@ -135,7 +135,7 @@ async function confirmRevoke() {
               v-if="!row.is_self"
               type="button"
               class="granted__revoke"
-              @click="revoking = row as unknown as AdminRow"
+              @click="revoking = row"
             >Revoke</button>
             <span v-else class="granted__self" title="The database refuses to let an admin revoke their own access">
               cannot revoke

@@ -10,7 +10,7 @@ import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
-import { fetchHouseholds } from '../lib/data/households'
+import { fetchHouseholds, isHouseholdSort, type HouseholdSort } from '../lib/data/households'
 import type { AdminHouseholdRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
@@ -18,7 +18,7 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 const router = useRouter()
 
 const query = ref('')
-const sort = ref('last_active')
+const sort = ref<HouseholdSort>('last_active')
 const dir = ref<'asc' | 'desc'>('desc')
 const offset = ref(0)
 const density = ref('comfortable')
@@ -40,6 +40,11 @@ function onQuery(value: string) {
 }
 
 function onSort(key: string) {
+  // See UsersView: HOUSEHOLD_SORTS mirrors the CASE arms in
+  // admin_list_households, and this is the only door an unchecked key
+  // could come through.
+  if (!isHouseholdSort(key)) return
+
   if (sort.value === key) dir.value = dir.value === 'asc' ? 'desc' : 'asc'
   else {
     sort.value = key
@@ -48,7 +53,7 @@ function onSort(key: string) {
   offset.value = 0
 }
 
-const columns: Column[] = [
+const columns: Column<AdminHouseholdRow>[] = [
   { key: 'name', label: 'Household', sortable: true, width: '24%' },
   { key: 'owner_name', label: 'Owner', width: '16%' },
   { key: 'invite_code', label: 'Invite', width: '11%', hideBelow: 1400 },
@@ -60,16 +65,14 @@ const columns: Column[] = [
   { key: 'last_active', label: 'Last active', sortable: true, width: '11%' },
 ]
 
-const rows = computed(
-  () => (households.data.value?.rows ?? []) as unknown as Record<string, unknown>[],
-)
+const rows = computed(() => households.data.value?.rows ?? [])
 const total = computed(() => households.data.value?.total ?? 0)
 const error = computed(() =>
   households.error.value ? describeError(households.error.value).detail : '',
 )
 
-function open(row: Record<string, unknown>) {
-  void router.push(`/households/${(row as unknown as AdminHouseholdRow).id}`)
+function open(row: AdminHouseholdRow) {
+  void router.push(`/households/${row.id}`)
 }
 
 const DORMANT_DAYS = 30

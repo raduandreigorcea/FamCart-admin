@@ -27,9 +27,26 @@ export interface Bar {
   tone?: 'default' | 'muted'
 }
 
-/** One column of a DataTable. */
+/**
+ * One column of a DataTable.
+ *
+ * ─── WHY `key` IS NOT SIMPLY `keyof T` ───────────────────────────────────────
+ *
+ * Most keys do name a field on the row, and writing it that way would catch a
+ * typo at compile time. But some columns are rendered entirely through a
+ * `#cell-<key>` slot and correspond to no field at all -- 'quality' on the
+ * catalog table is computed from five other columns, 'scope' on the local table
+ * is derived from whether household_id is set. Constraining to `keyof T` would
+ * reject both, and the workaround (widening the row type with fields that do
+ * not exist) is worse than the problem.
+ *
+ * So: `keyof T` first, which is what an editor offers as autocomplete, then a
+ * widening branch for the slot-only case. `(string & {})` rather than plain
+ * `string` because a bare union with `string` collapses to `string` and throws
+ * the autocomplete away.
+ */
 export interface Column<T = Record<string, unknown>> {
-  key: string
+  key: (keyof T & string) | (string & {})
   label: string
   /** Right-align and use tabular figures. Every numeric column, always. */
   numeric?: boolean

@@ -51,12 +51,34 @@ export interface Page<T> {
   offset: number
 }
 
-export interface PageParams {
+export interface PageParams<Sort extends string = string> {
   query?: string | null
-  sort?: string
+  sort?: Sort
   dir?: 'asc' | 'desc'
   limit?: number
   offset?: number
+}
+
+/**
+ * A type guard for a list's sort keys, built from the const array that already
+ * mirrors the RPC's CASE arms.
+ *
+ * Those arrays -- USER_SORTS, HOUSEHOLD_SORTS, CATALOG_SORTS -- existed with a
+ * comment saying exactly which server-side contract they mirror, and then went
+ * unused: every view declared `ref('last_active')`, TypeScript inferred
+ * `string`, and PageParams.sort was `string` too. The guard rail was built and
+ * nothing was standing on it, so a mistyped key compiled cleanly and failed at
+ * runtime as a PostgREST 400 with no clue which column was wrong.
+ *
+ * This closes both halves. The predicate narrows at the one place an untyped
+ * string enters -- a click on a table header -- so a key the RPC does not
+ * accept is rejected in the browser instead of at the database, and everything
+ * downstream of it is a checked union.
+ */
+export function sortGuard<Sort extends string>(
+  allowed: readonly Sort[],
+): (key: string) => key is Sort {
+  return (key: string): key is Sort => (allowed as readonly string[]).includes(key)
 }
 
 // ─── row shapes, mirroring the RPC return columns in 008_admin.sql ───────────

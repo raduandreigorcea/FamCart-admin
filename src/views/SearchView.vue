@@ -18,6 +18,7 @@ import {
   fetchSearchVolume,
   fetchTopAddedProducts,
   fetchZeroResultQueries,
+  type CatalogMiss,
 } from '../lib/data/search'
 import { catalogConfigured, refreshCatalogShape } from '../lib/data/products'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange } from '../lib/timeRange'
@@ -62,7 +63,7 @@ const addedBars = computed(() =>
   })),
 )
 
-const missColumns: Column[] = [
+const missColumns: Column<MissRow>[] = [
   { key: 'name', label: 'Product typed in', width: '34%' },
   { key: 'maker', label: 'Brand', width: '16%' },
   { key: 'households', label: 'Households', numeric: true, width: '12%', title: 'Distinct households that asked for it. Three promotes it.' },
@@ -71,12 +72,15 @@ const missColumns: Column[] = [
   { key: 'lastSeen', label: 'Last asked', width: '15%' },
 ]
 
-const missRows = computed(
-  () =>
-    (misses.data.value ?? []).map((m, index) => ({ ...m, id: `${m.name}-${index}` })) as unknown as Record<
-      string,
-      unknown
-    >[],
+/** A catalog miss plus the identity the table keys rows by. */
+type MissRow = CatalogMiss & { id: string }
+
+// Keyed on what actually identifies a product -- its name and maker -- rather
+// than on its position in the list. An index-based key re-keys every row
+// whenever the ordering shifts, which is exactly what a refetch does here since
+// the list is ordered by how many households have asked for each product.
+const missRows = computed<MissRow[]>(() =>
+  (misses.data.value ?? []).map((m) => ({ ...m, id: `${m.name}::${m.maker ?? ''}` })),
 )
 
 const adoptionRate = computed(() => {
