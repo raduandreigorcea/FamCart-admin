@@ -21,8 +21,10 @@ import {
   qualityLabel,
   qualityScore,
   refreshCatalogShape,
+  isCatalogSort,
+  type CatalogSort,
 } from '../lib/data/products'
-import type { CatalogProductRow } from '../lib/data/types'
+import type { CatalogProductRow, LocalProductRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
@@ -40,7 +42,7 @@ const router = useRouter()
 const scope = ref<'catalog' | 'local'>('catalog')
 const query = ref('')
 const offset = ref(0)
-const sort = ref('popularity')
+const sort = ref<CatalogSort>('popularity')
 const dir = ref<'asc' | 'desc'>('desc')
 const source = ref<string | null>(null)
 const market = ref<string | null>(null)
@@ -92,6 +94,10 @@ function onScope(value: string) {
 }
 
 function onSort(key: string) {
+  // Only the catalog table is sortable, and CATALOG_SORTS lists the columns
+  // PostgREST will actually order by. A key outside it is a 400.
+  if (!isCatalogSort(key)) return
+
   if (sort.value === key) dir.value = dir.value === 'asc' ? 'desc' : 'asc'
   else {
     sort.value = key
@@ -116,7 +122,7 @@ const marketOptions = computed(() => [
   })),
 ])
 
-const catalogColumns: Column[] = [
+const catalogColumns: Column<CatalogProductRow>[] = [
   { key: 'name', label: 'Product', sortable: true, width: '28%' },
   { key: 'maker', label: 'Brand', width: '13%' },
   { key: 'barcode', label: 'Barcode / GTIN', width: '13%', hideBelow: 1100 },
@@ -127,7 +133,7 @@ const catalogColumns: Column[] = [
   { key: 'popularity', label: 'Rank', numeric: true, sortable: true, width: '7%', title: 'base_weight + add_count' },
 ]
 
-const localColumns: Column[] = [
+const localColumns: Column<LocalProductRow>[] = [
   { key: 'name', label: 'Product', width: '26%' },
   { key: 'maker', label: 'Brand', width: '13%' },
   { key: 'barcode', label: 'Barcode / GTIN', width: '13%', hideBelow: 1100 },
@@ -138,11 +144,12 @@ const localColumns: Column[] = [
   { key: 'created_at', label: 'Added', width: '10%', hideBelow: 1100 },
 ]
 
-const rows = computed(() =>
-  scope.value === 'catalog'
-    ? ((catalog.data.value?.rows ?? []) as unknown as Record<string, unknown>[])
-    : ((local.data.value?.rows ?? []) as unknown as Record<string, unknown>[]),
-)
+// One per tab rather than a union, because the two tabs are two different
+// tables in two different databases -- the page's whole point -- and a single
+// `rows` typed as the union of both would let a catalog column be rendered
+// against a local row without complaint.
+const catalogRows = computed(() => catalog.data.value?.rows ?? [])
+const localRows = computed(() => local.data.value?.rows ?? [])
 
 const total = computed(() =>
   scope.value === 'catalog' ? (catalog.data.value?.total ?? 0) : (local.data.value?.total ?? 0),
@@ -169,13 +176,12 @@ function refresh() {
   void active.value.refetch()
 }
 
-function open(row: Record<string, unknown>) {
-  if (scope.value !== 'catalog') return
-  void router.push(`/products/${(row as unknown as CatalogProductRow).id}`)
+function open(row: CatalogProductRow) {
+  void router.push(`/products/${row.id}`)
 }
 
-function quality(row: Record<string, unknown>) {
-  return qualityScore(row as unknown as CatalogProductRow)
+function quality(row: CatalogProductRow) {
+  return qualityScore(row)
 }
 </script>
 
@@ -290,7 +296,7 @@ function quality(row: Record<string, unknown>) {
       <DataTable
         v-else-if="scope === 'catalog'"
         :columns="catalogColumns"
-        :rows="rows"
+        :rows="catalogRows"
         row-key="id"
         :sort="sort"
         :dir="dir"
@@ -338,7 +344,7 @@ function quality(row: Record<string, unknown>) {
       <DataTable
         v-else
         :columns="localColumns"
-        :rows="rows"
+        :rows="localRows"
         row-key="id"
         :loading="local.loading.value"
         :error="error"

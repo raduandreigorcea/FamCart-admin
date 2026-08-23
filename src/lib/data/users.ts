@@ -1,4 +1,5 @@
 import { getAppSupabase } from '../supabase'
+import { sortGuard } from './types'
 import type { AdminUserRow, Page, PageParams } from './types'
 
 // The user list and one user's detail. Both come from admin_user_facts() in
@@ -60,8 +61,10 @@ export const USER_SORTS = [
 
 export type UserSort = (typeof USER_SORTS)[number]
 
+export const isUserSort = sortGuard(USER_SORTS)
+
 export async function fetchUsers(
-  params: PageParams,
+  params: PageParams<UserSort>,
   signal: AbortSignal,
 ): Promise<Page<AdminUserRow>> {
   const limit = params.limit ?? 25

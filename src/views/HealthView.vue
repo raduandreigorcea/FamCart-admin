@@ -20,9 +20,12 @@ import {
   probeProjects,
   reachabilityOf,
   severityOf,
+  type RateLimitRow,
+  type TableHealth,
 } from '../lib/data/health'
 import { appTarget, catalogTarget, clerkIssuer } from '../lib/supabase'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange, sinceIso } from '../lib/timeRange'
+import type { AdminEventRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import {
   formatBytes,
@@ -86,7 +89,7 @@ const kindOptions = computed(() => [
   })),
 ])
 
-const tableColumns: Column[] = [
+const tableColumns: Column<TableHealth>[] = [
   { key: 'table_name', label: 'Table', width: '22%' },
   { key: 'live_rows', label: 'Rows', numeric: true, width: '11%', title: 'Planner estimate, not an exact count' },
   { key: 'dead_rows', label: 'Dead', numeric: true, width: '10%', title: 'Rows awaiting vacuum' },
@@ -97,7 +100,7 @@ const tableColumns: Column[] = [
   { key: 'last_vacuum', label: 'Vacuumed', width: '13%', hideBelow: 1100 },
 ]
 
-const eventColumns: Column[] = [
+const eventColumns: Column<AdminEventRow>[] = [
   { key: 'kind', label: 'Event', width: '20%' },
   { key: 'actor_name', label: 'Account', width: '20%' },
   { key: 'household_name', label: 'Household', width: '18%', hideBelow: 1100 },
@@ -105,27 +108,25 @@ const eventColumns: Column[] = [
   { key: 'created_at', label: 'When', width: '16%' },
 ]
 
-const limitColumns: Column[] = [
+/** A rate-limit row plus the composite key that identifies it in the table. */
+type RateLimitRowWithId = RateLimitRow & { id: string }
+
+const limitColumns: Column<RateLimitRowWithId>[] = [
   { key: 'kind', label: 'Limiter', width: '30%' },
   { key: 'actor_name', label: 'Account', width: '34%' },
   { key: 'hits', label: 'Hits', numeric: true, width: '12%' },
   { key: 'window_start', label: 'Window opened', width: '24%' },
 ]
 
-const tableRows = computed(
-  () => (health.data.value?.tables ?? []) as unknown as Record<string, unknown>[],
-)
-const eventRows = computed(
-  () => (events.data.value?.rows ?? []) as unknown as Record<string, unknown>[],
-)
-const limitRows = computed(
-  () =>
-    (limits.data.value ?? []).map((row) => ({
-      ...row,
-      // The table's real primary key, which is what makes each row identifiable
-      // without inventing an index-based one that shifts as rows age out.
-      id: `${row.actor}:${row.kind}:${row.window_start}`,
-    })) as unknown as Record<string, unknown>[],
+const tableRows = computed(() => health.data.value?.tables ?? [])
+const eventRows = computed(() => events.data.value?.rows ?? [])
+const limitRows = computed<RateLimitRowWithId[]>(() =>
+  (limits.data.value ?? []).map((row) => ({
+    ...row,
+    // The table's real primary key, which is what makes each row identifiable
+    // without inventing an index-based one that shifts as rows age out.
+    id: `${row.actor}:${row.kind}:${row.window_start}`,
+  })),
 )
 
 const errorEvents = computed(

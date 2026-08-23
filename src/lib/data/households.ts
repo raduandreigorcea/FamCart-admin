@@ -1,4 +1,5 @@
 import { getAppSupabase } from '../supabase'
+import { sortGuard } from './types'
 import type { AdminHouseholdRow, Page, PageParams } from './types'
 
 export const HOUSEHOLD_SORTS = [
@@ -79,8 +80,10 @@ export interface HouseholdDetail {
   }[]
 }
 
+export const isHouseholdSort = sortGuard(HOUSEHOLD_SORTS)
+
 export async function fetchHouseholds(
-  params: PageParams,
+  params: PageParams<HouseholdSort>,
   signal: AbortSignal,
 ): Promise<Page<AdminHouseholdRow>> {
   const limit = params.limit ?? 25

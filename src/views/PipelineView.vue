@@ -54,7 +54,7 @@ const ledger = computed(() => fetchRunLedger(openRun.value?.version ?? null))
 
 const snapshot = computed(() => pipeline.data.value)
 
-const runColumns: Column[] = [
+const runColumns: Column<RunRow>[] = [
   { key: 'version', label: 'Run', width: '20%' },
   { key: 'source', label: 'Source', width: '18%' },
   { key: 'rowsCreated', label: 'Rows created', numeric: true, width: '13%' },
@@ -64,14 +64,26 @@ const runColumns: Column[] = [
   { key: 'lastSeen', label: 'Landed', width: '18%' },
 ]
 
-const runRows = computed(() =>
+/**
+ * A run, plus the identity and the three completeness shares the table renders.
+ * The shares are derived here rather than in pipeline.ts because they are a
+ * presentation choice: the snapshot carries counts, this carries ratios.
+ */
+type RunRow = IngestionRun & {
+  id: string
+  barcodeShare: number
+  aliasShare: number
+  marketShare: number
+}
+
+const runRows = computed<RunRow[]>(() =>
   (snapshot.value?.runs ?? []).map((run) => ({
     ...run,
     id: `${run.source}-${run.version ?? 'none'}`,
     barcodeShare: run.withBarcode / (run.rowsCreated || 1),
     aliasShare: run.withAliases / (run.rowsCreated || 1),
     marketShare: run.withMarkets / (run.rowsCreated || 1),
-  })) as unknown as Record<string, unknown>[],
+  })),
 )
 
 const sourceBars = computed(() =>
@@ -269,7 +281,7 @@ function statusLabel(status: string, ageDays: number | null): string {
           clickable
           empty-title="No import runs"
           empty-message="Nothing in the catalog carries a source_version, so nothing was loaded by the importer."
-          @select="openRun = $event as unknown as IngestionRun"
+          @select="openRun = $event"
         >
           <template #cell-version="{ row }">
             <CopyValue

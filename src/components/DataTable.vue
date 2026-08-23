@@ -1,5 +1,5 @@
-<script setup lang="ts">
-import { computed, type PropType } from 'vue'
+<script setup lang="ts" generic="T extends object">
+import { computed } from 'vue'
 import type { Column } from '../lib/uiTypes'
 import StateBlock from './StateBlock.vue'
 import AppIcon from './AppIcon.vue'
@@ -16,25 +16,55 @@ import AppIcon from './AppIcon.vue'
 // sorted -- the single most misleading thing a table can do. The parent owns the
 // sort and sends it to the RPC; this only reports the click.
 
-const props = defineProps({
-  columns: { type: Array as PropType<Column[]>, required: true },
-  rows: { type: Array as PropType<Record<string, unknown>[]>, default: () => [] },
-  rowKey: { type: String, default: 'id' },
-  sort: { type: String, default: '' },
-  dir: { type: String as PropType<'asc' | 'desc'>, default: 'desc' },
-  loading: { type: Boolean, default: false },
-  error: { type: String, default: '' },
-  emptyTitle: { type: String, default: 'Nothing here' },
-  emptyMessage: { type: String, default: '' },
-  dense: { type: Boolean, default: false },
-  /** Rows respond to click and look it. */
-  clickable: { type: Boolean, default: false },
-  selectedKey: { type: [String, Number], default: null },
-})
+// Generic in its row type, which is what lets a caller pass AdminUserRow[]
+// straight in. It used to take Record<string, unknown>[], so all nine callers
+// laundered their rows through `as unknown as Record<string, unknown>[]` and
+// then cast BACK inside every select handler to read a field -- eighteen casts
+// that between them switched off type checking at the one boundary where column
+// keys meet row fields.
+const props = withDefaults(
+  defineProps<{
+    columns: Column<T>[]
+    rows?: T[]
+    /**
+     * Which field identifies a row. Required, and must be a real key of T.
+     *
+     * It defaulted to 'id', which was a lie for half the tables here --
+     * AdminUserRow is keyed by user_id, TableHealth by table_name -- and a
+     * wrong rowKey does not fail loudly: every row resolves to the string
+     * "undefined", Vue sees one duplicated key, and rows silently stop being
+     * re-used correctly. Every call site already passed this explicitly, so
+     * requiring it costs nothing and makes the identity checked.
+     */
+    rowKey: keyof T & string
+    sort?: string
+    dir?: 'asc' | 'desc'
+    loading?: boolean
+    error?: string
+    emptyTitle?: string
+    emptyMessage?: string
+    dense?: boolean
+    /** Rows respond to click and look it. */
+    clickable?: boolean
+    selectedKey?: string | number | null
+  }>(),
+  {
+    rows: () => [],
+    sort: '',
+    dir: 'desc',
+    loading: false,
+    error: '',
+    emptyTitle: 'Nothing here',
+    emptyMessage: '',
+    dense: false,
+    clickable: false,
+    selectedKey: null,
+  },
+)
 
 const emit = defineEmits<{
   (e: 'sort', key: string): void
-  (e: 'select', row: Record<string, unknown>): void
+  (e: 'select', row: T): void
 }>()
 
 // Loading keeps the header on screen and fakes the body, so the table does not
@@ -42,9 +72,28 @@ const emit = defineEmits<{
 const showSkeleton = computed(() => props.loading && props.rows.length === 0)
 const showEmpty = computed(() => !props.loading && !props.error && props.rows.length === 0)
 
-function ariaSort(column: Column): 'ascending' | 'descending' | 'none' {
+function ariaSort(column: Column<T>): 'ascending' | 'descending' | 'none' {
   if (!column.sortable || props.sort !== column.key) return 'none'
   return props.dir === 'asc' ? 'ascending' : 'descending'
+}
+
+/**
+ * Read a cell by column key.
+ *
+ * The one widening cast in this component, and the reason `T extends object`
+ * rather than `T extends Record<string, unknown>`: an INTERFACE does not
+ * satisfy an index signature in TypeScript, only a type alias does. Constraining
+ * to Record would therefore reject AdminUserRow, AdminHouseholdRow and every
+ * other row shape in the data layer -- which is exactly what silently forced
+ * `T` back to `Record<string, unknown>` and kept the eighteen casts alive in
+ * the views.
+ *
+ * A column key may also be slot-only (see Column in uiTypes.ts), so it is not
+ * always a `keyof T`. Hence the widening here, once, rather than in every
+ * caller.
+ */
+function cellValue(row: T, key: string): unknown {
+  return (row as Record<string, unknown>)[key]
 }
 </script>
 
@@ -108,8 +157,8 @@ function ariaSort(column: Column): 'ascending' | 'descending' | 'none' {
                 column.hideBelow ? `hide-below-${column.hideBelow}` : '',
               ]"
             >
-              <slot :name="`cell-${column.key}`" :row="row" :value="row[column.key]">
-                {{ column.cell ? column.cell(row) : (row[column.key] ?? '--') }}
+              <slot :name="`cell-${column.key}`" :row="row" :value="cellValue(row, column.key)">
+                {{ column.cell ? column.cell(row) : (cellValue(row, column.key) ?? '--') }}
               </slot>
             </td>
           </tr>

@@ -1,4 +1,5 @@
 import { getAppSupabase, getCatalogSupabase } from '../supabase'
+import { sortGuard } from './types'
 import type { CatalogProductRow, LocalProductRow, Page, PageParams } from './types'
 
 // Products live in TWO tables in two different databases, and the fact that they
@@ -29,7 +30,9 @@ const CATALOG_COLUMNS =
 export const CATALOG_SORTS = ['popularity', 'add_count', 'base_weight', 'created_at', 'name'] as const
 export type CatalogSort = (typeof CATALOG_SORTS)[number]
 
-export interface CatalogFilters extends PageParams {
+export const isCatalogSort = sortGuard(CATALOG_SORTS)
+
+export interface CatalogFilters extends PageParams<CatalogSort> {
   source?: string | null
   market?: string | null
   sourceVersion?: string | null
@@ -57,7 +60,7 @@ export async function fetchCatalogProducts(
 
   const limit = filters.limit ?? 25
   const offset = filters.offset ?? 0
-  const sort = (filters.sort ?? 'popularity') as CatalogSort
+  const sort: CatalogSort = filters.sort ?? 'popularity'
   const ascending = filters.dir === 'asc'
 
   let request = client
