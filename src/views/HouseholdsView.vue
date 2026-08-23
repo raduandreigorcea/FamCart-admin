@@ -1,0 +1,191 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import PageHeader from '../components/PageHeader.vue'
+import PanelCard from '../components/PanelCard.vue'
+import DataTable from '../components/DataTable.vue'
+import TablePager from '../components/TablePager.vue'
+import FilterBar from '../components/FilterBar.vue'
+import StatusPill from '../components/StatusPill.vue'
+import CopyValue from '../components/CopyValue.vue'
+import SegmentedControl from '../components/SegmentedControl.vue'
+import { useQuery, describeError } from '../lib/useQuery'
+import { fetchHouseholds } from '../lib/data/households'
+import type { AdminHouseholdRow } from '../lib/data/types'
+import type { Column } from '../lib/uiTypes'
+import { formatCount, formatDateTime, formatRelative } from '../lib/format'
+
+const router = useRouter()
+
+const query = ref('')
+const sort = ref('last_active')
+const dir = ref<'asc' | 'desc'>('desc')
+const offset = ref(0)
+const density = ref('comfortable')
+
+const LIMIT = 25
+
+const households = useQuery(
+  (signal) =>
+    fetchHouseholds(
+      { query: query.value, sort: sort.value, dir: dir.value, limit: LIMIT, offset: offset.value },
+      signal,
+    ),
+  { watch: [query, sort, dir, offset] },
+)
+
+function onQuery(value: string) {
+  query.value = value
+  offset.value = 0
+}
+
+function onSort(key: string) {
+  if (sort.value === key) dir.value = dir.value === 'asc' ? 'desc' : 'asc'
+  else {
+    sort.value = key
+    dir.value = 'desc'
+  }
+  offset.value = 0
+}
+
+const columns: Column[] = [
+  { key: 'name', label: 'Household', sortable: true, width: '24%' },
+  { key: 'owner_name', label: 'Owner', width: '16%' },
+  { key: 'invite_code', label: 'Invite', width: '11%', hideBelow: 1400 },
+  { key: 'members', label: 'Members', numeric: true, sortable: true, width: '8%' },
+  { key: 'items_open', label: 'Open', numeric: true, sortable: true, width: '7%', title: 'Unchecked items right now' },
+  { key: 'items_total', label: 'Items', numeric: true, width: '7%', hideBelow: 1100, title: 'Items ever added' },
+  { key: 'purchases', label: 'Bought', numeric: true, sortable: true, width: '8%' },
+  { key: 'products_added', label: 'Products', numeric: true, width: '8%', hideBelow: 1400 },
+  { key: 'last_active', label: 'Last active', sortable: true, width: '11%' },
+]
+
+const rows = computed(
+  () => (households.data.value?.rows ?? []) as unknown as Record<string, unknown>[],
+)
+const total = computed(() => households.data.value?.total ?? 0)
+const error = computed(() =>
+  households.error.value ? describeError(households.error.value).detail : '',
+)
+
+function open(row: Record<string, unknown>) {
+  void router.push(`/households/${(row as unknown as AdminHouseholdRow).id}`)
+}
+
+const DORMANT_DAYS = 30
+
+function activityTone(lastActive: string): 'good' | 'idle' {
+  return (Date.now() - new Date(lastActive).getTime()) / 86_400_000 <= DORMANT_DAYS ? 'good' : 'idle'
+}
+</script>
+
+<template>
+  <div class="page">
+    <PageHeader
+      title="Households"
+      description="Every group on this database, its roster and how much shopping actually happens in it."
+      :fetched-at="households.fetchedAt.value"
+      :busy="households.fetching.value"
+      @refresh="households.refetch"
+    />
+
+    <PanelCard flush>
+      <template #actions>
+        <SegmentedControl
+          v-model="density"
+          :segments="[
+            { value: 'comfortable', label: 'Comfortable' },
+            { value: 'compact', label: 'Compact' },
+          ]"
+          aria-label="Row density"
+        />
+      </template>
+
+      <div class="toolbar">
+        <FilterBar
+          :model-value="query"
+          placeholder="Search by name, owner or invite code"
+          :busy="households.fetching.value"
+          @update:model-value="onQuery"
+        >
+          <template #end>
+            <span class="toolbar__count u-num">{{ formatCount(total) }} households</span>
+          </template>
+        </FilterBar>
+      </div>
+
+      <DataTable
+        :columns="columns"
+        :rows="rows"
+        row-key="id"
+        :sort="sort"
+        :dir="dir"
+        :loading="households.loading.value"
+        :error="error"
+        :dense="density === 'compact'"
+        clickable
+        empty-title="No households match"
+        empty-message="Clear the search, or check which database the topbar says you are reading."
+        @sort="onSort"
+        @select="open"
+      >
+        <template #cell-name="{ row }">
+          <span class="name">
+            <span class="name__emoji" aria-hidden="true">{{ row.emoji || '🏠' }}</span>
+            <span class="u-truncate">{{ row.name }}</span>
+          </span>
+        </template>
+
+        <template #cell-owner_name="{ row }">
+          <span class="u-truncate">{{ row.owner_name || '--' }}</span>
+        </template>
+
+        <template #cell-invite_code="{ row }">
+          <CopyValue :value="String(row.invite_code)" label="invite code" />
+        </template>
+
+        <template #cell-last_active="{ row }">
+          <StatusPill
+            :tone="activityTone(String(row.last_active))"
+            :label="formatRelative(String(row.last_active))"
+            :title="formatDateTime(String(row.last_active))"
+          />
+        </template>
+      </DataTable>
+
+      <template #footer>
+        <TablePager
+          :total="total"
+          :offset="offset"
+          :limit="LIMIT"
+          :loading="households.fetching.value"
+          @go="offset = $event"
+        />
+      </template>
+    </PanelCard>
+  </div>
+</template>
+
+<style scoped>
+.toolbar {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width-thin) solid var(--border-light);
+}
+
+.toolbar__count {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-weight: var(--weight-medium);
+}
+
+.name__emoji {
+  flex: none;
+}
+</style>

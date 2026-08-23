@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- No indexing, ever. This is an internal tool on a public repo; the code
+         being readable is fine, the deployed instance showing up in a search
+         result is not. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- Same preload reasoning as FamCart's index.html: the latin subset is what
+         every screen blocks on, and crossorigin is required even same-origin or
+         the browser fetches the file twice. Unlike FamCart there is no service
+         worker here to precache latin-ext, so it arrives when a Romanian
+         household name first needs it. -->
+    <link
+      rel="preload"
+      href="/fonts/plus-jakarta-sans-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FamCart Admin</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

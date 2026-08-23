@@ -1,0 +1,310 @@
+/* The admin layer.
+ *
+ * src/vendor/style.css is FamCart's own stylesheet, vendored byte-for-byte and
+ * guarded against drift. It brings the typeface, the whole token set and both
+ * themes. This file adds only what a dense desktop tool needs and a phone app
+ * never did, and it adds it in the same idiom: named tokens on :root, redefined
+ * under [data-theme='dark'].
+ *
+ * Nothing here overrides a FamCart token. If a value looks like it wants to, the
+ * right move is a new admin-* token beside it, so the two can never fight and it
+ * stays obvious which side of the line a colour came from.
+ */
+
+:root {
+  /* ── layout metrics ──────────────────────────────────────────────────────
+   * The shell is a grid of exactly these. Named because three components need
+   * to agree on them: the sidebar sets its width, the topbar sets its height,
+   * and every sticky table header offsets by both. */
+  --admin-sidebar: 236px;
+  --admin-sidebar-collapsed: 64px;
+  --admin-topbar: 52px;
+  --admin-gutter: var(--space-6);
+  --admin-max-content: 1600px;
+
+  /* Row heights. `comfortable` is the default; `compact` is the density toggle,
+   * and the difference has to be enough to be worth a control. */
+  --admin-row-comfortable: 46px;
+  --admin-row-compact: 34px;
+
+  /* ── surfaces above FamCart's ────────────────────────────────────────────
+   * The app has one card on one background. A dashboard has a chrome layer
+   * (sidebar, topbar) that must sit visually BEHIND the content, and a
+   * table-header layer that must sit just above the card it is inside. Two more
+   * steps, both derived from the tokens already there. */
+  --admin-chrome: #ffffff;
+  --admin-chrome-edge: var(--border-main);
+  --admin-thead: #f7f8fa;
+  --admin-zebra: rgba(15, 23, 42, 0.016);
+  --admin-selected: var(--color-primary-bg);
+
+  /* ── chart series ────────────────────────────────────────────────────────
+   * Four categorical hues, in fixed order, assigned to an entity and never
+   * recycled by rank: series 1 is always the same measure whatever the filter
+   * leaves on screen.
+   *
+   * Validated rather than chosen by eye, against #ffffff:
+   *   lightness band PASS · chroma floor PASS · CVD separation PASS
+   *   (worst adjacent pair 13.6 protan) · normal-vision floor PASS (20.8)
+   *   · contrast vs surface PASS (all >= 3:1)
+   *
+   * Series 1 is a deeper, more saturated cousin of the brand green rather than
+   * --color-primary itself. The brand green is tuned to sit under white text on
+   * a button; as a 2px line on a white card it is too quiet to follow, and it
+   * failed the chroma floor outright (0.089 against a 0.1 minimum). */
+  --chart-1: #0f8a5f;
+  --chart-2: #4a63d8;
+  --chart-3: #c23b86;
+  --chart-4: #b8730c;
+
+  /* Magnitude, not identity: one hue, light to dark. Used by the coverage bars
+   * and the ingestion heat strip, never by a multi-series line. */
+  --chart-seq-1: #d8ece2;
+  --chart-seq-2: #a7d4bf;
+  --chart-seq-3: #6bb493;
+  --chart-seq-4: #2f8f68;
+  --chart-seq-5: #0f6446;
+
+  /* Recessive by design. A grid line that competes with the data is a grid line
+   * drawn too dark. */
+  --chart-grid: rgba(15, 23, 42, 0.08);
+  --chart-axis: var(--text-disabled);
+  /* The gap a mark leaves against whatever is behind it, so adjacent bars and
+   * overlapping points read as separate objects rather than one shape. */
+  --chart-gap: var(--bg-surface);
+
+  /* ── status, reserved ────────────────────────────────────────────────────
+   * These are states, never series. Nothing may borrow one for "the fourth
+   * line" -- that is how a chart ends up implying a purchase count is an error.
+   * Each one ships with a label or an icon in the markup; colour never carries
+   * the meaning alone. */
+  --status-good: #16794f;
+  --status-good-bg: #e8f4ee;
+  --status-warn: var(--warning-text);
+  --status-warn-bg: var(--warning-bg);
+  --status-bad: var(--danger-text);
+  --status-bad-bg: var(--danger-bg);
+  --status-idle: var(--text-disabled);
+  --status-idle-bg: var(--bg-hover);
+
+  /* ── the "not recorded" treatment ────────────────────────────────────────
+   * Its own visual language, because it means something no other empty state
+   * does: not "nothing happened" but "nothing is watching". A panel in this
+   * treatment is hatched, so it cannot be mistaken at a glance for a panel
+   * showing a real zero. */
+  --unrecorded-ink: var(--text-secondary);
+  --unrecorded-line: rgba(15, 23, 42, 0.10);
+  --unrecorded-bg: rgba(15, 23, 42, 0.018);
+}
+
+:root[data-theme='dark'] {
+  --admin-chrome: #111823;
+  --admin-thead: #1b2430;
+  --admin-zebra: rgba(255, 255, 255, 0.018);
+
+  /* Selected steps, not a flip of the light ones. Re-validated against the dark
+   * card surface #151c25: lightness band PASS (0.48-0.67), chroma floor PASS,
+   * CVD separation PASS (worst adjacent 10.3 protan), normal-vision floor PASS
+   * (19.7), contrast PASS. */
+  --chart-1: #2ea378;
+  --chart-2: #6b82e0;
+  --chart-3: #d75f9e;
+  --chart-4: #c2861f;
+
+  --chart-seq-1: #1c2f2a;
+  --chart-seq-2: #24503f;
+  --chart-seq-3: #2f7358;
+  --chart-seq-4: #3f9b74;
+  --chart-seq-5: #63c39a;
+
+  --chart-grid: rgba(255, 255, 255, 0.09);
+
+  --status-good: #6fc79b;
+  --status-good-bg: #16281f;
+
+  --unrecorded-line: rgba(255, 255, 255, 0.12);
+  --unrecorded-bg: rgba(255, 255, 255, 0.022);
+}
+
+/* ── base ─────────────────────────────────────────────────────────────────── */
+
+/* FamCart sets `user-select: none` on everything, which is right for a phone app
+ * where a long-press should not select a product name. It is wrong here: half of
+ * what this tool exists for is copying a Clerk id or an invite code out of a
+ * table. Text is selectable again, and only the chrome opts back out. */
+*,
+*::before,
+*::after {
+  user-select: text;
+}
+
+body {
+  /* The dashboard scrolls inside its content pane, not as a page, so the shell
+   * stays put while a 200-row table moves. */
+  overflow: hidden;
+}
+
+/* Numbers in a column must line up or they cannot be compared, and Plus Jakarta
+ * Sans is proportional by default. Every figure in the tool wears this. */
+.u-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Identifiers a person reads character by character: Clerk ids, invite codes,
+ * source versions, barcodes, uuids. Same reasoning as --font-mono's own comment
+ * in the vendored stylesheet -- O and 0 have to be distinguishable. */
+.u-mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  letter-spacing: -0.01em;
+}
+
+.u-muted {
+  color: var(--text-secondary);
+}
+
+.u-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A visually hidden label, for the cases where an icon carries an action and a
+ * screen reader needs the word. */
+.u-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* One focus treatment for the whole tool, on the keyboard only. Keyboard
+ * navigation is how a dense table is actually operated, so the ring has to be
+ * unmissable rather than tasteful. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Scrollbars, styled because they are permanently visible in a tool with this
+ * much scrolling area and the default ones are the loudest thing on the page. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-dark) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-dark);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-disabled);
+  background-clip: content-box;
+}
+
+/* ── the shell ────────────────────────────────────────────────────────────── */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--admin-sidebar) 1fr;
+  grid-template-rows: var(--admin-topbar) 1fr;
+  grid-template-areas:
+    'brand topbar'
+    'nav   main';
+  height: 100dvh;
+  background: var(--bg-main);
+}
+
+.shell--collapsed {
+  grid-template-columns: var(--admin-sidebar-collapsed) 1fr;
+}
+
+/* Below this the sidebar stops being affordable and becomes an overlay. The
+ * tool is desktop-only by design, but a 1024px laptop is a desktop. */
+@media (max-width: 900px) {
+  .shell,
+  .shell--collapsed {
+    grid-template-columns: 0 1fr;
+  }
+}
+
+.shell__main {
+  grid-area: main;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+.page {
+  max-width: var(--admin-max-content);
+  padding: var(--admin-gutter);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell__main {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── the grid content sits on ─────────────────────────────────────────────── */
+
+.grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.grid > .span-2 { grid-column: span 2; }
+.grid > .span-3 { grid-column: span 3; }
+.grid > .span-4 { grid-column: span 4; }
+.grid > .span-5 { grid-column: span 5; }
+.grid > .span-6 { grid-column: span 6; }
+.grid > .span-7 { grid-column: span 7; }
+.grid > .span-8 { grid-column: span 8; }
+.grid > .span-9 { grid-column: span 9; }
+.grid > .span-12 { grid-column: span 12; }
+
+@media (max-width: 1400px) {
+  .grid > .span-2 { grid-column: span 3; }
+  .grid > .span-3 { grid-column: span 4; }
+}
+
+@media (max-width: 1100px) {
+  .grid > .span-2,
+  .grid > .span-3,
+  .grid > .span-4,
+  .grid > .span-5 { grid-column: span 6; }
+  .grid > .span-7,
+  .grid > .span-8,
+  .grid > .span-9 { grid-column: span 12; }
+}
+
+@media (max-width: 700px) {
+  .grid > [class*='span-'] { grid-column: span 12; }
+}

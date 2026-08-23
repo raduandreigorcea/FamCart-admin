@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.vite/
+
+# Every credential this tool holds. The repo is public, so this file existing is
+# the only thing between a publishable key set and a search result. .env.example
+# carries the shape; nothing here carries a value.
+.env
+.env.*
+!.env.example
+
+# Editor and OS noise
+.idea/
+.vscode/
+.DS_Store
+*.local
