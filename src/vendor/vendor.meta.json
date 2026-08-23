@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "Byte-for-byte copies of FamCart modules. Vendored rather than imported because",
+    "this repo is a submodule and must also work as a standalone clone, where",
+    "../../src/... does not exist. Same arrangement the catalog importer uses.",
+    "",
+    "What is vendored here is the DESIGN SYSTEM, not logic. style.css carries the",
+    "whole token set and both themes; theme.ts carries the one storage key and the",
+    "one resolver that stamps data-theme onto the root element. The admin tool has",
+    "to look like the same product and remember the same preference, and the only",
+    "way to guarantee that across two repos is to copy the files and then refuse to",
+    "let the copies drift.",
+    "",
+    "sha256 is authoritative: FamCart's test/vendorDrift.test.js reads this file and",
+    "compares both copies, so an edit to either side fails a test at the moment it",
+    "is made. Never edit these files directly -- change the upstream module and",
+    "re-copy, then update the hash.",
+    "",
+    "The hash is of the LF-NORMALIZED bytes. FamCart is developed on Windows with",
+    "core.autocrlf=true, so the working copy is CRLF there and LF on a Linux CI",
+    "runner; hashing the raw file would make this test pass on one and fail on the",
+    "other.",
+    "",
+    "Refresh with, from the FamCart root:",
+    "  cp src/style.css admin/src/vendor/style.css",
+    "  tr -d '\\r' < src/style.css | sha256sum",
+    "",
+    "public/fonts/*.woff2 are copied alongside these and deliberately NOT hashed",
+    "here: they are binary assets that change only when the typeface does, and the",
+    "@font-face rules inside style.css already fail loudly if they go missing."
+  ],
+  "files": {
+    "style.css": {
+      "upstream": "src/style.css",
+      "sha256": "365f621faa002ed5ab7aa0bb2801f28aa1075d6e22b984957dcf532c61846e5f",
+      "vendoredAt": "2026-08-21",
+      "why": "The token set and both themes. A divergent copy means the admin tool drifts away from the product it is reporting on, one colour at a time."
+    },
+    "theme.ts": {
+      "upstream": "src/lib/theme.ts",
+      "sha256": "3250474eb6dc678a8e131696136878302f562eefa02f74e8b03b2cd4cc79c303",
+      "vendoredAt": "2026-08-21",
+      "why": "Same storage key, same modes, same resolver. Vendoring it is what makes the dark-mode preference one setting rather than two that happen to agree."
+    }
+  }
+}

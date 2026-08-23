@@ -1,0 +1,408 @@
+/* Plus Jakarta Sans, served from public/fonts/ rather than fonts.googleapis.com.
+ *
+ * The remote @import this replaces was the only network request standing between
+ * a cold start and first paint. Inside Capacitor that is the whole story: every
+ * other asset is a local file, so the app would render and then stall on a DNS
+ * lookup, a TLS handshake and a stylesheet from Google, which in turn pointed at
+ * woff2 files on a second origin needing their own lookup and handshake. An
+ * @import cannot be preloaded and cannot even be discovered until the stylesheet
+ * holding it has been parsed, so none of that could overlap with anything.
+ *
+ * Offline it was worse than slow, it was wrong. The font never arrived, so the
+ * app rendered in Segoe UI on a phone with no signal and in Plus Jakarta Sans on
+ * the same phone a minute later. vite.config.ts precaches `woff2` and looked
+ * like it covered this; the glob only ever sees dist/, so with the font on
+ * Google's origin it was matching nothing. Now it matches these two files.
+ *
+ * Two files, not five. Plus Jakarta Sans is a variable font: Google emits one
+ * @font-face per weight but every one of them points at a single file per subset,
+ * so `font-weight: 200 800` below covers 400 through 800 out of 27KB. That also
+ * quietly fixes a real bug. The old request asked for 500;600;700;800 while
+ * --weight-regular is 400 and body text sets it, so every "regular" string in
+ * the app was being rendered by the browser's nearest match at 500. 400 is a
+ * real weight now.
+ *
+ * latin-ext is not optional: Romanian needs ă, ș and ț, all of which live there.
+ * unicode-range keeps the renderer from ever *using* it until such a character
+ * appears, so a session that types none of them never blocks on it. It is still
+ * downloaded, though — the service worker precaches both files at install (see
+ * globPatterns in vite.config.js), which is what makes Romanian text work on a
+ * phone with no signal, and is the whole reason the font moved off Google's
+ * origin. The 21KB is paid once, in the background, rather than per session.
+ * cyrillic-ext and vietnamese are the two subsets left behind; text in those
+ * scripts falls back to the system font instead of failing.
+ *
+ * font-display: block, not swap. The fallback stack has different metrics, so
+ * letting it paint first means every block of text reflows when the real font
+ * lands, which is a layout shift on every cold start. Blocking cannot shift
+ * because nothing paints in the wrong font to begin with, and the window it
+ * risks is close to zero: the file is local, precached, and the latin subset is
+ * preloaded from index.html so it is requested at HTML parse rather than after
+ * this stylesheet has been read.
+ */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: block;
+  src: url('/fonts/plus-jakarta-sans-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: block;
+  src: url('/fonts/plus-jakarta-sans-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --color-primary: #4d8c65;         /* The main green */
+  --color-primary-bg: #f0f4f1;      /* Light green for backgrounds/badges */
+  --color-primary-text: #065f46;    /* Dark green for text in badges */
+
+  /* Surface & Backgrounds */
+  --bg-main: #f5f5f7;               /* The main body background */
+  --bg-surface: #ffffff;            /* Card/Modal backgrounds */
+  --bg-surface-alt: #f9fafb;        /* Slight contrast surface (headers, etc.) */
+  --bg-hover: #f3f4f6;              /* Hover state for items */
+  /* Pressed state, one clear step further from the surface than --bg-hover.
+     Controls used to reach for --border-light for this, which in light mode is
+     the same #f3f4f6 as --bg-hover (and in dark is lighter than it) -- so a
+     press either painted nothing or moved the wrong way. A press has to be
+     visibly more than a hover or the control reads as not having answered. */
+  --bg-press: #e6e8ec;
+
+  /* Text */
+  --text-primary: #1a1a1a;          /* Main readable text */
+  --text-secondary: #6b7280;        /* Secondary/muted text */
+  --text-disabled: #9ca3af;         /* Disabled or tertiary text */
+
+  /* Borders */
+  --border-light: #f3f4f6;          /* Very subtle dividers */
+  --border-main: #e5e7eb;           /* Standard borders */
+  --border-dark: #d1d5db;           /* Stronger borders/active inputs */
+
+  /* Danger / Destructive */
+  --danger-main: #ef4444;           /* Red buttons/icons */
+  --danger-bg: #fdf3f2;             /* Light red backgrounds */
+  --danger-border: #fecaca;         /* Red borders */
+  --danger-text: #c0392b;           /* Dark red text */
+  --danger-solid: #c0392b;          /* Filled danger button */
+  --danger-solid-hover: #a53227;    /* Filled danger button hover */
+
+  /* Warning */
+  --warning-bg: #fef3c7;            /* Light amber backgrounds */
+  --warning-border: #fde68a;        /* Amber borders */
+  --warning-text: #b45309;          /* Dark amber text */
+
+  /* Text on colored surfaces */
+  --text-inverse: #ffffff;
+
+  /* Overlay */
+  --backdrop: rgba(0, 0, 0, 0.4);
+  --overlay-dark: rgba(15, 23, 42, 0.45);
+  --overlay-dark-strong: rgba(15, 23, 42, 0.5);
+
+  /* Shared alpha and shadow colors */
+  --spinner-stroke: rgba(255, 255, 255, 0.4);
+  --shadow-ink-02: rgba(15, 23, 42, 0.02);
+  --shadow-ink-04: rgba(15, 23, 42, 0.04);
+  --shadow-ink-06: rgba(15, 23, 42, 0.06);
+  --shadow-ink-07: rgba(15, 23, 42, 0.07);
+  --shadow-ink-15: rgba(15, 23, 42, 0.15);
+  --shadow-ink-18: rgba(15, 23, 42, 0.18);
+  --shadow-primary-12: rgba(77, 140, 101, 0.12);
+  --shadow-primary-20: rgba(77, 140, 101, 0.2);
+  --shadow-danger-15: rgba(220, 38, 38, 0.15);
+  --shadow-danger-18: rgba(220, 38, 38, 0.18);
+  --shadow-danger-25: rgba(220, 38, 38, 0.25);
+  --shadow-popover: rgba(12, 18, 28, 0.22);
+
+  /* Radius scale */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+  --radius-4xl: 24px;
+  --radius-pill: 999px;
+
+  /* Dialog corners, named rather than picked off the scale above. Every dialog
+     in the app is one of two shapes and they have to agree, so the shape is the
+     token: a floating panel rounds on all four corners, a sheet parked on the
+     bottom edge rounds only the two you can see. They are different numbers
+     because a sheet is full width -- the same 18px reads heavier spread across
+     a whole screen than it does on a 400px card.
+
+     Picking these off the scale by hand is how the popovers ended up at 16 and
+     20 while the modals sat at 18 and 14. */
+  --radius-dialog: 18px;
+  --radius-sheet: 14px;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-1-5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+
+  /* Shared sizing */
+  /* One content column, shared by the topbar and the dashboard so their
+     edges line up on wide screens. Applied behind identical 900px media
+     queries (media queries can't read custom properties). */
+  --desktop-column: 720px;
+  --size-control-sm: 32px;
+  --size-control-md: 40px;
+  --size-control-lg: 52px;
+  --size-avatar-sm: 30px;
+  --size-avatar-md: 40px;
+  --size-icon-sm: 14px;
+  --size-icon-md: 16px;
+  --size-icon-lg: 18px;
+
+  /* Elevation and focus */
+  --elevation-card: 0 2px 24px var(--shadow-ink-06), 0 1px 4px var(--shadow-ink-04);
+  --elevation-card-strong: 0 4px 32px var(--shadow-ink-07);
+  --elevation-modal: 0 20px 50px var(--shadow-ink-15);
+  --elevation-dialog: 0 24px 60px var(--shadow-ink-18);
+  --elevation-soft: 0 4px 12px var(--shadow-ink-02);
+  --elevation-primary: 0 4px 12px var(--shadow-primary-20);
+  --elevation-danger: 0 4px 12px var(--shadow-danger-18);
+  --elevation-danger-subtle: 0 4px 12px var(--shadow-danger-15);
+  --elevation-danger-hover: 0 4px 12px var(--shadow-danger-25);
+  --elevation-primary-soft: 0 2px 12px color-mix(in srgb, var(--color-primary) 14%, transparent);
+  --focus-ring-primary: 0 0 0 3px var(--shadow-primary-12);
+  --focus-ring-primary-soft: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, var(--bg-surface));
+
+  /* The face for a string the user has to read character by character, rather
+     than as a word: the invite code, and anything else where O and 0 have to be
+     told apart. Same reasoning as the ramp below — it was three hardcoded
+     stacks, one of them reaching for a --mono token that never existed, so the
+     onboarding tour taught people an invite code in one typeface and the
+     household panels then showed them the real one in another. */
+  --font-mono: ui-monospace, 'SF Mono', Consolas, 'Cascadia Mono', Monaco, monospace;
+
+  /* Typography scale. Theme-independent. Collapses the ad-hoc font sizes that
+     had accumulated across components (nearly thirty distinct values) into one
+     shared ramp — reach for the nearest step instead of a raw rem. */
+  --text-2xs: 0.6875rem;   /* 11px — timestamps, tiny meta */
+  --text-xs: 0.75rem;      /* 12px — captions, small labels */
+  --text-sm: 0.8125rem;    /* 13px — secondary text */
+  --text-base: 0.875rem;   /* 14px — dense UI text */
+  --text-md: 0.9375rem;    /* 15px — body, inputs, buttons */
+  --text-lg: 1rem;         /* 16px — emphasis, list titles */
+  --text-xl: 1.375rem;     /* 22px — section headings */
+  --text-2xl: 1.75rem;     /* 28px — large icons, compact hero */
+  --text-3xl: 2.125rem;    /* 34px — display */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 800;
+
+  --leading-tight: 1.15;   /* headings */
+  --leading-snug: 1.35;    /* multi-line labels */
+  --leading-normal: 1.6;   /* body copy */
+
+  /* Border widths — kept separate from the --border-* colour tokens above, which
+     set the border colour, not its thickness. */
+  --border-width-thin: 1px;
+  --border-width-base: 1.5px;   /* standard interactive control border */
+  --border-width-thick: 2px;
+
+  /* Motion — shared durations and easing so transitions feel uniform. */
+  --transition-fast: 0.15s;
+  --transition-base: 0.2s;
+  --transition-slow: 0.28s;
+  --ease-standard: ease;
+  /* Decelerating: fast off the mark, settling at the end. Everything that
+     arrives on screen uses it. Its mirror is for things leaving, which should
+     go the other way -- start slow, get out of the way quickly. */
+  --ease-rise: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-fall: cubic-bezier(0.4, 0, 1, 1);
+
+  /* How far a dialog travels on its way in. Centred dialogs nudge up; a dialog
+     anchored to the bottom edge overrides this to 100% so it comes in from off
+     screen entirely. See the modal-rise keyframes at the foot of this file. */
+  --modal-rise: 16px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Brand */
+  --color-primary: #6ea78a;
+  --color-primary-bg: #10161f;
+  --color-primary-text: #a6ccb8;
+
+  /* Surface & Backgrounds */
+  --bg-main: #0d1219;
+  --bg-surface: #151c25;
+  --bg-surface-alt: #1b2430;
+  --bg-hover: #232f3d;
+  /* Lighter than --bg-hover here, where light mode's is darker: on a dark
+     surface a control coming toward you means adding light. Same idea either
+     way -- press is always further from the surface than hover. */
+  --bg-press: #2e3d4e;
+
+  /* Text */
+  --text-primary: #e6edf5;
+  --text-secondary: #a9b4c2;
+  --text-disabled: #7d8a9a;
+
+  /* Borders */
+  --border-light: #243242;
+  --border-main: #2f3f52;
+  --border-dark: #3d5167;
+
+  /* Danger / Destructive */
+  --danger-main: #d84134;
+  --danger-bg: #402326;
+  --danger-border: #5b312b;
+  --danger-text: #d3aca8;
+  --danger-solid: #b1372b;
+  --danger-solid-hover: #c13f32;
+
+  /* Warning */
+  --warning-bg: #3a2d12;
+  --warning-border: #66502a;
+  --warning-text: #e8c78e;
+
+  /* Text on colored surfaces */
+  --text-inverse: #f7fbff;
+
+  /* Overlay */
+  --backdrop: rgba(0, 0, 0, 0.56);
+  --overlay-dark: rgba(6, 11, 19, 0.66);
+  --overlay-dark-strong: rgba(6, 11, 19, 0.74);
+
+  /* Shared alpha and shadow colors */
+  --spinner-stroke: rgba(255, 255, 255, 0.25);
+  --shadow-ink-02: rgba(0, 0, 0, 0.2);
+  --shadow-ink-04: rgba(0, 0, 0, 0.28);
+  --shadow-ink-06: rgba(0, 0, 0, 0.34);
+  --shadow-ink-07: rgba(0, 0, 0, 0.4);
+  --shadow-ink-15: rgba(0, 0, 0, 0.5);
+  --shadow-ink-18: rgba(0, 0, 0, 0.58);
+  --shadow-primary-12: rgba(110, 167, 138, 0.22);
+  --shadow-primary-20: rgba(110, 167, 138, 0.32);
+  --shadow-danger-15: rgba(192, 57, 43, 0.16);
+  --shadow-danger-18: rgba(192, 57, 43, 0.22);
+  --shadow-danger-25: rgba(192, 57, 43, 0.3);
+  --shadow-popover: rgba(0, 0, 0, 0.52);
+}
+
+:root {
+  /* Phone safe areas (status bar on top, home/back bar on the bottom).
+     The Android shell injects --safe-area-inset-*; env() covers iOS and
+     installed PWAs; both resolve to 0px in desktop browsers. */
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  user-select: none;
+}
+
+body {
+  margin: 0;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text-primary);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  background: var(--bg-main);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+#app {
+  min-height: 100dvh;
+}
+
+/* ── Dialog motion ───────────────────────────────────────────────────────────
+   One rise, shared by every dialog in the app.
+
+   Global rather than per-component because @keyframes inside a scoped <style>
+   is renamed per component: six copies of "the same" curve is exactly how the
+   modals ended up scaling at four different speeds while the popovers slid.
+
+   The travel is --modal-rise, set by the dialog rather than baked in here. A
+   centred dialog nudges up 16px. A dialog anchored to the bottom edge sets it
+   to 100% -- its own height -- so it comes in from off screen the way the
+   bottom sheets do. That single override is the whole difference between the
+   two, so it lives next to the layout that decides it. */
+@keyframes modal-rise-in {
+  from {
+    transform: translateY(var(--modal-rise));
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes modal-rise-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(var(--modal-rise));
+    opacity: 0;
+  }
+}
+
+/* Redefining the keyframes rather than switching off `animation` on each
+   consumer: the later definition wins, so every dialog loses the travel and
+   keeps the fade without any of them having to know about this. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes modal-rise-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes modal-rise-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

@@ -1,0 +1,119 @@
+import { getAppSupabase } from '../supabase'
+import type { AdminHouseholdRow, Page, PageParams } from './types'
+
+export const HOUSEHOLD_SORTS = [
+  'name',
+  'members',
+  'items_open',
+  'purchases',
+  'created_at',
+  'last_active',
+] as const
+
+export type HouseholdSort = (typeof HOUSEHOLD_SORTS)[number]
+
+export interface HouseholdDetail {
+  household: {
+    id: string
+    name: string
+    emoji: string | null
+    invite_code: string
+    created_by: string
+    owner_name: string | null
+    max_items_per_member: number
+    created_at: string
+    members: number
+    moderators: number
+    items_total: number
+    items_open: number
+    purchases: number
+    checkouts: number
+    products_added: number
+    last_active: string
+  }
+  members: {
+    user_id: string
+    display_name: string | null
+    image_url: string | null
+    role: string
+    is_owner: boolean
+    joined_at: string
+    items_open: number
+    items_added: number
+    purchases: number
+  }[]
+  list: {
+    id: string
+    name: string
+    maker: string | null
+    quantity: number
+    checked: boolean
+    checked_at: string | null
+    added_by: string
+    added_by_name: string | null
+    created_at: string
+  }[]
+  top_products: {
+    name: string
+    maker: string | null
+    times: number
+    quantity: number
+    last_bought: string
+  }[]
+  contributed_products: {
+    id: string
+    name: string
+    maker: string | null
+    barcode: string | null
+    add_count: number
+    created_at: string
+    contributed_by: string | null
+  }[]
+  recent_checkouts: {
+    checkout_id: string
+    purchased_at: string
+    purchased_by: string
+    purchased_by_name: string | null
+    items: number
+    quantity: number
+  }[]
+}
+
+export async function fetchHouseholds(
+  params: PageParams,
+  signal: AbortSignal,
+): Promise<Page<AdminHouseholdRow>> {
+  const limit = params.limit ?? 25
+  const offset = params.offset ?? 0
+
+  const { data, error } = await getAppSupabase()
+    .rpc('admin_list_households', {
+      p_query: params.query?.trim() || null,
+      p_sort: params.sort ?? 'last_active',
+      p_dir: params.dir ?? 'desc',
+      p_limit: limit,
+      p_offset: offset,
+    })
+    .abortSignal(signal)
+
+  if (error) {
+    throw Object.assign(new Error(`admin_list_households: ${error.message}`), { code: error.code })
+  }
+
+  const rows = (data ?? []) as AdminHouseholdRow[]
+  return { rows, total: rows[0]?.total_count ?? 0, offset }
+}
+
+export async function fetchHouseholdDetail(
+  householdId: string,
+  signal: AbortSignal,
+): Promise<HouseholdDetail | null> {
+  const { data, error } = await getAppSupabase()
+    .rpc('admin_household_detail', { p_household_id: householdId })
+    .abortSignal(signal)
+
+  if (error) {
+    throw Object.assign(new Error(`admin_household_detail: ${error.message}`), { code: error.code })
+  }
+  return (data as HouseholdDetail | null) ?? null
+}

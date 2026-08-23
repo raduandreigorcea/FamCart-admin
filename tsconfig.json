@@ -1,0 +1,21 @@
+{
+  // Mirrors FamCart's own tsconfig, including the two strictness flags that do
+  // most of the work here (noUnusedLocals / noUnusedParameters), so a module
+  // vendored from there typechecks under identical rules on both sides.
+  //
+  // scripts/ is deliberately out of scope: seed-dev.mjs is a plain Node script
+  // that never runs in the browser and has no types to check.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts"]
+}
