@@ -15,7 +15,15 @@
     "skipLibCheck": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["vite/client"]
+    // "node" is here for test/ and vite.config.ts, not for src/. The vendor
+    // drift test reads the manifest off disk with node:fs and node:crypto, and
+    // a test that cannot be typechecked is a test nobody notices going stale.
+    //
+    // The cost is that Node globals are visible to src/ too, where they must
+    // never be used -- this bundle runs in a browser. eslint draws that line
+    // properly: globals.browser for src, globals.node only for test/ and
+    // scripts/, so a stray `process.env` in a view is still caught there.
+    "types": ["vite/client", "node"]
   },
   "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts"]
 }
