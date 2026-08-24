@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isChunkLoadFailure } from '../src/router/index'
+import { isChunkLoadFailure, reloadTarget } from '../src/router/index'
 
 // Every route is a lazy import() and every built chunk carries a content hash.
 // Deploy while a tab is open and the next navigation asks for a file that no
@@ -43,5 +43,45 @@ describe('isChunkLoadFailure', () => {
     expect(isChunkLoadFailure(new TypeError('x is not a function'))).toBe(false)
     expect(isChunkLoadFailure(null)).toBe(false)
     expect(isChunkLoadFailure(undefined)).toBe(false)
+  })
+})
+
+describe('reloadTarget', () => {
+  const ORIGIN = 'https://admin.example.com'
+
+  it('passes an ordinary route through unchanged', () => {
+    expect(reloadTarget('/users', ORIGIN)).toBe('/users')
+    expect(reloadTarget('/', ORIGIN)).toBe('/')
+  })
+
+  it('keeps the query and the hash', () => {
+    expect(reloadTarget('/products?source=usda#top', ORIGIN)).toBe('/products?source=usda#top')
+  })
+
+  it('refuses a protocol-relative path', () => {
+    // The one that matters. vue-router does NOT normalise a leading double
+    // slash -- it resolves `//evil.com` to a fullPath of `//evil.com` -- and
+    // location.assign() reads that as another host entirely. The catch-all
+    // route accepts it, so it reaches here looking exactly like a path.
+    expect(reloadTarget('//evil.com', ORIGIN)).toBeNull()
+    expect(reloadTarget('//evil.com/users?a=1', ORIGIN)).toBeNull()
+    expect(reloadTarget('///evil.com', ORIGIN)).toBeNull()
+  })
+
+  it('refuses an absolute URL on another origin', () => {
+    expect(reloadTarget('https://evil.com/users', ORIGIN)).toBeNull()
+    expect(reloadTarget('http://admin.example.com/users', ORIGIN)).toBeNull()
+  })
+
+  it('accepts an absolute URL on THIS origin, reduced to its path', () => {
+    expect(reloadTarget('https://admin.example.com/users?q=a', ORIGIN)).toBe('/users?q=a')
+  })
+
+  it('does not mistake a path that merely looks like a host', () => {
+    // vue-router normalises this one itself, to `/https://evil.com`. It is a
+    // route on this origin and reloading into it is correct -- it renders the
+    // not-found page, which is the honest answer.
+    expect(reloadTarget('/https://evil.com', ORIGIN)).toBe('/https://evil.com')
+    expect(reloadTarget('/evil.com', ORIGIN)).toBe('/evil.com')
   })
 })

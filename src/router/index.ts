@@ -120,6 +120,34 @@ export function isChunkLoadFailure(error: unknown): boolean {
   )
 }
 
+/**
+ * The path to reload into, or null if the router handed us something that would
+ * leave this origin.
+ *
+ * `to.fullPath` looks like it must be a path, and for every route in this app
+ * it is. But the catch-all `/:pathMatch(.*)*` accepts anything the address bar
+ * can hold, and vue-router does NOT normalise a leading double slash: it
+ * resolves `//evil.com` to a fullPath of `//evil.com`, which is
+ * protocol-relative, and `location.assign()` reads that as another host
+ * entirely. The dev-only VUE_ROUTER_R0003 warning it logs is stripped from a
+ * production build.
+ *
+ * Nothing an attacker controls can make the chunk import fail in the first
+ * place, so this was never a live redirect. It is guarded anyway because the
+ * argument for its safety is a fact about today's failure modes, and the
+ * argument for the guard is one line.
+ */
+export function reloadTarget(fullPath: string, origin: string): string | null {
+  let url: URL
+  try {
+    url = new URL(fullPath, origin)
+  } catch {
+    return null
+  }
+  if (url.origin !== origin) return null
+  return `${url.pathname}${url.search}${url.hash}`
+}
+
 // Guards against a reload loop: if the chunk is genuinely missing rather than
 // merely stale, reloading again would not help and would spin. One attempt per
 // destination, remembered for this document only.
@@ -134,8 +162,14 @@ router.onError((error, to) => {
     throw error
   }
 
+  const target = reloadTarget(to.fullPath, window.location.origin)
+  // Off-origin, so there is no route here to reload into. Let the chunk error
+  // surface to the ErrorBoundary rather than navigating somewhere on the
+  // strength of a string that came out of the address bar.
+  if (target === null) throw error
+
   reloadAttempted.add(to.fullPath)
-  window.location.assign(to.fullPath)
+  window.location.assign(target)
 })
 
 export default router
