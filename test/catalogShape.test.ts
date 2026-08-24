@@ -171,11 +171,11 @@ describe('truncation (BG-5)', () => {
 
     pages.rows = Array.from({ length: 1000 }, () => row())
     const truncatedShape = await refreshCatalogShape()
-    expect(buildPipelineSnapshot(truncatedShape).truncated).toBe(true)
+    expect(buildPipelineSnapshot(truncatedShape, []).truncated).toBe(true)
 
     pages.rows = [row()]
     const wholeShape = await refreshCatalogShape()
-    expect(buildPipelineSnapshot(wholeShape).truncated).toBe(false)
+    expect(buildPipelineSnapshot(wholeShape, []).truncated).toBe(false)
   })
 })
 
