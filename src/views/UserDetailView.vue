@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
@@ -8,9 +8,10 @@ import StateBlock from '../components/StateBlock.vue'
 import StatusPill from '../components/StatusPill.vue'
 import BarChart from '../components/BarChart.vue'
 import CopyValue from '../components/CopyValue.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
-import { fetchUserDetail } from '../lib/data/users'
+import { banUser, fetchUserDetail, unbanUser } from '../lib/data/users'
 import { formatCount, formatDateTime, formatRelative, humanizeKind, initialOf } from '../lib/format'
 
 const route = useRoute()
@@ -25,6 +26,39 @@ useLeafCrumb(() =>
 )
 
 const profile = computed(() => detail.data.value?.profile ?? null)
+
+// ─── banning ─────────────────────────────────────────────────────────────────
+//
+// Not a delete. Deleting a profile row does not stick: the app upserts one on
+// every boot, so it returns the moment this person opens FamCart. The ban flag
+// is what those upserts refuse. Their memberships are deliberately untouched --
+// ownership is a membership row, so removing them would strip a household of
+// its admin.
+const banned = computed(() => Boolean(profile.value?.banned_at))
+const confirmingBan = ref(false)
+const banReason = ref('')
+const banBusy = ref(false)
+const banError = ref('')
+
+async function confirmBan() {
+  if (banBusy.value) return
+  banBusy.value = true
+  banError.value = ''
+  try {
+    if (banned.value) {
+      await unbanUser(userId.value, new AbortController().signal)
+    } else {
+      await banUser(userId.value, banReason.value.trim(), new AbortController().signal)
+    }
+    confirmingBan.value = false
+    banReason.value = ''
+    await detail.refetch()
+  } catch (caught) {
+    banError.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    banBusy.value = false
+  }
+}
 
 const topProducts = computed(() =>
   (detail.data.value?.top_products ?? []).map((p) => ({
@@ -69,6 +103,10 @@ const errorInfo = computed(() => describeError(detail.error.value))
       >
         <template #tools>
           <StatusPill v-if="detail.data.value?.is_admin" tone="accent" label="Dashboard admin" />
+          <StatusPill v-if="banned" tone="bad" label="Suspended" />
+          <button type="button" class="danger" @click="confirmingBan = true">
+            {{ banned ? 'Lift suspension' : 'Suspend' }}
+          </button>
         </template>
       </PageHeader>
 
@@ -201,10 +239,68 @@ const errorInfo = computed(() => describeError(detail.error.value))
         <button type="button" class="foot__back" @click="router.back()">Back</button>
       </p>
     </template>
+
+    <ConfirmDialog
+      :open="confirmingBan"
+      :title="banned
+        ? `Lift the suspension on ${profile?.display_name ?? 'this account'}?`
+        : `Suspend ${profile?.display_name ?? 'this account'}?`"
+      :message="banned
+        ? 'They can use FamCart again. Their memberships were never removed, so they return to the households they were already in.'
+        : 'FamCart refuses them at sign-in. Nothing is deleted and their memberships are left alone, so lifting this puts them straight back.'"
+      :confirm-label="banned ? 'Lift suspension' : 'Suspend'"
+      tone="danger"
+      :busy="banBusy"
+      :error="banError"
+      @confirm="confirmBan"
+      @cancel="confirmingBan = false"
+    >
+      <!-- The reason is the whole audit value of a suspension: without it the
+           security_events row records that something happened and not why. -->
+      <input
+        v-if="!banned"
+        v-model="banReason"
+        class="reason"
+        type="text"
+        placeholder="Why? This goes into the audit trail."
+      />
+    </ConfirmDialog>
   </div>
 </template>
 
 <style scoped>
+.danger {
+  background: none;
+  border: var(--border-width-thin) solid var(--danger-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--danger-text);
+  cursor: pointer;
+}
+
+.danger:hover {
+  background: var(--danger-bg);
+}
+
+.reason {
+  width: 100%;
+  height: 34px;
+  margin-top: var(--space-3);
+  padding: 0 var(--space-3);
+  background: var(--bg-surface);
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.reason:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring-primary);
+}
+
 .identity {
   display: flex;
   align-items: flex-start;

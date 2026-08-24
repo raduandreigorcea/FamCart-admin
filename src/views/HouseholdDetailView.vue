@@ -10,9 +10,10 @@ import BarChart from '../components/BarChart.vue'
 import CopyValue from '../components/CopyValue.vue'
 import SideDrawer from '../components/SideDrawer.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
-import { fetchHouseholdDetail, type HouseholdDetail } from '../lib/data/households'
+import { deleteHousehold, fetchHouseholdDetail, type HouseholdDetail } from '../lib/data/households'
 import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/format'
 
 const route = useRoute()
@@ -29,6 +30,33 @@ useLeafCrumb(() =>
 )
 
 const household = computed(() => detail.data.value?.household ?? null)
+
+// ─── deleting ────────────────────────────────────────────────────────────────
+//
+// Soft: the RPC sets deleted_at and the database hides everything inside the
+// household through active_household_ids(). It reappears in Trash, and nothing
+// is destroyed.
+const confirmingDelete = ref(false)
+const deleting = ref(false)
+const deleteError = ref('')
+
+async function confirmDelete() {
+  if (deleting.value) return
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await deleteHousehold(householdId.value, new AbortController().signal)
+    confirmingDelete.value = false
+    // Leaving is not politeness. This household is no longer readable, so
+    // staying here would render the page's own "no such household" state a
+    // moment later, which reads as the delete having gone wrong.
+    void router.push('/households')
+  } catch (caught) {
+    deleteError.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    deleting.value = false
+  }
+}
 const errorInfo = computed(() => describeError(detail.error.value))
 
 // The list is shown filtered rather than in two blocks: an operator looking at a
@@ -84,7 +112,11 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
         :fetched-at="detail.fetchedAt.value"
         :busy="detail.fetching.value"
         @refresh="detail.refetch"
-      />
+      >
+        <template #tools>
+          <button type="button" class="danger" @click="confirmingDelete = true">Delete</button>
+        </template>
+      </PageHeader>
 
       <div class="identity">
         <dl class="identity__facts u-facts">
@@ -298,10 +330,36 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
         </p>
       </SideDrawer>
     </template>
+
+    <ConfirmDialog
+      :open="confirmingDelete"
+      :title="`Delete ${household?.name ?? 'this household'}?`"
+      message="Its members lose access to it and everything inside it. Nothing is destroyed — it moves to Trash and can be restored."
+      confirm-label="Delete"
+      tone="danger"
+      :busy="deleting"
+      :error="deleteError"
+      @confirm="confirmDelete"
+      @cancel="confirmingDelete = false"
+    />
   </div>
 </template>
 
 <style scoped>
+.danger {
+  background: none;
+  border: var(--border-width-thin) solid var(--danger-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--danger-text);
+  cursor: pointer;
+}
+
+.danger:hover {
+  background: var(--danger-bg);
+}
+
 .identity {
   background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
