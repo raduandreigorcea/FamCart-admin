@@ -8,11 +8,13 @@ import DataTable from '../components/DataTable.vue'
 import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { fetchAdmins, grantAdmin, revokeAdmin, type AdminRow } from '../lib/data/users'
 import { appTarget } from '../lib/supabase'
 import type { Column } from '../lib/uiTypes'
 import { formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/format'
+import { useDensity, type Density } from '../lib/useDensity'
 
 // Who can use this dashboard, and the only two writes it can make.
 //
@@ -22,6 +24,8 @@ import { formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/f
 // out of it.
 
 const { user } = useUser()
+const { dense, density, setDensity, segments: densitySegments } = useDensity()
+
 const target = appTarget
 
 const admins = useQuery((signal) => fetchAdmins(signal))
@@ -87,10 +91,20 @@ async function confirmRevoke() {
       :fetched-at="admins.fetchedAt.value"
       :busy="admins.fetching.value"
       @refresh="admins.refetch"
-    />
+    >
+      <template #tools>
+        <SegmentedControl
+          :model-value="density"
+          :segments="densitySegments"
+          label="Rows"
+          @update:model-value="setDensity($event as Density)"
+        />
+      </template>
+    </PageHeader>
 
     <PanelCard title="Admins" note="Every account that can open this dashboard." flush>
       <DataTable
+        :dense="dense"
         :columns="columns"
         :rows="rows"
         row-key="user_id"
@@ -151,7 +165,7 @@ async function confirmRevoke() {
     >
       <form class="grant" @submit.prevent="grant">
         <label class="grant__field">
-          <span class="grant__label">Clerk user id</span>
+          <span class="grant__label u-caption">Clerk user id</span>
           <input
             v-model="newUserId"
             class="grant__input u-mono"
@@ -163,7 +177,7 @@ async function confirmRevoke() {
         </label>
 
         <label class="grant__field">
-          <span class="grant__label">Note (optional)</span>
+          <span class="grant__label u-caption">Note (optional)</span>
           <input
             v-model="newNote"
             class="grant__input"
@@ -292,14 +306,6 @@ async function confirmRevoke() {
   gap: var(--space-1);
   flex: 1 1 260px;
   min-width: 0;
-}
-
-.grant__label {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
 }
 
 .grant__input {

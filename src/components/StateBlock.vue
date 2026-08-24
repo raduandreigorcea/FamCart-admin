@@ -43,7 +43,7 @@ defineProps({
         </div>
         <p v-if="message" class="unrecorded__body">{{ message }}</p>
         <p v-if="wouldRequire" class="unrecorded__fix">
-          <span class="unrecorded__fix-label">To measure it</span>
+          <span class="unrecorded__fix-label u-caption">To measure it</span>
           {{ wouldRequire }}
         </p>
       </div>
@@ -156,7 +156,7 @@ defineProps({
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caption);
   color: var(--unrecorded-ink);
   background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
@@ -185,11 +185,6 @@ defineProps({
 
 .unrecorded__fix-label {
   display: block;
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
-  margin-bottom: 2px;
+  margin-bottom: var(--caption-gap);
 }
 </style>

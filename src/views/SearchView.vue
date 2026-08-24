@@ -24,6 +24,7 @@ import { catalogConfigured, refreshCatalogShape } from '../lib/data/products'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange } from '../lib/timeRange'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatPercent, formatRelative, formatShare } from '../lib/format'
+import { useDensity, type Density } from '../lib/useDensity'
 
 // Search Analytics, built around an honest admission.
 //
@@ -32,6 +33,8 @@ import { formatCount, formatDateTime, formatPercent, formatRelative, formatShare
 // catalog successfully served, and what it failed to serve. The second is the
 // contributed-products table, which is literally a list of searches that came
 // back empty and mattered enough for someone to fix by hand.
+
+const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const rangeKey = ref<string>(DEFAULT_RANGE)
 const range = computed(() => resolveRange(rangeKey.value))
@@ -112,6 +115,12 @@ function refreshAll() {
       @refresh="refreshAll"
     >
       <template #tools>
+        <SegmentedControl
+          :model-value="density"
+          :segments="densitySegments"
+          label="Rows"
+          @update:model-value="setDensity($event as Density)"
+        />
         <SegmentedControl v-model="rangeKey" :segments="rangeSegments" aria-label="Time range" />
       </template>
     </PageHeader>
@@ -224,6 +233,7 @@ function refreshAll() {
       flush
     >
       <DataTable
+        :dense="dense"
         :columns="missColumns"
         :rows="missRows"
         row-key="id"
@@ -282,7 +292,7 @@ function refreshAll() {
         title="Could not read the catalog"
         :message="describeError(adoption.error.value).detail"
       />
-      <dl v-else-if="adoption.data.value" class="reach">
+      <dl v-else-if="adoption.data.value" class="reach u-facts">
         <div>
           <dt>Rows in the catalog</dt>
           <dd class="u-num">{{ formatCount(adoption.data.value.total) }}</dd>
@@ -355,15 +365,6 @@ function refreshAll() {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: var(--space-4);
-}
-
-.reach dt {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
-  margin-bottom: 3px;
 }
 
 .reach dd {

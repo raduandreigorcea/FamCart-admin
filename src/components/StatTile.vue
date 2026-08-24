@@ -101,7 +101,7 @@ const deltaTone = computed(() => {
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caption);
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -140,7 +140,7 @@ const deltaTone = computed(() => {
 .tile__delta {
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--space-1);
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;

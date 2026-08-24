@@ -27,6 +27,7 @@ import { appTarget, catalogTarget, clerkIssuer } from '../lib/supabase'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange, sinceIso } from '../lib/timeRange'
 import type { AdminEventRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
+import { useDensity, type Density } from '../lib/useDensity'
 import {
   formatBytes,
   formatCount,
@@ -40,6 +41,8 @@ import {
 // audit trail -- which is the closest thing FamCart has to an error stream,
 // because the browser talks to PostgREST directly and Sentry only sees the
 // browser.
+
+const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const rangeKey = ref<string>(DEFAULT_RANGE)
 const range = computed(() => resolveRange(rangeKey.value))
@@ -165,6 +168,12 @@ const reachabilityHint = computed(() => {
       @refresh="page.refresh"
     >
       <template #tools>
+        <SegmentedControl
+          :model-value="density"
+          :segments="densitySegments"
+          label="Rows"
+          @update:model-value="setDensity($event as Density)"
+        />
         <SegmentedControl v-model="rangeKey" :segments="rangeSegments" aria-label="Time range" />
       </template>
     </PageHeader>
@@ -233,7 +242,7 @@ const reachabilityHint = computed(() => {
             <!-- Static configuration, so it stays useful even when the probe
                  could not run -- that is precisely when you want to check which
                  project and issuer the failing request was aimed at. -->
-            <dl class="probes__config">
+            <dl class="probes__config u-facts">
               <div>
                 <dt>App database</dt>
                 <dd class="u-mono">{{ target.label }}</dd>
@@ -265,7 +274,7 @@ const reachabilityHint = computed(() => {
             :message="describeError(health.error.value).detail"
           />
           <template v-else-if="health.data.value">
-            <dl class="conn">
+            <dl class="conn u-facts">
               <div>
                 <dt>Connections</dt>
                 <dd class="u-num">
@@ -287,7 +296,7 @@ const reachabilityHint = computed(() => {
               </div>
             </dl>
 
-            <h4 class="sub">Newest row per table</h4>
+            <h4 class="sub u-caption">Newest row per table</h4>
             <ul class="fresh">
               <li v-for="(value, key) in health.data.value.freshness" :key="key" class="fresh__row">
                 <span class="fresh__name u-mono">{{ key }}</span>
@@ -307,6 +316,7 @@ const reachabilityHint = computed(() => {
       flush
     >
       <DataTable
+        :dense="dense"
         :columns="tableColumns"
         :rows="tableRows"
         row-key="table_name"
@@ -353,12 +363,12 @@ const reachabilityHint = computed(() => {
       </template>
 
       <DataTable
+        :dense="dense"
         :columns="eventColumns"
         :rows="eventRows"
         row-key="id"
         :loading="events.loading.value"
         :error="events.error.value ? describeError(events.error.value).detail : ''"
-        dense
         empty-title="Nothing logged"
         empty-message="No invite code has failed, no rate limit has been hit and no role has changed in this window. That is the normal state."
       >
@@ -410,12 +420,12 @@ const reachabilityHint = computed(() => {
           fill
         >
           <DataTable
+            :dense="dense"
             :columns="limitColumns"
             :rows="limitRows"
             row-key="id"
             :loading="limits.loading.value"
             :error="limits.error.value ? describeError(limits.error.value).detail : ''"
-            dense
             empty-title="No counters"
             empty-message="Nothing has been throttled recently, or the counters have aged out."
           >
@@ -516,16 +526,6 @@ const reachabilityHint = computed(() => {
   border-top: none;
 }
 
-.probes__config dt,
-.conn dt {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
-  margin-bottom: 2px;
-}
-
 .probes__config dd,
 .conn dd {
   margin: 0;
@@ -547,11 +547,6 @@ const reachabilityHint = computed(() => {
 
 .sub {
   margin: var(--space-4) 0 var(--space-2);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
   padding-top: var(--space-3);
   border-top: var(--border-width-thin) solid var(--border-light);
 }

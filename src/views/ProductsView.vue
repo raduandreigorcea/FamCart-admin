@@ -27,6 +27,7 @@ import {
 import type { CatalogProductRow, LocalProductRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
+import { useDensity, type Density } from '../lib/useDensity'
 
 // Products, and the split that makes them confusing.
 //
@@ -36,6 +37,8 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 // households contributed and what has been promoted out of those. The same
 // product can be in both, and that is the thing an operator opens this page to
 // find out.
+
+const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const router = useRouter()
 
@@ -140,6 +143,10 @@ const total = computed(() =>
   scope.value === 'catalog' ? (catalog.data.value?.total ?? 0) : (local.data.value?.total ?? 0),
 )
 
+// Also true after a failed request, which is the case this page actually shows:
+// the catalog tab reported "0 products" beneath "Could not load this table".
+const countUnknown = computed(() => active.value.data.value === null)
+
 const active = computed(() => (scope.value === 'catalog' ? catalog : local))
 const error = computed(() => {
   const err = active.value.error.value
@@ -178,7 +185,16 @@ function quality(row: CatalogProductRow) {
       :fetched-at="active.fetchedAt.value"
       :busy="active.fetching.value"
       @refresh="refresh"
-    />
+    >
+      <template #tools>
+        <SegmentedControl
+          :model-value="density"
+          :segments="densitySegments"
+          label="Rows"
+          @update:model-value="setDensity($event as Density)"
+        />
+      </template>
+    </PageHeader>
 
     <!-- Only the catalog tab's filter counts come from the aggregate; the app
          database table is paged server-side and is unaffected. -->
@@ -223,7 +239,7 @@ function quality(row: CatalogProductRow) {
                 { value: 'with', label: 'Scannable' },
                 { value: 'without', label: 'No barcode' },
               ]"
-              aria-label="Barcode presence"
+              label="Barcode"
               @update:model-value="barcode = $event as 'any' | 'with' | 'without'"
             />
           </template>
@@ -236,13 +252,16 @@ function quality(row: CatalogProductRow) {
                 { value: 'community', label: 'Household-scoped' },
                 { value: 'promoted', label: 'Promoted' },
               ]"
-              aria-label="Row scope"
+              label="Scope"
               @update:model-value="localScope = $event as 'all' | 'community' | 'promoted'"
             />
           </template>
 
           <template #end>
-            <span class="toolbar__count u-num">{{ formatCount(total) }} products</span>
+            <!-- Withheld until it is known: see the note in TablePager. -->
+            <span v-if="!countUnknown" class="toolbar__count u-num">
+              {{ formatCount(total) }} products
+            </span>
           </template>
         </FilterBar>
       </div>
@@ -255,6 +274,7 @@ function quality(row: CatalogProductRow) {
       />
 
       <DataTable
+        :dense="dense"
         v-else-if="scope === 'catalog'"
         :columns="catalogColumns"
         :rows="catalogRows"
@@ -303,6 +323,7 @@ function quality(row: CatalogProductRow) {
       </DataTable>
 
       <DataTable
+        :dense="dense"
         v-else
         :columns="localColumns"
         :rows="localRows"
@@ -397,7 +418,7 @@ function quality(row: CatalogProductRow) {
   font-size: var(--text-2xs);
   background: var(--bg-hover);
   border-radius: var(--radius-xs);
-  padding: 1px 4px;
+  padding: 1px var(--space-1);
   color: var(--text-secondary);
 }
 

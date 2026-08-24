@@ -38,6 +38,18 @@
   --admin-zebra: rgba(15, 23, 42, 0.016);
   --admin-selected: var(--color-primary-bg);
 
+  /* ── the caption ─────────────────────────────────────────────────────────
+   * The small uppercase label that names a value: a dt in a facts list, the
+   * heading over a command-palette group, the label on a form field.
+   *
+   * These are tokens because the style was written out TWELVE times, in nine
+   * files, always as the same five declarations -- and the gap under it had
+   * drifted to 2px in some and 3px in others, which is not a decision anybody
+   * made. Tracking is a token as well because the table header wanted the same
+   * role and had reached 0.05em independently. */
+  --tracking-caption: 0.06em;
+  --caption-gap: 2px;
+
   /* ── chart series ────────────────────────────────────────────────────────
    * Four categorical hues, in fixed order, assigned to an entity and never
    * recycled by rank: series 1 is always the same measure whatever the filter
@@ -142,6 +154,21 @@ body {
   /* The dashboard scrolls inside its content pane, not as a page, so the shell
    * stays put while a 200-row table moves. */
   overflow: hidden;
+}
+
+/* The caption style itself. `.u-caption` for a standalone label; `.u-facts` on
+ * a <dl> so a list of facts does not need the class repeated on every <dt>. */
+.u-caption,
+.u-facts dt {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caption);
+  color: var(--text-disabled);
+}
+
+.u-facts dt {
+  margin-bottom: var(--caption-gap);
 }
 
 /* Numbers in a column must line up or they cannot be compared, and Plus Jakarta

@@ -93,7 +93,7 @@ function apply(project: AppProject) {
     <template v-if="open">
       <div class="switcher__scrim" @click="open = false"></div>
       <div class="menu" role="menu">
-        <p class="menu__heading">App database</p>
+        <p class="menu__heading u-caption">App database</p>
 
         <button
           v-for="option in targets"
@@ -209,7 +209,7 @@ function apply(project: AppProject) {
 
 .badge__flag {
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caption);
   font-weight: var(--weight-bold);
   color: var(--danger-text);
 }
@@ -244,11 +244,6 @@ function apply(project: AppProject) {
 
 .menu__heading {
   margin: 0 0 var(--space-1) var(--space-2);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
 }
 
 .menu__item {

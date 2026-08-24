@@ -118,7 +118,7 @@ const errorInfo = computed(() => describeError(product.error.value))
       <div class="grid">
         <div class="span-7">
           <PanelCard title="Source record" note="Provenance, exactly as the importer wrote it." fill>
-            <dl class="facts">
+            <dl class="facts u-facts">
               <div>
                 <dt>Source catalog</dt>
                 <dd>{{ product.data.value.source }}</dd>
@@ -287,15 +287,6 @@ const errorInfo = computed(() => describeError(product.error.value))
   grid-column: 1 / -1;
 }
 
-.facts dt {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
-  margin-bottom: 3px;
-}
-
 .facts dd {
   margin: 0;
   font-size: var(--text-sm);
@@ -314,7 +305,7 @@ const errorInfo = computed(() => describeError(product.error.value))
 
 .markets {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--space-1);
   flex-wrap: wrap;
 }
 

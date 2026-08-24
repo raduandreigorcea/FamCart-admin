@@ -206,7 +206,7 @@ function choose(hit?: Hit) {
         </p>
 
         <div v-for="group in grouped" :key="group.group" class="palette__group">
-          <h3 class="palette__group-title">{{ group.group }}</h3>
+          <h3 class="palette__group-title u-caption">{{ group.group }}</h3>
           <button
             v-for="hit in group.rows"
             :key="hit.id"
@@ -271,6 +271,18 @@ function choose(hit?: Hit) {
   border-bottom: var(--border-width-thin) solid var(--border-light);
 }
 
+/* The input below sets `outline: none`, and until now put nothing back -- the
+   one control in the tool with its focus indicator removed and not replaced.
+   It is focused automatically on open, which is why it went unnoticed: Tab away
+   to a result and back and there was no way to tell where you were.
+
+   Same shape as FilterBar's: the ring belongs on the field, not on the bare
+   input, because the input has no border of its own to draw it around. */
+.palette__field:focus-within {
+  border-bottom-color: var(--color-primary);
+  box-shadow: inset 0 -1px 0 var(--color-primary);
+}
+
 .palette__icon {
   color: var(--text-disabled);
   font-size: var(--text-lg);
@@ -280,6 +292,7 @@ function choose(hit?: Hit) {
   flex: 1;
   border: none;
   background: none;
+  /* Replaced by the :focus-within treatment on .palette__field above. */
   outline: none;
   font-size: var(--text-md);
   color: var(--text-primary);
@@ -312,12 +325,7 @@ function choose(hit?: Hit) {
 }
 
 .palette__group-title {
-  margin: 0 0 2px var(--space-2);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
+  margin: 0 0 var(--caption-gap) var(--space-2);
 }
 
 .palette__hit {
@@ -365,7 +373,7 @@ function choose(hit?: Hit) {
   font-family: var(--font-mono);
   border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-xs);
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   margin-right: 3px;
   background: var(--bg-surface);
 }

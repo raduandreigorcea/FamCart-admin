@@ -238,7 +238,7 @@ const tooltip = computed(() => {
         :style="{ left: `${tooltip.left}%` }"
         role="status"
       >
-        <div class="chart__tooltip-label">{{ tooltip.label }}</div>
+        <div class="chart__tooltip-label u-caption">{{ tooltip.label }}</div>
         <div v-for="row in tooltip.rows" :key="row.key" class="chart__tooltip-row">
           <span class="chart__swatch" :style="{ background: row.color }" aria-hidden="true"></span>
           <span class="chart__tooltip-name">{{ row.label }}</span>
@@ -352,11 +352,6 @@ const tooltip = computed(() => {
 }
 
 .chart__tooltip-label {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-disabled);
   margin-bottom: var(--space-1);
 }
 

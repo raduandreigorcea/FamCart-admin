@@ -12,6 +12,7 @@ import LineChart from '../components/LineChart.vue'
 import SideDrawer from '../components/SideDrawer.vue'
 import CopyValue from '../components/CopyValue.vue'
 import TruncationNotice from '../components/TruncationNotice.vue'
+import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import {
   fetchPipeline,
@@ -23,6 +24,7 @@ import {
 import { catalogConfigured, refreshCatalogShape } from '../lib/data/products'
 import type { Column, Series } from '../lib/uiTypes'
 import { formatCount, formatDate, formatDateTime, formatRelative, formatShare } from '../lib/format'
+import { useDensity, type Density } from '../lib/useDensity'
 
 // The Product Pipeline.
 //
@@ -33,6 +35,8 @@ import { formatCount, formatDate, formatDateTime, formatRelative, formatShare } 
 // rejected, deduped, errored -- left no row and is therefore not here.
 //
 // See src/lib/data/pipeline.ts for the full account of why.
+
+const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const configured = catalogConfigured()
 
@@ -133,7 +137,16 @@ function statusLabel(status: string, ageDays: number | null): string {
       :fetched-at="pipeline.fetchedAt.value"
       :busy="pipeline.fetching.value"
       @refresh="refresh"
-    />
+    >
+      <template #tools>
+        <SegmentedControl
+          :model-value="density"
+          :segments="densitySegments"
+          label="Rows"
+          @update:model-value="setDensity($event as Density)"
+        />
+      </template>
+    </PageHeader>
 
     <TruncationNotice :truncated="snapshot?.truncated ?? false" subject="This ingestion history" />
 
@@ -262,7 +275,7 @@ function statusLabel(status: string, ageDays: number | null): string {
               would-require="A service that holds the service-role key and the disk to work on. That is backend infrastructure this tool was scoped not to build."
             />
             <div class="runbook">
-              <p class="runbook__label">Run it here instead</p>
+              <p class="runbook__label u-caption">Run it here instead</p>
               <pre class="runbook__code"><code>{{ trigger.runInstead.join('\n') }}</code></pre>
             </div>
           </PanelCard>
@@ -275,6 +288,7 @@ function statusLabel(status: string, ageDays: number | null): string {
         flush
       >
         <DataTable
+          :dense="dense"
           :columns="runColumns"
           :rows="runRows"
           row-key="id"
@@ -332,7 +346,7 @@ function statusLabel(status: string, ageDays: number | null): string {
         @close="openRun = null"
       >
         <template v-if="openRun">
-          <dl class="drawer-facts">
+          <dl class="drawer-facts u-facts">
             <div>
               <dt>Rows created</dt>
               <dd class="u-num">{{ formatCount(openRun.rowsCreated) }}</dd>
@@ -448,11 +462,6 @@ function statusLabel(status: string, ageDays: number | null): string {
 
 .runbook__label {
   margin: 0 0 var(--space-2);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
 }
 
 .runbook__code {
@@ -473,14 +482,6 @@ function statusLabel(status: string, ageDays: number | null): string {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--space-3);
-}
-
-.drawer-facts dt {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
 }
 
 .drawer-facts dd {

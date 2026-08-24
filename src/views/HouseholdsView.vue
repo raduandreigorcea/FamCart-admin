@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
@@ -11,14 +11,15 @@ import CopyValue from '../components/CopyValue.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { useTableState } from '../lib/useTableState'
+import { useDensity, type Density } from '../lib/useDensity'
 import { fetchHouseholds, isHouseholdSort } from '../lib/data/households'
 import type { AdminHouseholdRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
-const router = useRouter()
+const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
-const density = ref('comfortable')
+const router = useRouter()
 
 const { query, sort, dir, offset, limit, params, onSort } = useTableState({
   isSort: isHouseholdSort,
@@ -43,6 +44,7 @@ const columns: Column<AdminHouseholdRow>[] = [
 
 const rows = computed(() => households.data.value?.rows ?? [])
 const total = computed(() => households.data.value?.total ?? 0)
+const countUnknown = computed(() => households.data.value === null)
 const error = computed(() =>
   households.error.value ? describeError(households.error.value).detail : '',
 )
@@ -66,20 +68,18 @@ function activityTone(lastActive: string): 'good' | 'idle' {
       :fetched-at="households.fetchedAt.value"
       :busy="households.fetching.value"
       @refresh="households.refetch"
-    />
-
-    <PanelCard flush>
-      <template #actions>
+    >
+      <template #tools>
         <SegmentedControl
-          v-model="density"
-          :segments="[
-            { value: 'comfortable', label: 'Comfortable' },
-            { value: 'compact', label: 'Compact' },
-          ]"
-          aria-label="Row density"
+          :model-value="density"
+          :segments="densitySegments"
+          label="Rows"
+          @update:model-value="setDensity($event as Density)"
         />
       </template>
+    </PageHeader>
 
+    <PanelCard flush>
       <div class="toolbar">
         <FilterBar
           v-model="query"
@@ -87,7 +87,10 @@ function activityTone(lastActive: string): 'good' | 'idle' {
           :busy="households.fetching.value"
         >
           <template #end>
-            <span class="toolbar__count u-num">{{ formatCount(total) }} households</span>
+            <!-- Withheld until it is known: see the note in TablePager. -->
+            <span v-if="!countUnknown" class="toolbar__count u-num">
+              {{ formatCount(total) }} households
+            </span>
           </template>
         </FilterBar>
       </div>
@@ -100,7 +103,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         :dir="dir"
         :loading="households.loading.value"
         :error="error"
-        :dense="density === 'compact'"
+        :dense="dense"
         clickable
         empty-title="No households match"
         empty-message="Clear the search, or check which database the topbar says you are reading."
