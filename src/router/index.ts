@@ -77,6 +77,12 @@ const routes: RouteRecordRaw[] = [
     meta: { crumb: 'Access' },
   },
   {
+    path: '/trash',
+    name: 'trash',
+    component: () => import('../views/TrashView.vue'),
+    meta: { crumb: 'Trash' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('../views/NotFoundView.vue'),

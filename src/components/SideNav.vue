@@ -53,6 +53,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/health', label: 'Health', icon: 'activity', title: 'Reachability, database condition and the audit trail' },
       { to: '/access', label: 'Access', icon: 'key-round', title: 'Who can use this dashboard' },
+      { to: '/trash', label: 'Trash', icon: 'trash-2', title: 'Deleted households, and how to put them back' },
     ],
   },
 ]
