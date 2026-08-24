@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import DataTable from '../components/DataTable.vue'
@@ -24,6 +24,12 @@ import {
   refreshCatalogShape,
   isCatalogSort,
 } from '../lib/data/products'
+import {
+  OUTCOME_STAGES,
+  fetchOutcomes,
+  type OutcomeRow,
+  type OutcomeStage,
+} from '../lib/data/outcomes'
 import type { CatalogProductRow, LocalProductRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
@@ -62,8 +68,16 @@ import { useDensity, type Density } from '../lib/useDensity'
 const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const router = useRouter()
+const route = useRoute()
 
-const scope = ref<'catalog' | 'local'>('catalog')
+const scope = ref<'catalog' | 'local' | 'outcomes'>('catalog')
+
+// The Pipeline run drawer links straight into this scope. Read once on setup
+// rather than watched: this is an entry point, not a filter that changes under
+// you while you are using the page.
+const outcomeRun = ref<string | null>((route.query.run as string) ?? null)
+const outcomeStage = ref<OutcomeStage | null>(null)
+if (route.query.scope === 'outcomes') scope.value = 'outcomes'
 const source = ref<string | null>(null)
 const market = ref<string | null>(null)
 const barcode = ref<'any' | 'with' | 'without'>('any')
@@ -77,7 +91,7 @@ const configured = catalogConfigured()
 const { query, sort, dir, offset, limit, params, onSort } = useTableState({
   isSort: isCatalogSort,
   sort: 'popularity',
-  filters: [scope, source, market, barcode, localScope],
+  filters: [scope, source, market, barcode, localScope, outcomeRun, outcomeStage],
 })
 
 // The catalog's shape, fetched once and cached, for the market and version
@@ -108,8 +122,24 @@ const local = useQuery(
   { watch: [params, localScope], enabled: () => scope.value === 'local' },
 )
 
+// The records the importer decided not to write. A third database read on a
+// page that already talks to two, and the only one that can be empty for a
+// reason worth saying out loud: retention prunes the records of older runs.
+const outcomes = useQuery(
+  (signal) =>
+    fetchOutcomes(
+      { runId: outcomeRun.value, stage: outcomeStage.value, reason: null },
+      { query: params.value.query, limit, offset: params.value.offset },
+      signal,
+    ),
+  {
+    watch: [params, outcomeRun, outcomeStage],
+    enabled: () => configured && scope.value === 'outcomes',
+  },
+)
+
 function onScope(value: string) {
-  scope.value = value as 'catalog' | 'local'
+  scope.value = value as 'catalog' | 'local' | 'outcomes'
   // The two tabs search two different tables; carrying a catalog query over to
   // the app database's rows usually means an empty table and a puzzle.
   query.value = ''
@@ -153,22 +183,56 @@ const localColumns: Column<LocalProductRow>[] = [
   { key: 'created_at', label: 'Added', width: '10%', hideBelow: 1100 },
 ]
 
+// Built from OUTCOME_STAGES rather than written out, so a stage added to the
+// check constraint in 004_import_runs.sql shows up here as an unlabelled
+// segment instead of silently having no filter at all.
+const STAGE_TITLES: Record<OutcomeStage, string> = {
+  rejected: 'Thrown out before scoring — almost always for having no usable name',
+  dropped: 'Scored, and the gate said no',
+  review: 'In the middle band, waiting on a human verdict',
+}
+
+const STAGE_LABELS: Record<OutcomeStage, string> = {
+  rejected: 'Rejected',
+  dropped: 'Dropped',
+  review: 'In review',
+}
+
+const stageSegments = [
+  { value: 'all', label: 'All', title: 'Everything this run did not write' },
+  ...OUTCOME_STAGES.map((stage) => ({
+    value: stage,
+    label: STAGE_LABELS[stage] ?? stage,
+    title: STAGE_TITLES[stage] ?? '',
+  })),
+]
+
+const outcomeColumns: Column<OutcomeRow>[] = [
+  { key: 'name', label: 'Product', width: '32%' },
+  { key: 'maker', label: 'Brand', width: '15%', hideBelow: 1100 },
+  { key: 'stage', label: 'Stage', width: '11%' },
+  { key: 'reason', label: 'Why', width: '21%' },
+  { key: 'score', label: 'Score', numeric: true, width: '8%', title: 'The importer’s own scorer, 0-100' },
+  { key: 'barcode', label: 'Barcode / GTIN', width: '13%', hideBelow: 1400 },
+]
+
 // One per tab rather than a union, because the two tabs are two different
 // tables in two different databases -- the page's whole point -- and a single
 // `rows` typed as the union of both would let a catalog column be rendered
 // against a local row without complaint.
 const catalogRows = computed(() => catalog.data.value?.rows ?? [])
 const localRows = computed(() => local.data.value?.rows ?? [])
+const outcomeRows = computed(() => outcomes.data.value?.rows ?? [])
 
-const total = computed(() =>
-  scope.value === 'catalog' ? (catalog.data.value?.total ?? 0) : (local.data.value?.total ?? 0),
-)
+const total = computed(() => active.value.data.value?.total ?? 0)
 
 // Also true after a failed request, which is the case this page actually shows:
 // the catalog tab reported "0 products" beneath "Could not load this table".
 const countUnknown = computed(() => active.value.data.value === null)
 
-const active = computed(() => (scope.value === 'catalog' ? catalog : local))
+const active = computed(() =>
+  scope.value === 'catalog' ? catalog : scope.value === 'local' ? local : outcomes,
+)
 const error = computed(() => {
   const err = active.value.error.value
   return err ? describeError(err).detail : ''
@@ -202,7 +266,7 @@ function quality(row: CatalogProductRow) {
   <div class="page">
     <PageHeader
       title="Products"
-      description="Two tables in two databases. The catalog project holds imported and curated rows that belong to nobody; the app database holds what households contributed, plus the global rows those contributions were promoted into. Promotion deletes the scoped rows it collapses, so inside the app database a product is one or the other — but it never touches the catalog project, so the same product can sit in both."
+      description="Two tables in two databases. The catalog project holds imported and curated rows that belong to nobody; the app database holds what households contributed, plus the global rows those contributions were promoted into. Promotion deletes the scoped rows it collapses, so inside the app database a product is one or the other — but it never touches the catalog project, so the same product can sit in both. A third scope shows what the importer decided NOT to write — rejected before scoring, dropped by the gate, or still in the review band — for the runs retention still holds."
       :fetched-at="active.fetchedAt.value"
       :busy="active.fetching.value"
       @refresh="refresh"
@@ -232,6 +296,7 @@ function quality(row: CatalogProductRow) {
           :segments="[
             { value: 'catalog', label: 'Catalog project', title: 'Imported and curated reference rows' },
             { value: 'local', label: 'App database', title: 'Household-contributed and promoted rows' },
+            { value: 'outcomes', label: 'Didn’t land', title: 'Records the importer rejected, dropped, or left in the review band' },
           ]"
           aria-label="Which table"
           @update:model-value="onScope"
@@ -246,7 +311,9 @@ function quality(row: CatalogProductRow) {
           :placeholder="
             scope === 'catalog'
               ? 'Search name, brand and aliases, or paste a barcode'
-              : 'Search name, brand or barcode'
+              : scope === 'outcomes'
+                ? 'Search a name to find out why it is not in the catalog'
+                : 'Search name, brand or barcode'
           "
           :busy="active.fetching.value"
         >
@@ -265,7 +332,7 @@ function quality(row: CatalogProductRow) {
             />
           </template>
 
-          <template v-else>
+          <template v-else-if="scope === 'local'">
             <SegmentedControl
               :model-value="localScope"
               :segments="[
@@ -286,17 +353,26 @@ function quality(row: CatalogProductRow) {
             />
           </template>
 
+          <template v-else>
+            <SegmentedControl
+              :model-value="outcomeStage ?? 'all'"
+              :segments="stageSegments"
+              label="Stage"
+              @update:model-value="outcomeStage = $event === 'all' ? null : ($event as OutcomeStage)"
+            />
+          </template>
+
           <template #end>
             <!-- Withheld until it is known: see the note in TablePager. -->
             <span v-if="!countUnknown" class="toolbar__count u-num">
-              {{ formatCount(total) }} products
+              {{ formatCount(total) }} {{ scope === 'outcomes' ? 'records' : 'products' }}
             </span>
           </template>
         </FilterBar>
       </div>
 
       <StateBlock
-        v-if="scope === 'catalog' && !configured"
+        v-if="scope !== 'local' && !configured"
         state="empty"
         title="The catalog project is not configured"
         message="Set VITE_CATALOG_SUPABASE_URL and VITE_CATALOG_SUPABASE_ANON_KEY to read it. Everything else in this dashboard works without them."
@@ -353,7 +429,7 @@ function quality(row: CatalogProductRow) {
 
       <DataTable
         :dense="dense"
-        v-else
+        v-else-if="scope === 'local'"
         :columns="localColumns"
         :rows="localRows"
         row-key="id"
@@ -404,6 +480,56 @@ function quality(row: CatalogProductRow) {
           <span :title="formatDateTime(String(row.created_at))">
             {{ formatRelative(String(row.created_at)) }}
           </span>
+        </template>
+      </DataTable>
+
+      <DataTable
+        :dense="dense"
+        v-else
+        :columns="outcomeColumns"
+        :rows="outcomeRows"
+        row-key="id"
+        :loading="outcomes.loading.value"
+        :error="error"
+        empty-title="Nothing recorded"
+        empty-message="No run has published its discarded records yet, or retention has pruned this run's. The Pipeline page says which."
+      >
+        <template #cell-name="{ row }">
+          <span v-if="row.name" class="u-truncate product__name">{{ row.name }}</span>
+          <!-- 12,554 of the last run's 12,859 rejects were rejected FOR having
+               no name. An em dash is the honest cell; "Unknown" would imply we
+               looked it up and failed. -->
+          <span v-else class="u-muted">— no name</span>
+        </template>
+        <template #cell-maker="{ row }">
+          <span class="u-truncate">{{ row.maker || '--' }}</span>
+        </template>
+        <template #cell-stage="{ row }">
+          <StatusPill
+            :tone="row.stage === 'review' ? 'warn' : 'idle'"
+            :label="String(row.stage)"
+            :dot="false"
+            :title="
+              row.stage === 'review'
+                ? 'Scored into the middle band, waiting on a human verdict'
+                : row.stage === 'dropped'
+                  ? 'Scored, and the gate said no'
+                  : 'Thrown out before it ever reached the scorer'
+            "
+          />
+        </template>
+        <template #cell-reason="{ row }">
+          <span class="u-mono u-truncate">{{ row.reason }}</span>
+        </template>
+        <template #cell-score="{ row }">
+          <span v-if="row.score !== null" class="u-num">{{ row.score }}</span>
+          <!-- A pre-scoring reject was never scored. A zero would read as "we
+               scored it and it was terrible", which is a different fact. -->
+          <span v-else class="u-muted">--</span>
+        </template>
+        <template #cell-barcode="{ row }">
+          <CopyValue v-if="row.barcode" :value="String(row.barcode)" label="barcode" />
+          <span v-else class="u-muted">--</span>
         </template>
       </DataTable>
 
