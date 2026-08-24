@@ -34,7 +34,11 @@ const CommandPalette = (await import('../src/components/CommandPalette.vue')).de
 function mountPalette() {
   return mount(CommandPalette, {
     props: { open: true },
-    global: { stubs: { AppIcon: true } },
+    // The palette teleports to <body> so its fixed positioning resolves against
+    // the viewport. Stubbing the teleport keeps its markup inside the wrapper,
+    // which is where these tests reach for the input; where it lands on screen
+    // is not what they are about.
+    global: { stubs: { AppIcon: true, teleport: true } },
   })
 }
 

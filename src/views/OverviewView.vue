@@ -10,7 +10,7 @@ import BarChart from '../components/BarChart.vue'
 import StateBlock from '../components/StateBlock.vue'
 import StatusPill from '../components/StatusPill.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
-import { useQuery, describeError } from '../lib/useQuery'
+import { useQuery, useQueryGroup, describeError } from '../lib/useQuery'
 import {
   deltaOf,
   fetchActivitySeries,
@@ -38,17 +38,9 @@ const series = useQuery((signal) => fetchActivitySeries(range.value, signal), { 
 const activity = useQuery((signal) => fetchRecentActivity(25, signal))
 const probes = useQuery((signal) => probeProjects(signal))
 
-const busy = computed(
-  () => overview.fetching.value || series.fetching.value || activity.fetching.value,
-)
-
-function refreshAll() {
-  void overview.refetch()
-  void cumulative.refetch()
-  void series.refetch()
-  void activity.refetch()
-  void probes.refetch()
-}
+// All five. `busy` used to watch three of them, so the spinner stopped while
+// the delta and the probes were still in flight.
+const page = useQueryGroup([overview, cumulative, series, activity, probes])
 
 const rangeSegments = TIME_RANGES.map((r) => ({
   value: r.key,
@@ -142,9 +134,9 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
     <PageHeader
       title="Overview"
       description="Totals as they stand now, and what moved inside the chosen window. Every number is read live from the app database."
-      :fetched-at="overview.fetchedAt.value"
-      :busy="busy"
-      @refresh="refreshAll"
+      :fetched-at="page.fetchedAt.value"
+      :busy="page.busy.value"
+      @refresh="page.refresh"
     >
       <template #tools>
         <SegmentedControl v-model="rangeKey" :segments="rangeSegments" aria-label="Time range" />

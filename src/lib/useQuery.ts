@@ -1,4 +1,4 @@
-import { ref, shallowRef, watch, onScopeDispose, type Ref, type WatchSource } from 'vue'
+import { computed, ref, shallowRef, watch, onScopeDispose, type Ref, type WatchSource } from 'vue'
 
 // One async-state primitive for the whole dashboard.
 //
@@ -162,4 +162,45 @@ export function describeError(error: Error | null): { title: string; detail: str
     detail: [error.message, raw.details, raw.hint].filter(Boolean).join(' · '),
     forbidden: false,
   }
+}
+
+/**
+ * Several queries treated as one panel's worth of state.
+ *
+ * Overview runs five and Health runs five, and each of them hand-wrote a
+ * `busy` from a SUBSET of its own: Overview watched three of five, Health two
+ * of five. So the Refresh spinner stopped while three requests were still in
+ * flight, which reads as "done" and is the one thing a refresh indicator must
+ * never say early.
+ *
+ * `fetchedAt` is the OLDEST of the successful timestamps rather than the
+ * newest, and that is the whole reason this is a function and not a `.some()`
+ * at each call site. A header that says "as of 10:04" above a panel that last
+ * loaded at 09:12 is a dashboard vouching for a number it has not re-read. The
+ * page is exactly as fresh as its stalest panel, so that is the figure it
+ * reports.
+ *
+ * A query that has never loaded contributes nothing here -- it is rendering its
+ * own loading or error state a few pixels below, which says more than an absent
+ * timestamp in the header would.
+ */
+export function useQueryGroup(queries: QueryResult<unknown>[]): {
+  busy: Ref<boolean>
+  fetchedAt: Ref<number | null>
+  refresh: () => void
+} {
+  const busy = computed(() => queries.some((query) => query.fetching.value))
+
+  const fetchedAt = computed(() => {
+    const stamps = queries
+      .map((query) => query.fetchedAt.value)
+      .filter((stamp): stamp is number => stamp !== null)
+    return stamps.length ? Math.min(...stamps) : null
+  })
+
+  function refresh() {
+    for (const query of queries) void query.refetch()
+  }
+
+  return { busy, fetchedAt, refresh }
 }

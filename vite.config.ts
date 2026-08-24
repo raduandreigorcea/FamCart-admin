@@ -24,6 +24,31 @@ export default defineConfig({
     // connection, so the default warning limit only produces noise. Charts and
     // views are lazy-loaded anyway (see src/router).
     chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        // Vendor chunks named after what is IN them.
+        //
+        // Rollup names a shared chunk after whichever module happened to be its
+        // entry point, which produced a build listing where the 239 kB chunk was
+        // called StateBlock (a component of about eighty lines that happens to
+        // import the Supabase client) and the 59 kB one was called
+        // _plugin-vue_export-helper. Nothing about that listing told you that
+        // half the bundle is one database client, which is the single most
+        // useful fact in it.
+        //
+        // This is naming, not shrinking. The same bytes ship either way -- every
+        // view needs the Supabase client, so it was never going to be deferred
+        // -- but "supabase 239 kB" is a number somebody can act on and
+        // "StateBlock 239 kB" is a number that looks like a mistake in a
+        // component.
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('@supabase')) return 'supabase'
+          if (id.includes('@clerk')) return 'clerk'
+          return undefined
+        },
+      },
+    },
   },
   test: {
     // happy-dom rather than jsdom: @vue/test-utils needs a DOM to mount into,

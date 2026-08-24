@@ -10,7 +10,7 @@ import TablePager from '../components/TablePager.vue'
 import SelectField from '../components/SelectField.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import CopyValue from '../components/CopyValue.vue'
-import { useQuery, describeError } from '../lib/useQuery'
+import { useQuery, useQueryGroup, describeError } from '../lib/useQuery'
 import {
   failedJobs,
   fetchEventDigest,
@@ -73,13 +73,9 @@ const issuer = clerkIssuer()
 
 const rangeSegments = TIME_RANGES.map((r) => ({ value: r.key, label: r.label, title: r.description }))
 
-function refreshAll() {
-  void probes.refetch()
-  void health.refetch()
-  void digest.refetch()
-  void events.refetch()
-  void limits.refetch()
-}
+// All five, so the spinner runs until the last of them lands and the header
+// reports the stalest panel rather than the freshest. It used to watch two.
+const page = useQueryGroup([probes, health, digest, events, limits])
 
 const kindOptions = computed(() => [
   { value: null, label: 'Every kind' },
@@ -164,9 +160,9 @@ const reachabilityHint = computed(() => {
     <PageHeader
       title="System Health"
       description="Reachability measured from this browser, what the database reports about itself, and the audit trail."
-      :fetched-at="health.fetchedAt.value"
-      :busy="health.fetching.value || probes.fetching.value"
-      @refresh="refreshAll"
+      :fetched-at="page.fetchedAt.value"
+      :busy="page.busy.value"
+      @refresh="page.refresh"
     >
       <template #tools>
         <SegmentedControl v-model="rangeKey" :segments="rangeSegments" aria-label="Time range" />

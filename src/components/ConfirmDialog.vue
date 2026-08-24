@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch, type PropType } from 'vue'
+import { ref, type PropType } from 'vue'
+import { useModal } from '../lib/useModal'
 
 // The confirmation, for the two writes this tool can make.
 //
@@ -22,41 +23,33 @@ const props = defineProps({
 
 const emit = defineEmits<{ (e: 'confirm'): void; (e: 'cancel'): void }>()
 
+const panel = ref<HTMLElement | null>(null)
 const cancelButton = ref<HTMLButtonElement | null>(null)
-let returnFocusTo: HTMLElement | null = null
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && !props.busy) {
-    event.stopPropagation()
-    emit('cancel')
-  }
-}
-
-watch(
-  () => props.open,
-  (open) => {
-    if (open) {
-      returnFocusTo = document.activeElement as HTMLElement | null
-      document.addEventListener('keydown', onKeydown)
-      requestAnimationFrame(() => cancelButton.value?.focus())
-    } else {
-      document.removeEventListener('keydown', onKeydown)
-      returnFocusTo?.focus?.()
-      returnFocusTo = null
-    }
-  },
-)
-
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+useModal({
+  open: () => props.open,
+  close: () => emit('cancel'),
+  panel,
+  initialFocus: () => cancelButton.value,
+  // Escape is refused while the write is in flight, for the same reason the
+  // scrim is: dismissing would not cancel the request, only hide whether it
+  // worked.
+  dismissible: () => !props.busy,
+})
 </script>
 
 <template>
+  <!-- Teleported so the dialog is a child of <body> rather than of whatever
+       panel opened it. A transform, a filter or an overflow:hidden on any
+       ancestor makes `position: fixed` resolve against that ancestor instead of
+       the viewport, and the dialog is then clipped by the card it came from. -->
+  <Teleport to="body">
   <div v-if="open" class="confirm">
     <!-- The scrim does not close while a write is in flight: dismissing the
          dialog would not cancel the request, only hide whether it worked. -->
     <div class="confirm__scrim" @click="busy || emit('cancel')"></div>
 
-    <div class="confirm__panel" role="alertdialog" aria-modal="true" :aria-label="title">
+    <div ref="panel" class="confirm__panel" role="alertdialog" aria-modal="true" :aria-label="title" tabindex="-1">
       <h2 class="confirm__title">{{ title }}</h2>
       <p v-if="message" class="confirm__message">{{ message }}</p>
 
@@ -82,6 +75,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

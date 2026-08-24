@@ -136,6 +136,19 @@ function cellValue(row: T, key: string): unknown {
         </thead>
 
         <tbody v-if="!showSkeleton && !showEmpty && !error">
+          <!-- A clickable row is reachable by Tab and activates on Enter AND on
+               Space. Space is not decoration: it is what every button-like
+               control in a browser answers to, and a row that ignores it does
+               something worse than nothing -- it scrolls the page, moving the
+               row out from under the person who was trying to open it. Hence
+               .prevent.
+
+               Deliberately NOT role="button": that would replace the row's own
+               role, and a table whose rows are not rows stops being navigable
+               as a table at all. The row keeps its semantics and announces its
+               selected state; making the target announce itself as actionable
+               is a job for a link in the primary cell, not for an aria patch
+               over a <tr>. -->
           <tr
             v-for="row in rows"
             :key="String(row[rowKey])"
@@ -144,8 +157,10 @@ function cellValue(row: T, key: string): unknown {
               'table__row--selected': selectedKey !== null && row[rowKey] === selectedKey,
             }"
             :tabindex="clickable ? 0 : undefined"
+            :aria-selected="selectedKey !== null ? row[rowKey] === selectedKey : undefined"
             @click="clickable && emit('select', row)"
             @keydown.enter="clickable && emit('select', row)"
+            @keydown.space.prevent="clickable && emit('select', row)"
           >
             <td
               v-for="column in columns"

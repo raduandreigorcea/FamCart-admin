@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { ref } from 'vue'
 import AppIcon from './AppIcon.vue'
+import { useModal } from '../lib/useModal'
 
 // A right-hand drawer for detail that belongs beside a table rather than instead
 // of it: the row you clicked stays visible and in context.
@@ -10,9 +11,10 @@ import AppIcon from './AppIcon.vue'
 // always offers "Open full page" rather than trying to be one.
 //
 // Focus handling follows the rules FamCart's AppModal established: focus moves
-// in on open, Escape closes, and focus returns to whatever opened it. Written
-// out rather than vendored because AppModal is built around a teleport, a shared
-// layer stack and Android's back button, none of which exist here.
+// in on open, Escape closes, focus returns to whatever opened it, and Tab stays
+// inside. useModal owns all four -- three components here had the first three
+// each and none had the fourth, which made `aria-modal` a claim none of them
+// could keep.
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -24,35 +26,14 @@ const props = defineProps({
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const panel = ref<HTMLElement | null>(null)
-let returnFocusTo: HTMLElement | null = null
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    event.stopPropagation()
-    emit('close')
-  }
-}
-
-watch(
-  () => props.open,
-  async (open) => {
-    if (open) {
-      returnFocusTo = document.activeElement as HTMLElement | null
-      document.addEventListener('keydown', onKeydown)
-      // Wait a frame so the panel exists before it is focused.
-      requestAnimationFrame(() => panel.value?.focus())
-    } else {
-      document.removeEventListener('keydown', onKeydown)
-      returnFocusTo?.focus?.()
-      returnFocusTo = null
-    }
-  },
-)
-
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+useModal({ open: () => props.open, close: () => emit('close'), panel })
 </script>
 
 <template>
+  <!-- See ConfirmDialog: teleported so `position: fixed` resolves against the
+       viewport rather than against whichever card opened it. -->
+  <Teleport to="body">
   <div v-if="open" class="drawer">
     <div class="drawer__scrim" @click="emit('close')"></div>
 
@@ -88,6 +69,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
       </footer>
     </aside>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

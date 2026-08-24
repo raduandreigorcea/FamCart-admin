@@ -67,8 +67,18 @@ function onSystemChange() {
   if (mode.value === 'system') applyResolvedTheme('system')
 }
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-const searchHint = computed(() => (isMac ? '⌘K' : 'Ctrl K'))
+// Which modifier to name in the search hint. `navigator.platform` is deprecated
+// and still the only thing Safari and Firefox implement, so it stays as the
+// fallback behind userAgentData rather than being replaced by it. Getting this
+// wrong costs a wrong keycap in a tooltip, which is why it is not worth a
+// user-agent parser.
+const isApple = (() => {
+  if (typeof navigator === 'undefined') return false
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } }
+  return /mac|iphone|ipad|ipod/i.test(nav.userAgentData?.platform ?? nav.platform ?? '')
+})()
+
+const searchHint = computed(() => (isApple ? '⌘K' : 'Ctrl K'))
 
 onMounted(() => {
   mode.value = loadThemeMode(localStorage)
