@@ -61,7 +61,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
 <template>
   <nav class="nav" :class="{ 'nav--collapsed': collapsed, 'nav--open': open }" aria-label="Sections">
     <div v-for="group in groups" :key="group.heading" class="nav__group">
-      <h2 v-if="!collapsed || open" class="nav__heading">{{ group.heading }}</h2>
+      <h2 v-if="!collapsed || open" class="nav__heading u-caption">{{ group.heading }}</h2>
       <RouterLink
         v-for="item in group.items"
         :key="item.to"
@@ -153,11 +153,6 @@ const groups: { heading: string; items: NavItem[] }[] = [
 
 .nav__heading {
   margin: 0 0 var(--space-1) var(--space-3);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-disabled);
 }
 
 .nav__item {
@@ -225,7 +220,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
 .nav__target-label {
   color: var(--text-disabled);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caption);
   font-weight: var(--weight-bold);
 }
 

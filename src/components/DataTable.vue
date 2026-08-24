@@ -92,6 +92,28 @@ function ariaSort(column: Column<T>): 'ascending' | 'descending' | 'none' {
  * always a `keyof T`. Hence the widening here, once, rather than in every
  * caller.
  */
+/**
+ * The layout classes one column imposes on every cell in it -- header, body and
+ * skeleton alike.
+ *
+ * Written once because it had been written three times and drifted twice: the
+ * header and body agreed, and the skeleton carried NO classes at all, so below
+ * 1400px the header hid three columns while the skeleton kept all nine and the
+ * loading table was wider than its own header. Alignment is a property of the
+ * column, so it is answered in one place and asked for in three.
+ *
+ * `u-num` is deliberately not here. Tabular figures are a property of the
+ * CONTENT, not the column: a header is words and a skeleton is a grey bar, and
+ * neither has digits to line up.
+ */
+function columnClasses(column: Column<T>): string[] {
+  return [
+    column.numeric || column.align === 'right' ? 'is-right' : '',
+    column.align === 'center' ? 'is-center' : '',
+    column.hideBelow ? `hide-below-${column.hideBelow}` : '',
+  ].filter(Boolean)
+}
+
 function cellValue(row: T, key: string): unknown {
   return (row as Record<string, unknown>)[key]
 }
@@ -107,11 +129,7 @@ function cellValue(row: T, key: string): unknown {
               v-for="column in columns"
               :key="column.key"
               :style="column.width ? { width: column.width } : undefined"
-              :class="[
-                column.numeric || column.align === 'right' ? 'is-right' : '',
-                column.align === 'center' ? 'is-center' : '',
-                column.hideBelow ? `hide-below-${column.hideBelow}` : '',
-              ]"
+              :class="columnClasses(column)"
               :aria-sort="ariaSort(column)"
               scope="col"
             >
@@ -165,12 +183,7 @@ function cellValue(row: T, key: string): unknown {
             <td
               v-for="column in columns"
               :key="column.key"
-              :class="[
-                column.numeric || column.align === 'right' ? 'is-right' : '',
-                column.align === 'center' ? 'is-center' : '',
-                column.numeric ? 'u-num' : '',
-                column.hideBelow ? `hide-below-${column.hideBelow}` : '',
-              ]"
+              :class="[columnClasses(column), column.numeric ? 'u-num' : '']"
             >
               <slot :name="`cell-${column.key}`" :row="row" :value="cellValue(row, column.key)">
                 {{ column.cell ? column.cell(row) : (cellValue(row, column.key) ?? '--') }}
@@ -179,9 +192,19 @@ function cellValue(row: T, key: string): unknown {
           </tr>
         </tbody>
 
+        <!-- The skeleton carries the SAME per-column classes as a real row, and
+             `hide-below-*` is the one that matters: without it the header hid
+             three columns below 1400px while the skeleton kept all nine, so the
+             loading table was literally wider and more numerous than the header
+             sitting on top of it. A skeleton whose whole job is to hold the
+             shape of what is coming has to hold the right shape. -->
         <tbody v-else-if="showSkeleton" aria-hidden="true">
           <tr v-for="n in dense ? 10 : 6" :key="`sk-${n}`" class="table__row--skeleton">
-            <td v-for="column in columns" :key="column.key">
+            <td
+              v-for="column in columns"
+              :key="column.key"
+              :class="columnClasses(column)"
+            >
               <span class="table__skel" :style="{ width: `${40 + ((n * 13 + column.key.length * 7) % 45)}%` }"></span>
             </td>
           </tr>
@@ -236,7 +259,7 @@ function cellValue(row: T, key: string): unknown {
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-caption);
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -282,8 +305,26 @@ function cellValue(row: T, key: string): unknown {
   background: var(--admin-selected);
 }
 
-.is-right { text-align: right; }
-.is-center { text-align: center; }
+/* Qualified by the cell, and that is the entire point.
+ *
+ * `.table th` sets text-align: left and scores (0,1,1). A bare `.is-right`
+ * scores (0,1,0) and therefore lost -- on the HEADER only, because no rule
+ * competes for it on a td. So every numeric column in this tool has been
+ * rendering a left-aligned label above a right-aligned column of figures, in
+ * every table, since the component was written.
+ *
+ * It read as intentional rather than broken because `.is-right .table__sort`
+ * below DOES apply: the sort caret dutifully flipped to the left of the label
+ * as if the cell were right-aligned, while the label itself did not move. */
+.table th.is-right,
+.table td.is-right {
+  text-align: right;
+}
+
+.table th.is-center,
+.table td.is-center {
+  text-align: center;
+}
 
 .table__sort {
   display: inline-flex;
@@ -322,8 +363,9 @@ function cellValue(row: T, key: string): unknown {
 }
 
 .table__skel {
-  display: block;
+  display: inline-block;
   height: 10px;
+  vertical-align: middle;
   border-radius: var(--radius-xs);
   background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border-light) 37%, var(--bg-hover) 63%);
   background-size: 400% 100%;

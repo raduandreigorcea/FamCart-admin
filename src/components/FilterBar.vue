@@ -94,8 +94,20 @@ onBeforeUnmount(() => {
   background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-md);
+  /* Grows into the room the toolbar has, rather than sitting at a fixed 320px
+     with the rest of the row empty beside it.
+
+     The fixed width was clipping its own placeholder: Products asks for
+     "Search name, brand and aliases, or paste a barcode", which needs 315px of
+     text in a 276px input and arrived on screen as "...or paste a b". A search
+     box that cannot finish its own sentence is telling the reader the wrong
+     thing about what it will match.
+
+     Capped, because a search field stretched across a 2560px monitor looks
+     like an address bar and puts the caret a long way from the results. */
+  flex: 1 1 320px;
   min-width: 260px;
-  flex: 0 1 320px;
+  max-width: 520px;
   transition: border-color var(--transition-fast) var(--ease-standard);
 }
 

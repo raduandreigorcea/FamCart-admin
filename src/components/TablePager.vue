@@ -23,19 +23,39 @@ const atStart = computed(() => props.offset <= 0)
 const atEnd = computed(() => props.offset + props.limit >= props.total)
 const page = computed(() => Math.floor(props.offset / props.limit) + 1)
 const pages = computed(() => Math.max(1, Math.ceil(props.total / props.limit)))
+
+/** Nothing has come back yet, so there is no count to report -- not a zero. */
+const unknown = computed(() => props.loading && props.total === 0)
 </script>
 
 <template>
   <div class="pager">
+    <!-- "No rows" is a finding, not a default.
+    
+         `total` is 0 before the first response as well as after an empty one,
+         and this said "No rows / Page 1 / 1" in both cases -- so the first load
+         of every table in the tool reported, definitively, that the database
+         held nothing, a second before it filled with rows. That is the same
+         mistake the data layer takes such care to avoid elsewhere: it is why
+         Metric has an Unavailable arm and why CatalogShape carries `truncated`.
+         Not knowing yet and knowing there is nothing are different answers, and
+         only one of them is worth reporting.
+    
+         Only the first load is affected. A refetch keeps the previous `total`,
+         so the real range stays on screen while the next page is fetched. -->
     <p class="pager__count u-num">
-      <template v-if="total === 0">No rows</template>
+      <template v-if="unknown">Counting…</template>
+      <template v-else-if="total === 0">No rows</template>
       <template v-else>
         {{ formatCount(from) }}–{{ formatCount(to) }} of {{ formatCount(total) }}
       </template>
     </p>
 
     <div class="pager__controls">
-      <span class="pager__page u-num">Page {{ page }} / {{ pages }}</span>
+      <span class="pager__page u-num">
+        <template v-if="unknown">Page — / —</template>
+        <template v-else>Page {{ page }} / {{ pages }}</template>
+      </span>
       <button
         type="button"
         class="pager__btn"

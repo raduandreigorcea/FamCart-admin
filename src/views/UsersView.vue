@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
@@ -11,6 +11,7 @@ import CopyValue from '../components/CopyValue.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { useTableState } from '../lib/useTableState'
+import { useDensity, type Density } from '../lib/useDensity'
 import { fetchUsers, isUserSort } from '../lib/data/users'
 import type { AdminUserRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
@@ -22,9 +23,9 @@ import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } f
 // the table only reports the click. Sorting 25 of 300 rows in the browser would
 // look like sorting and be a lie.
 
-const router = useRouter()
+const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
-const density = ref('comfortable')
+const router = useRouter()
 
 // The query, sort, direction and page, and the rules that keep them coherent --
 // including the one that matters most here, that USER_SORTS is checked before a
@@ -50,6 +51,8 @@ const columns: Column<AdminUserRow>[] = [
 
 const rows = computed(() => users.data.value?.rows ?? [])
 const total = computed(() => users.data.value?.total ?? 0)
+/** Nothing has answered yet, so `total` is a placeholder rather than a count. */
+const countUnknown = computed(() => users.data.value === null)
 const error = computed(() => (users.error.value ? describeError(users.error.value).detail : ''))
 
 function open(row: AdminUserRow) {
@@ -73,20 +76,18 @@ function activityTone(lastActive: string): 'good' | 'idle' {
       :fetched-at="users.fetchedAt.value"
       :busy="users.fetching.value"
       @refresh="users.refetch"
-    />
-
-    <PanelCard flush>
-      <template #actions>
+    >
+      <template #tools>
         <SegmentedControl
-          v-model="density"
-          :segments="[
-            { value: 'comfortable', label: 'Comfortable' },
-            { value: 'compact', label: 'Compact' },
-          ]"
-          aria-label="Row density"
+          :model-value="density"
+          :segments="densitySegments"
+          label="Rows"
+          @update:model-value="setDensity($event as Density)"
         />
       </template>
+    </PageHeader>
 
+    <PanelCard flush>
       <div class="toolbar">
         <FilterBar
           v-model="query"
@@ -94,7 +95,10 @@ function activityTone(lastActive: string): 'good' | 'idle' {
           :busy="users.fetching.value"
         >
           <template #end>
-            <span class="toolbar__count u-num">{{ formatCount(total) }} accounts</span>
+            <!-- Withheld until it is known: see the note in TablePager. -->
+            <span v-if="!countUnknown" class="toolbar__count u-num">
+              {{ formatCount(total) }} accounts
+            </span>
           </template>
         </FilterBar>
       </div>
@@ -107,7 +111,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         :dir="dir"
         :loading="users.loading.value"
         :error="error"
-        :dense="density === 'compact'"
+        :dense="dense"
         clickable
         empty-title="No accounts match"
         empty-message="Clear the search, or check that you are pointed at the database you meant."

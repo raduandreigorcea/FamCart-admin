@@ -95,7 +95,7 @@ function share(value: number): string {
 }
 
 .bars--dense {
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .bars__row {

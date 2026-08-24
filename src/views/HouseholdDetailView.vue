@@ -87,7 +87,7 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
       />
 
       <div class="identity">
-        <dl class="identity__facts">
+        <dl class="identity__facts u-facts">
           <div>
             <dt>Owner</dt>
             <dd>
@@ -273,7 +273,7 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
         :subtitle="openCheckout ? formatDateTime(openCheckout.purchased_at) : ''"
         @close="openCheckout = null"
       >
-        <dl v-if="openCheckout" class="drawer-facts">
+        <dl v-if="openCheckout" class="drawer-facts u-facts">
           <div>
             <dt>Bought by</dt>
             <dd>{{ openCheckout.purchased_by_name || shortUserId(openCheckout.purchased_by) }}</dd>
@@ -315,15 +315,6 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: var(--space-3);
-}
-
-.identity__facts dt {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
-  margin-bottom: 2px;
 }
 
 .identity__facts dd {
@@ -457,14 +448,6 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
   margin: 0;
   display: grid;
   gap: var(--space-3);
-}
-
-.drawer-facts dt {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
 }
 
 .drawer-facts dd {

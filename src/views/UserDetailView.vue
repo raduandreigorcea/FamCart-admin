@@ -75,7 +75,7 @@ const errorInfo = computed(() => describeError(detail.error.value))
       <div class="identity">
         <img v-if="profile.image_url" class="identity__avatar" :src="profile.image_url" alt="" />
         <span v-else class="identity__initial" aria-hidden="true">{{ initialOf(profile.display_name) }}</span>
-        <dl class="identity__facts">
+        <dl class="identity__facts u-facts">
           <div>
             <dt>Clerk id</dt>
             <dd><CopyValue :value="profile.user_id" label="Clerk id" /></dd>
@@ -244,15 +244,6 @@ const errorInfo = computed(() => describeError(detail.error.value))
   gap: var(--space-3);
   flex: 1;
   min-width: 0;
-}
-
-.identity__facts dt {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled);
-  margin-bottom: 2px;
 }
 
 .identity__facts dd {
