@@ -1,6 +1,7 @@
 import { getAppSupabase, getCatalogSupabase } from '../supabase'
 import { sinceIso, type TimeRange } from '../timeRange'
 import { unavailable, type AdminEventRow, type Metric, type Page } from './types'
+import { queryError } from './errors'
 
 // System Health.
 //
@@ -161,7 +162,7 @@ export interface HealthPayload {
 
 export async function fetchHealth(signal: AbortSignal): Promise<HealthPayload> {
   const { data, error } = await getAppSupabase().rpc('admin_health').abortSignal(signal)
-  if (error) throw Object.assign(new Error(`admin_health: ${error.message}`), { code: error.code })
+  if (error) queryError('admin_health', error)
   return data as HealthPayload
 }
 
@@ -180,7 +181,7 @@ export async function fetchEventDigest(
   const { data, error } = await getAppSupabase()
     .rpc('admin_event_digest', { p_since: sinceIso(range) })
     .abortSignal(signal)
-  if (error) throw Object.assign(new Error(`admin_event_digest: ${error.message}`), { code: error.code })
+  if (error) queryError('admin_event_digest', error)
   return (data ?? []) as EventDigestRow[]
 }
 
@@ -202,7 +203,7 @@ export async function fetchSecurityEvents(
     .abortSignal(signal)
 
   if (error) {
-    throw Object.assign(new Error(`admin_security_events: ${error.message}`), { code: error.code })
+    queryError('admin_security_events', error)
   }
 
   const rows = (data ?? []) as AdminEventRow[]
@@ -224,7 +225,7 @@ export async function fetchRateLimits(signal: AbortSignal): Promise<RateLimitRow
   const { data, error } = await getAppSupabase()
     .rpc('admin_rate_limits', { p_limit: 100 })
     .abortSignal(signal)
-  if (error) throw Object.assign(new Error(`admin_rate_limits: ${error.message}`), { code: error.code })
+  if (error) queryError('admin_rate_limits', error)
   return (data ?? []) as RateLimitRow[]
 }
 

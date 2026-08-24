@@ -73,8 +73,6 @@ const dateOnly = new Intl.DateTimeFormat(LOCALE, {
   year: 'numeric',
 })
 
-const timeOnly = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit' })
-
 function toDate(value: string | Date | null | undefined): Date | null {
   if (!value) return null
   const date = value instanceof Date ? value : new Date(value)
@@ -89,11 +87,6 @@ export function formatDateTime(value: string | Date | null | undefined): string 
 export function formatDate(value: string | Date | null | undefined): string {
   const date = toDate(value)
   return date ? dateOnly.format(date) : '--'
-}
-
-export function formatTime(value: string | Date | null | undefined): string {
-  const date = toDate(value)
-  return date ? timeOnly.format(date) : '--'
 }
 
 /**

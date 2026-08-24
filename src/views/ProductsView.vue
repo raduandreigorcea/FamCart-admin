@@ -13,6 +13,7 @@ import StateBlock from '../components/StateBlock.vue'
 import CopyValue from '../components/CopyValue.vue'
 import TruncationNotice from '../components/TruncationNotice.vue'
 import { useQuery, describeError } from '../lib/useQuery'
+import { useTableState } from '../lib/useTableState'
 import {
   catalogConfigured,
   fetchCatalogProducts,
@@ -22,7 +23,6 @@ import {
   qualityScore,
   refreshCatalogShape,
   isCatalogSort,
-  type CatalogSort,
 } from '../lib/data/products'
 import type { CatalogProductRow, LocalProductRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
@@ -40,70 +40,55 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 const router = useRouter()
 
 const scope = ref<'catalog' | 'local'>('catalog')
-const query = ref('')
-const offset = ref(0)
-const sort = ref<CatalogSort>('popularity')
-const dir = ref<'asc' | 'desc'>('desc')
 const source = ref<string | null>(null)
 const market = ref<string | null>(null)
 const barcode = ref<'any' | 'with' | 'without'>('any')
 const localScope = ref<'all' | 'community' | 'promoted'>('all')
 
-const LIMIT = 25
 const configured = catalogConfigured()
+
+// One state for both tabs -- they share a search box and a pager -- with every
+// filter on the page declared as one, so changing any of them returns to the
+// first page without each control having to remember to say so.
+const { query, sort, dir, offset, limit, params, onSort } = useTableState({
+  isSort: isCatalogSort,
+  sort: 'popularity',
+  filters: [scope, source, market, barcode, localScope],
+})
 
 // The catalog's shape, fetched once and cached, for the market and version
 // filters. See products.ts for why this is aggregated client-side.
-const shape = useQuery(() => loadCatalogShape(), { manual: !configured })
+const shape = useQuery(() => loadCatalogShape(), { enabled: () => configured })
 
+// Each tab fetches only while it is the one on screen. Both used to fetch on
+// every keystroke, so a search cost two round trips to two databases and one of
+// them was always for a table nobody could see.
 const catalog = useQuery(
   (signal) =>
     fetchCatalogProducts(
-      {
-        query: query.value,
-        sort: sort.value,
-        dir: dir.value,
-        limit: LIMIT,
-        offset: offset.value,
-        source: source.value,
-        market: market.value,
-        barcode: barcode.value,
-      },
+      { ...params.value, source: source.value, market: market.value, barcode: barcode.value },
       signal,
     ),
-  { watch: [query, sort, dir, offset, source, market, barcode], manual: !configured },
+  {
+    watch: [params, source, market, barcode],
+    enabled: () => configured && scope.value === 'catalog',
+  },
 )
 
 const local = useQuery(
   (signal) =>
     fetchLocalProducts(
-      { query: query.value, limit: LIMIT, offset: offset.value, scope: localScope.value },
+      { query: params.value.query, limit, offset: params.value.offset, scope: localScope.value },
       signal,
     ),
-  { watch: [query, offset, localScope] },
+  { watch: [params, localScope], enabled: () => scope.value === 'local' },
 )
-
-function reset() {
-  offset.value = 0
-}
 
 function onScope(value: string) {
   scope.value = value as 'catalog' | 'local'
+  // The two tabs search two different tables; carrying a catalog query over to
+  // the app database's rows usually means an empty table and a puzzle.
   query.value = ''
-  reset()
-}
-
-function onSort(key: string) {
-  // Only the catalog table is sortable, and CATALOG_SORTS lists the columns
-  // PostgREST will actually order by. A key outside it is a 400.
-  if (!isCatalogSort(key)) return
-
-  if (sort.value === key) dir.value = dir.value === 'asc' ? 'desc' : 'asc'
-  else {
-    sort.value = key
-    dir.value = 'desc'
-  }
-  reset()
 }
 
 const sourceOptions = computed(() => [
@@ -217,34 +202,20 @@ function quality(row: CatalogProductRow) {
       </template>
 
       <div class="toolbar">
+        <!-- No control here resets the pager. Every one of them is declared as
+             a filter in useTableState above, which does it for all of them. -->
         <FilterBar
-          :model-value="query"
+          v-model="query"
           :placeholder="
             scope === 'catalog'
               ? 'Search name, brand and aliases, or paste a barcode'
               : 'Search name, brand or barcode'
           "
           :busy="active.fetching.value"
-          @update:model-value="
-            (value) => {
-              query = value
-              reset()
-            }
-          "
         >
           <template v-if="scope === 'catalog'">
-            <SelectField
-              v-model="source"
-              label="Source"
-              :options="sourceOptions"
-              @update:model-value="reset"
-            />
-            <SelectField
-              v-model="market"
-              label="Market"
-              :options="marketOptions"
-              @update:model-value="reset"
-            />
+            <SelectField v-model="source" label="Source" :options="sourceOptions" />
+            <SelectField v-model="market" label="Market" :options="marketOptions" />
             <SegmentedControl
               :model-value="barcode"
               :segments="[
@@ -253,12 +224,7 @@ function quality(row: CatalogProductRow) {
                 { value: 'without', label: 'No barcode' },
               ]"
               aria-label="Barcode presence"
-              @update:model-value="
-                (value) => {
-                  barcode = value as 'any' | 'with' | 'without'
-                  reset()
-                }
-              "
+              @update:model-value="barcode = $event as 'any' | 'with' | 'without'"
             />
           </template>
 
@@ -271,12 +237,7 @@ function quality(row: CatalogProductRow) {
                 { value: 'promoted', label: 'Promoted' },
               ]"
               aria-label="Row scope"
-              @update:model-value="
-                (value) => {
-                  localScope = value as 'all' | 'community' | 'promoted'
-                  reset()
-                }
-              "
+              @update:model-value="localScope = $event as 'all' | 'community' | 'promoted'"
             />
           </template>
 
@@ -400,7 +361,7 @@ function quality(row: CatalogProductRow) {
         <TablePager
           :total="total"
           :offset="offset"
-          :limit="LIMIT"
+          :limit="limit"
           :loading="active.fetching.value"
           @go="offset = $event"
         />

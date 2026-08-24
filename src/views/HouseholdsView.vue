@@ -10,48 +10,24 @@ import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
-import { fetchHouseholds, isHouseholdSort, type HouseholdSort } from '../lib/data/households'
+import { useTableState } from '../lib/useTableState'
+import { fetchHouseholds, isHouseholdSort } from '../lib/data/households'
 import type { AdminHouseholdRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
 const router = useRouter()
 
-const query = ref('')
-const sort = ref<HouseholdSort>('last_active')
-const dir = ref<'asc' | 'desc'>('desc')
-const offset = ref(0)
 const density = ref('comfortable')
 
-const LIMIT = 25
+const { query, sort, dir, offset, limit, params, onSort } = useTableState({
+  isSort: isHouseholdSort,
+  sort: 'last_active',
+})
 
-const households = useQuery(
-  (signal) =>
-    fetchHouseholds(
-      { query: query.value, sort: sort.value, dir: dir.value, limit: LIMIT, offset: offset.value },
-      signal,
-    ),
-  { watch: [query, sort, dir, offset] },
-)
-
-function onQuery(value: string) {
-  query.value = value
-  offset.value = 0
-}
-
-function onSort(key: string) {
-  // See UsersView: HOUSEHOLD_SORTS mirrors the CASE arms in
-  // admin_list_households, and this is the only door an unchecked key
-  // could come through.
-  if (!isHouseholdSort(key)) return
-
-  if (sort.value === key) dir.value = dir.value === 'asc' ? 'desc' : 'asc'
-  else {
-    sort.value = key
-    dir.value = 'desc'
-  }
-  offset.value = 0
-}
+const households = useQuery((signal) => fetchHouseholds(params.value, signal), {
+  watch: [params],
+})
 
 const columns: Column<AdminHouseholdRow>[] = [
   { key: 'name', label: 'Household', sortable: true, width: '24%' },
@@ -106,10 +82,9 @@ function activityTone(lastActive: string): 'good' | 'idle' {
 
       <div class="toolbar">
         <FilterBar
-          :model-value="query"
+          v-model="query"
           placeholder="Search by name, owner or invite code"
           :busy="households.fetching.value"
-          @update:model-value="onQuery"
         >
           <template #end>
             <span class="toolbar__count u-num">{{ formatCount(total) }} households</span>
@@ -160,7 +135,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         <TablePager
           :total="total"
           :offset="offset"
-          :limit="LIMIT"
+          :limit="limit"
           :loading="households.fetching.value"
           @go="offset = $event"
         />

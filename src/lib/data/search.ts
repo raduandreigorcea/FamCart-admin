@@ -2,6 +2,7 @@ import { getAppSupabase } from '../supabase'
 import { loadCatalogShape } from './products'
 import { sinceIso, type TimeRange } from '../timeRange'
 import { unavailable, type Metric } from './types'
+import { queryError } from './errors'
 
 // Search Analytics.
 //
@@ -63,7 +64,7 @@ export async function fetchTopAddedProducts(
     .abortSignal(signal)
 
   if (error) {
-    throw Object.assign(new Error(`admin_top_purchases: ${error.message}`), { code: error.code })
+    queryError('admin_top_purchases', error)
   }
 
   return ((data ?? []) as {
@@ -110,7 +111,7 @@ export async function fetchCatalogMisses(
     .abortSignal(signal)
 
   if (error) {
-    throw Object.assign(new Error(`admin_catalog_misses: ${error.message}`), { code: error.code })
+    queryError('admin_catalog_misses', error)
   }
 
   return ((data ?? []) as {

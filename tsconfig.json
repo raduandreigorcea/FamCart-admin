@@ -3,8 +3,9 @@
   // most of the work here (noUnusedLocals / noUnusedParameters), so a module
   // vendored from there typechecks under identical rules on both sides.
   //
-  // scripts/ is deliberately out of scope: seed-dev.mjs is a plain Node script
-  // that never runs in the browser and has no types to check.
+  // scripts/ is deliberately out of scope: sync-icons.mjs is plain JavaScript
+  // whose output is a set of .svg files, and seed-dev.sql is not JavaScript at
+  // all. eslint still lints the former with Node globals.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -15,7 +16,8 @@
     "skipLibCheck": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    // "node" is here for test/ and vite.config.ts, not for src/. The vendor
+    // "node" is here for test/ and vite.config.ts -- both of which `include`
+    // below really does cover -- and not for src/. The vendor
     // drift test reads the manifest off disk with node:fs and node:crypto, and
     // a test that cannot be typechecked is a test nobody notices going stale.
     //
@@ -25,5 +27,5 @@
     // scripts/, so a stray `process.env` in a view is still caught there.
     "types": ["vite/client", "node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts", "vite.config.ts"]
 }

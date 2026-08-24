@@ -8,7 +8,6 @@ import { applyResolvedTheme, loadThemeMode, saveThemeMode, type ThemeMode } from
 import { initialOf } from '../lib/format'
 import { leafCrumb } from '../lib/breadcrumb'
 import { useSignOut } from '../lib/useSignOut'
-import type { AppProject } from '../lib/supabase'
 
 // Breadcrumbs, the global search trigger, the project switcher, the theme toggle
 // and the account menu. Nothing else earns a permanent seat at the top of a tool
@@ -22,7 +21,6 @@ import type { AppProject } from '../lib/supabase'
 const emit = defineEmits<{
   (e: 'search'): void
   (e: 'toggle-nav'): void
-  (e: 'switched', project: AppProject): void
 }>()
 
 const route = useRoute()
@@ -120,7 +118,7 @@ async function requestSignOut() {
     <!-- Which database every number on screen came from, and how to change it.
          Permanent, because a dashboard that does not say which of two identical
          schemas it is reading is one you cannot trust a figure from. -->
-    <ProjectSwitcher @switched="emit('switched', $event)" />
+    <ProjectSwitcher />
 
     <button type="button" class="topbar__icon" :title="themeTitle" @click="cycleTheme">
       <AppIcon :name="themeIcon" :size="16" />
