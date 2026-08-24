@@ -1,6 +1,7 @@
 import { getAppSupabase } from '../supabase'
 import type { RangeKey, TimeRange } from '../timeRange'
 import { previousSinceIso, sinceIso } from '../timeRange'
+import { queryError } from './errors'
 import {
   unavailable,
   type ActivityBucket,
@@ -17,19 +18,11 @@ function db() {
   return getAppSupabase()
 }
 
-function rpcError(context: string, error: { message: string; code?: string } | null): never {
-  const wrapped = new Error(`${context}: ${error?.message ?? 'unknown error'}`) as Error & {
-    code?: string
-  }
-  wrapped.code = error?.code
-  throw wrapped
-}
-
 export async function fetchOverview(range: TimeRange, signal: AbortSignal): Promise<OverviewPayload> {
   const { data, error } = await db()
     .rpc('admin_overview', { p_since: sinceIso(range) })
     .abortSignal(signal)
-  if (error) rpcError('admin_overview', error)
+  if (error) queryError('admin_overview', error)
   return data as OverviewPayload
 }
 
@@ -57,7 +50,7 @@ export async function fetchCumulativeWindow(
   const { data, error } = await db()
     .rpc('admin_overview', { p_since: previousSinceIso(range) })
     .abortSignal(signal)
-  if (error) rpcError('admin_overview (cumulative)', error)
+  if (error) queryError('admin_overview (cumulative)', error)
   return (data as OverviewPayload).window
 }
 
@@ -88,7 +81,7 @@ export async function fetchActivitySeries(
   const { data, error } = await db()
     .rpc('admin_activity_series', { p_since: sinceIso(range), p_bucket: range.bucket })
     .abortSignal(signal)
-  if (error) rpcError('admin_activity_series', error)
+  if (error) queryError('admin_activity_series', error)
   return (data ?? []) as ActivityBucket[]
 }
 
@@ -99,7 +92,7 @@ export async function fetchRecentActivity(
   const { data, error } = await db()
     .rpc('admin_recent_activity', { p_limit: limit })
     .abortSignal(signal)
-  if (error) rpcError('admin_recent_activity', error)
+  if (error) queryError('admin_recent_activity', error)
   return (data ?? []) as RecentActivityRow[]
 }
 

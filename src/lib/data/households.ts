@@ -1,6 +1,7 @@
 import { getAppSupabase } from '../supabase'
 import { sortGuard } from './types'
 import type { AdminHouseholdRow, Page, PageParams } from './types'
+import { queryError } from './errors'
 
 export const HOUSEHOLD_SORTS = [
   'name',
@@ -100,7 +101,7 @@ export async function fetchHouseholds(
     .abortSignal(signal)
 
   if (error) {
-    throw Object.assign(new Error(`admin_list_households: ${error.message}`), { code: error.code })
+    queryError('admin_list_households', error)
   }
 
   const rows = (data ?? []) as AdminHouseholdRow[]
@@ -116,7 +117,7 @@ export async function fetchHouseholdDetail(
     .abortSignal(signal)
 
   if (error) {
-    throw Object.assign(new Error(`admin_household_detail: ${error.message}`), { code: error.code })
+    queryError('admin_household_detail', error)
   }
   return (data as HouseholdDetail | null) ?? null
 }

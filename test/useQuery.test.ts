@@ -279,3 +279,86 @@ describe('describeError', () => {
     expect(describeError(null).detail).toBe('')
   })
 })
+
+describe('useQuery enabled', () => {
+  it('makes no request while it is false', async () => {
+    const fetcher = vi.fn().mockResolvedValue('rows')
+    const scope = effectScope()
+    const query = scope.run(() => useQuery(fetcher, { enabled: () => false }))!
+
+    await nextTick()
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(query.state.value).toBe('idle')
+    expect(query.fetching.value).toBe(false)
+    scope.stop()
+  })
+
+  it('runs as soon as it turns true', async () => {
+    // The whole reason this is not `manual`. `manual` says "not on mount" and
+    // has nothing to say about a condition that changes later, so a hidden tab
+    // becoming visible had to be wired by hand or not at all.
+    const on = ref(false)
+    const fetcher = vi.fn().mockResolvedValue('rows')
+    const scope = effectScope()
+    const query = scope.run(() => useQuery(fetcher, { enabled: () => on.value }))!
+
+    await nextTick()
+    expect(fetcher).not.toHaveBeenCalled()
+
+    on.value = true
+    await nextTick()
+    await Promise.resolve()
+
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(query.data.value).toBe('rows')
+    scope.stop()
+  })
+
+  it('aborts the request in flight when it turns false', async () => {
+    const on = ref(true)
+    let captured: AbortSignal | null = null
+    const scope = effectScope()
+    const query = scope.run(() =>
+      useQuery(
+        (signal) => {
+          captured = signal
+          return new Promise<string>(() => {})
+        },
+        { enabled: () => on.value },
+      ),
+    )!
+
+    await nextTick()
+    expect(query.fetching.value).toBe(true)
+
+    on.value = false
+    await nextTick()
+
+    expect(captured!.aborted).toBe(true)
+    expect(query.fetching.value).toBe(false)
+    expect(query.loading.value).toBe(false)
+    scope.stop()
+  })
+
+  it('makes refetch a no-op while disabled', async () => {
+    const fetcher = vi.fn().mockResolvedValue('rows')
+    const scope = effectScope()
+    const query = scope.run(() => useQuery(fetcher, { enabled: () => false }))!
+
+    await query.refetch()
+    expect(fetcher).not.toHaveBeenCalled()
+    scope.stop()
+  })
+
+  it('does not disturb a query that declares no condition', async () => {
+    const fetcher = vi.fn().mockResolvedValue('rows')
+    const scope = effectScope()
+    const query = scope.run(() => useQuery(fetcher))!
+
+    await nextTick()
+    await Promise.resolve()
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(query.data.value).toBe('rows')
+    scope.stop()
+  })
+})

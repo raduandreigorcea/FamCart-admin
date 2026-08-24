@@ -34,6 +34,21 @@ export interface QueryOptions {
   watch?: WatchSource[]
   /** Skip the initial fetch; call refetch() by hand. */
   manual?: boolean
+  /**
+   * Whether this panel wants data at all, re-read reactively.
+   *
+   * While it returns false nothing is requested, anything in flight is
+   * cancelled, and refetch() is a no-op; when it turns true the query runs.
+   * That last part is the difference from `manual`, which was being used for
+   * this and cannot express it -- `manual: !configured` says "do not fetch on
+   * mount" and has nothing to say about a condition that changes.
+   *
+   * The case it was added for: the Products page has two tabs over two
+   * different databases, and both were fetching on every keystroke so that the
+   * hidden one would be ready. Two round trips, one of them for a table nobody
+   * was looking at, on every filter change.
+   */
+  enabled?: () => boolean
 }
 
 export function useQuery<T>(
@@ -56,7 +71,23 @@ export function useQuery<T>(
   let requestId = 0
   let controller: AbortController | null = null
 
+  function wanted(): boolean {
+    return options.enabled ? options.enabled() : true
+  }
+
   async function run(): Promise<void> {
+    if (!wanted()) {
+      // Not merely "do not start one" -- stop the one already running. A panel
+      // that has just been hidden is the clearest case there is of a request
+      // whose answer nobody will read.
+      requestId += 1
+      controller?.abort()
+      controller = null
+      fetching.value = false
+      loading.value = false
+      return
+    }
+
     const id = ++requestId
     controller?.abort()
     controller = new AbortController()
@@ -89,9 +120,11 @@ export function useQuery<T>(
     }
   }
 
-  if (options.watch?.length) {
-    watch(options.watch, () => void run())
-  }
+  // `enabled` is watched alongside the declared sources, so turning it on runs
+  // the query rather than waiting for some unrelated filter to move.
+  const sources: WatchSource[] = [...(options.watch ?? [])]
+  if (options.enabled) sources.push(options.enabled)
+  if (sources.length) watch(sources, () => void run())
 
   if (!options.manual) void run()
 

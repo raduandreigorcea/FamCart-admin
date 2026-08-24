@@ -10,7 +10,8 @@ import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
-import { fetchUsers, isUserSort, type UserSort } from '../lib/data/users'
+import { useTableState } from '../lib/useTableState'
+import { fetchUsers, isUserSort } from '../lib/data/users'
 import type { AdminUserRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/format'
@@ -23,47 +24,17 @@ import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } f
 
 const router = useRouter()
 
-const query = ref('')
-const sort = ref<UserSort>('last_active')
-const dir = ref<'asc' | 'desc'>('desc')
-const offset = ref(0)
 const density = ref('comfortable')
 
-const LIMIT = 25
+// The query, sort, direction and page, and the rules that keep them coherent --
+// including the one that matters most here, that USER_SORTS is checked before a
+// header click can reach admin_list_users. See useTableState.ts.
+const { query, sort, dir, offset, limit, params, onSort } = useTableState({
+  isSort: isUserSort,
+  sort: 'last_active',
+})
 
-const users = useQuery(
-  (signal) =>
-    fetchUsers(
-      { query: query.value, sort: sort.value, dir: dir.value, limit: LIMIT, offset: offset.value },
-      signal,
-    ),
-  { watch: [query, sort, dir, offset] },
-)
-
-// Any filter change returns to the first page. Staying on page 4 of a result set
-// that now has one page shows an empty table that looks like "no matches".
-function onQuery(value: string) {
-  query.value = value
-  offset.value = 0
-}
-
-function onSort(key: string) {
-  // DataTable emits a bare string. This is the one place an unchecked key could
-  // reach the RPC, so it is the one place it is checked -- USER_SORTS mirrors
-  // the CASE arms in admin_list_users, and anything else would come back as a
-  // PostgREST 400 naming no column.
-  if (!isUserSort(key)) return
-
-  if (sort.value === key) {
-    dir.value = dir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sort.value = key
-    // A new column starts descending, because every sortable column here is a
-    // count or a date and "most" or "newest" is what is wanted first.
-    dir.value = 'desc'
-  }
-  offset.value = 0
-}
+const users = useQuery((signal) => fetchUsers(params.value, signal), { watch: [params] })
 
 const columns: Column<AdminUserRow>[] = [
   { key: 'display_name', label: 'Account', sortable: true, width: '26%' },
@@ -118,10 +89,9 @@ function activityTone(lastActive: string): 'good' | 'idle' {
 
       <div class="toolbar">
         <FilterBar
-          :model-value="query"
+          v-model="query"
           placeholder="Search by name or Clerk id"
           :busy="users.fetching.value"
-          @update:model-value="onQuery"
         >
           <template #end>
             <span class="toolbar__count u-num">{{ formatCount(total) }} accounts</span>
@@ -176,7 +146,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         <TablePager
           :total="total"
           :offset="offset"
-          :limit="LIMIT"
+          :limit="limit"
           :loading="users.fetching.value"
           @go="offset = $event"
         />

@@ -27,7 +27,6 @@ import {
 // cheap. Development is the recoverable case and interrupting it would train the
 // habit of dismissing the dialog.
 
-const emit = defineEmits<{ (e: 'switched', project: AppProject): void }>()
 
 const target = appTarget
 const catalog = catalogTarget()
@@ -63,10 +62,13 @@ function choose(project: AppProject) {
 }
 
 function apply(project: AppProject) {
+  // No event goes out. `activeProject` is a computed everything downstream
+  // already watches -- App.vue re-runs the admin check and remounts the view
+  // off it -- so an emit alongside it would be a second channel carrying the
+  // same fact, and the one more likely to be wired up wrong.
   setActiveProject(project)
   open.value = false
   pendingProduction.value = false
-  emit('switched', project)
 }
 </script>
 

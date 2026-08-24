@@ -1,6 +1,7 @@
 import { getAppSupabase, getCatalogSupabase } from '../supabase'
 import { sortGuard } from './types'
 import type { CatalogProductRow, LocalProductRow, Page, PageParams } from './types'
+import { queryError } from './errors'
 
 // Products live in TWO tables in two different databases, and the fact that they
 // do is the confusing part of this system rather than an implementation detail.
@@ -118,7 +119,7 @@ export async function fetchCatalogProducts(
   if (filters.barcode === 'without') request = request.is('barcode', null)
 
   const { data, error, count } = await request.abortSignal(signal)
-  if (error) throw Object.assign(new Error(`product_catalog: ${error.message}`), { code: error.code })
+  if (error) queryError('product_catalog', error)
 
   return { rows: (data ?? []) as CatalogProductRow[], total: count ?? 0, offset }
 }
@@ -139,7 +140,7 @@ export async function fetchCatalogProduct(
     .abortSignal(signal)
     .maybeSingle()
 
-  if (error) throw Object.assign(new Error(`product_catalog: ${error.message}`), { code: error.code })
+  if (error) queryError('product_catalog', error)
   return (data as CatalogProductRow | null) ?? null
 }
 
@@ -343,7 +344,7 @@ async function buildCatalogShape(signal: AbortSignal): Promise<CatalogShape> {
     if (signal.aborted) throw new DOMException('Catalog shape build superseded', 'AbortError')
 
     if (error) {
-      throw Object.assign(new Error(`product_catalog shape: ${error.message}`), { code: error.code })
+      queryError('product_catalog shape', error)
     }
     const page = (data ?? []) as ShapeRow[]
     rows.push(...page)
@@ -470,7 +471,7 @@ export async function fetchLocalProducts(
     .abortSignal(signal)
 
   if (error) {
-    throw Object.assign(new Error(`admin_local_products: ${error.message}`), { code: error.code })
+    queryError('admin_local_products', error)
   }
 
   const rows = (data ?? []) as LocalProductRow[]

@@ -1,6 +1,7 @@
 import { getAppSupabase } from '../supabase'
 import { sortGuard } from './types'
 import type { AdminUserRow, Page, PageParams } from './types'
+import { queryError } from './errors'
 
 // The user list and one user's detail. Both come from admin_user_facts() in
 // 008_admin.sql, so the numbers on the list and the numbers on the detail page
@@ -80,7 +81,7 @@ export async function fetchUsers(
     })
     .abortSignal(signal)
 
-  if (error) throw Object.assign(new Error(`admin_list_users: ${error.message}`), { code: error.code })
+  if (error) queryError('admin_list_users', error)
 
   const rows = (data ?? []) as AdminUserRow[]
   // total_count rides on every row (a window function computed before the
@@ -96,7 +97,7 @@ export async function fetchUserDetail(
     .rpc('admin_user_detail', { p_user_id: userId })
     .abortSignal(signal)
 
-  if (error) throw Object.assign(new Error(`admin_user_detail: ${error.message}`), { code: error.code })
+  if (error) queryError('admin_user_detail', error)
   // The RPC returns null for an id with no profile row, which the view renders
   // as a not-found state rather than an error.
   return (data as UserDetail | null) ?? null
@@ -117,7 +118,7 @@ export interface AdminRow {
 
 export async function fetchAdmins(signal: AbortSignal): Promise<AdminRow[]> {
   const { data, error } = await getAppSupabase().rpc('admin_list_admins').abortSignal(signal)
-  if (error) throw Object.assign(new Error(`admin_list_admins: ${error.message}`), { code: error.code })
+  if (error) queryError('admin_list_admins', error)
   return (data ?? []) as AdminRow[]
 }
 
@@ -133,17 +134,17 @@ export async function grantAdmin(userId: string, note: string | null): Promise<v
     p_user_id: userId,
     p_note: note?.trim() || null,
   })
-  if (error) throw Object.assign(new Error(`admin_grant: ${error.message}`), { code: error.code })
+  if (error) queryError('admin_grant', error)
 }
 
 export async function revokeAdmin(userId: string): Promise<void> {
   const { error } = await getAppSupabase().rpc('admin_revoke', { p_user_id: userId })
-  if (error) throw Object.assign(new Error(`admin_revoke: ${error.message}`), { code: error.code })
+  if (error) queryError('admin_revoke', error)
 }
 
 /** Whether the signed-in account may use this tool at all. */
 export async function fetchIsAdmin(): Promise<boolean> {
   const { data, error } = await getAppSupabase().rpc('is_admin')
-  if (error) throw Object.assign(new Error(`is_admin: ${error.message}`), { code: error.code })
+  if (error) queryError('is_admin', error)
   return data === true
 }
