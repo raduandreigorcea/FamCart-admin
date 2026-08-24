@@ -14,6 +14,10 @@ const pages = vi.hoisted(() => ({
   rows: [] as Record<string, unknown>[],
   /** Set to make the next read fail the way PostgREST reports an error. */
   error: null as { message: string; code?: string } | null,
+  /** Every signal the build has handed to the client, in order. */
+  signals: [] as AbortSignal[],
+  /** Set to hold each page open until release() is called. */
+  gate: null as { promise: Promise<void>; release: () => void } | null,
 }))
 
 vi.mock('../src/lib/supabase', () => ({
@@ -21,11 +25,16 @@ vi.mock('../src/lib/supabase', () => ({
     from: () => ({
       select: () => ({
         order: () => ({
-          range: async () => {
-            pages.calls += 1
-            if (pages.error) return { data: null, error: pages.error }
-            return { data: pages.rows, error: null }
-          },
+          range: () => ({
+            abortSignal: async (signal: AbortSignal) => {
+              pages.calls += 1
+              pages.signals.push(signal)
+              if (pages.gate) await pages.gate.promise
+              if (signal.aborted) throw new DOMException('aborted', 'AbortError')
+              if (pages.error) return { data: null, error: pages.error }
+              return { data: pages.rows, error: null }
+            },
+          }),
         }),
       }),
     }),
@@ -66,7 +75,22 @@ beforeEach(async () => {
   pages.error = null
   pages.rows = [row()]
   pages.calls = 0
+  pages.signals = []
+  pages.gate = null
 })
+
+/** A latch the fake client waits on, so a build can be caught mid-flight. */
+function openGate() {
+  let release!: () => void
+  const promise = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  pages.gate = { promise, release }
+  return () => {
+    pages.gate = null
+    release()
+  }
+}
 
 describe('loadCatalogShape caching', () => {
   it('reads the database once and serves every later caller from cache', async () => {
@@ -175,5 +199,44 @@ describe('a failed build', () => {
     pages.error = { message: 'permission denied', code: '42501' }
 
     await expect(loadCatalogShape()).rejects.toMatchObject({ code: '42501' })
+  })
+})
+
+describe('a superseded build', () => {
+  it('aborts the request the older build is waiting on', async () => {
+    const release = openGate()
+    const first = loadCatalogShape()
+    await Promise.resolve()
+
+    expect(pages.signals).toHaveLength(1)
+    expect(pages.signals[0].aborted).toBe(false)
+
+    const second = refreshCatalogShape()
+    expect(pages.signals[0].aborted).toBe(true)
+
+    release()
+    await Promise.all([first, second])
+  })
+
+  it('hands the older awaiter the newer result rather than an abort error', async () => {
+    // The whole reason the abort is safe. A caller asked for the catalog's
+    // shape, not for one particular attempt at it, and an AbortError it never
+    // requested is not something it can render or act on.
+    const release = openGate()
+    const first = loadCatalogShape()
+    await Promise.resolve()
+
+    pages.rows = [row(), row({ source: 'usda' })]
+    const second = refreshCatalogShape()
+    release()
+
+    await expect(first).resolves.toEqual(await second)
+    expect((await first).total).toBe(2)
+  })
+
+  it('still rejects when the build failed for a real reason', async () => {
+    // The supersede path must not swallow genuine failures.
+    pages.error = { message: 'permission denied', code: '42501' }
+    await expect(refreshCatalogShape()).rejects.toMatchObject({ code: '42501' })
   })
 })

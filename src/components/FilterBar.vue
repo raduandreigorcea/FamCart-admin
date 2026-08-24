@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import AppIcon from './AppIcon.vue'
 
 // One row above every table: a search box, whatever selects the table needs, and
@@ -38,6 +38,14 @@ function clear() {
   local.value = ''
   emit('update:modelValue', '')
 }
+
+// Same as CopyValue: a pending timer holding a closure over a component that is
+// already gone. Harmless in effect -- the listener has been torn down too -- and
+// still worth not leaving behind, because "harmless" is a property of today's
+// handler rather than of the pattern.
+onBeforeUnmount(() => {
+  if (timer) clearTimeout(timer)
+})
 </script>
 
 <template>

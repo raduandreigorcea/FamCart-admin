@@ -15,7 +15,7 @@ import {
   deltaOf,
   fetchActivitySeries,
   fetchOverview,
-  fetchPreviousWindow,
+  fetchCumulativeWindow,
   fetchRecentActivity,
   searchVolume,
 } from '../lib/data/overview'
@@ -30,10 +30,13 @@ const rangeKey = ref<string>(DEFAULT_RANGE)
 const range = computed(() => resolveRange(rangeKey.value))
 
 const overview = useQuery((signal) => fetchOverview(range.value, signal), { watch: [range] })
-const previous = useQuery((signal) => fetchPreviousWindow(range.value, signal), { watch: [range] })
+// Both windows at once, not the earlier one -- deltaOf() does the subtraction.
+const cumulative = useQuery((signal) => fetchCumulativeWindow(range.value, signal), {
+  watch: [range],
+})
 const series = useQuery((signal) => fetchActivitySeries(range.value, signal), { watch: [range] })
 const activity = useQuery((signal) => fetchRecentActivity(25, signal))
-const probes = useQuery(() => probeProjects())
+const probes = useQuery((signal) => probeProjects(signal))
 
 const busy = computed(
   () => overview.fetching.value || series.fetching.value || activity.fetching.value,
@@ -41,7 +44,7 @@ const busy = computed(
 
 function refreshAll() {
   void overview.refetch()
-  void previous.refetch()
+  void cumulative.refetch()
   void series.refetch()
   void activity.refetch()
   void probes.refetch()
@@ -53,12 +56,12 @@ const rangeSegments = TIME_RANGES.map((r) => ({
   title: r.description,
 }))
 
-/** A window delta, or null when the previous window has not loaded yet. */
+/** A window delta, or null while either half of the comparison is missing. */
 function delta(field: keyof NonNullable<typeof overview.data.value>['window']) {
   const current = overview.data.value?.window[field]
-  const cumulative = previous.data.value?.[field]
-  if (current === undefined || cumulative === undefined) return null
-  return deltaOf(current, cumulative)
+  const both = cumulative.data.value?.[field]
+  if (current === undefined || both === undefined) return null
+  return deltaOf(current, both)
 }
 
 const buckets = computed(() => series.data.value ?? [])

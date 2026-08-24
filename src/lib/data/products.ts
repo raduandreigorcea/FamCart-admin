@@ -32,6 +32,29 @@ export type CatalogSort = (typeof CATALOG_SORTS)[number]
 
 export const isCatalogSort = sortGuard(CATALOG_SORTS)
 
+/**
+ * Neutralise the LIKE metacharacters in a term the operator typed.
+ *
+ * `%` and `_` are wildcards to SQL and ordinary characters to everyone else,
+ * and this catalog is full of names that contain them -- `Lapte 3,5%` is a
+ * shelf label, not a pattern. Pasting one searched for "Lapte 3,5" followed by
+ * anything at all, which returns the row you wanted somewhere inside a page of
+ * rows you did not.
+ *
+ * Backslash is escaped first, or escaping the others would produce escapes of
+ * their own escapes. `\` is LIKE's default escape character, so no ESCAPE
+ * clause is needed and PostgREST forwards the pattern unchanged.
+ *
+ * NOT handled, deliberately: `*`. PostgREST rewrites `*` to `%` in like/ilike
+ * patterns before Postgres sees them, and offers no way to escape it, so a
+ * literal asterisk cannot be searched for through this operator at all.
+ * Escaping it here would turn it into a literal `%` and match even less. It is
+ * left alone and left documented.
+ */
+export function escapeLike(term: string): string {
+  return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 export interface CatalogFilters extends PageParams<CatalogSort> {
   source?: string | null
   market?: string | null
@@ -84,7 +107,7 @@ export async function fetchCatalogProducts(
       // search_blob is the generated column the trigram index is built on, and
       // it already holds the folded name, maker and aliases. Matching it rather
       // than OR-ing across three columns means one index does the work.
-      request = request.ilike('search_blob', `%${query.toLowerCase()}%`)
+      request = request.ilike('search_blob', `%${escapeLike(query.toLowerCase())}%`)
     }
   }
 
@@ -240,6 +263,7 @@ const SHAPE_PAGE = 1000
 const SHAPE_ROW_CEILING = 200_000
 
 let shapeCache: Promise<CatalogShape> | null = null
+let shapeBuild: AbortController | null = null
 
 /**
  * The catalog's shape, computed once per session and shared.
@@ -262,11 +286,25 @@ let shapeCache: Promise<CatalogShape> | null = null
 export function loadCatalogShape(force = false): Promise<CatalogShape> {
   if (shapeCache && !force) return shapeCache
 
-  const promise = buildCatalogShape().catch((error) => {
-    // A failed build must not be cached, or the section stays broken until a
-    // reload even after the network comes back. Guarded on identity: by the
-    // time this runs a newer forced load may already own the slot, and clearing
-    // that one would discard a good result because an older attempt failed.
+  // A forced build makes the one in flight pointless, and pointless here is not
+  // cheap: the loop below is SEQUENTIAL and bounded only by SHAPE_ROW_CEILING,
+  // so an uncancelled predecessor can still be issuing requests minutes later.
+  shapeBuild?.abort()
+  const controller = new AbortController()
+  shapeBuild = controller
+
+  const promise = buildCatalogShape(controller.signal).catch((error): Promise<CatalogShape> => {
+    // Superseded, not failed. Whoever was awaiting this asked for the catalog's
+    // shape, not for this particular attempt at it, so hand them the build that
+    // replaced this one rather than an abort they never asked about and cannot
+    // act on.
+    if (controller.signal.aborted && shapeCache && shapeCache !== promise) return shapeCache
+
+    // A genuinely failed build must not be cached, or the section stays broken
+    // until a reload even after the network comes back. Guarded on identity: by
+    // the time this runs a newer forced load may already own the slot, and
+    // clearing that one would discard a good result because an older attempt
+    // failed.
     if (shapeCache === promise) shapeCache = null
     throw error
   })
@@ -285,7 +323,7 @@ type ShapeRow = Pick<
   'source' | 'source_version' | 'created_at' | 'barcode' | 'markets' | 'add_count' | 'base_weight' | 'search_aliases' | 'maker'
 >
 
-async function buildCatalogShape(): Promise<CatalogShape> {
+async function buildCatalogShape(signal: AbortSignal): Promise<CatalogShape> {
   const client = getCatalogSupabase()
   if (!client) throw new CatalogNotConfigured()
 
@@ -297,6 +335,12 @@ async function buildCatalogShape(): Promise<CatalogShape> {
       .select('source,source_version,created_at,barcode,markets,add_count,base_weight,search_aliases,maker')
       .order('id', { ascending: true })
       .range(offset, offset + SHAPE_PAGE - 1)
+      .abortSignal(signal)
+
+    // The signal has to be read here as well as handed to the request. Aborting
+    // between two pages leaves the loop mid-flight with a resolved page in hand
+    // and nothing to stop it asking for the next one.
+    if (signal.aborted) throw new DOMException('Catalog shape build superseded', 'AbortError')
 
     if (error) {
       throw Object.assign(new Error(`product_catalog shape: ${error.message}`), { code: error.code })

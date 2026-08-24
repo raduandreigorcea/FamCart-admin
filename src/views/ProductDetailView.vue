@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
@@ -9,6 +9,7 @@ import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { useQuery, describeError } from '../lib/useQuery'
+import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
 import { fetchCatalogProduct, fetchLocalProducts, qualityLabel, qualityScore } from '../lib/data/products'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
@@ -39,13 +40,7 @@ const twin = useQuery(
   { watch: [() => product.data.value?.name] },
 )
 
-watch(
-  () => product.data.value,
-  (data) => {
-    route.meta.leafCrumb = data?.name ?? productId.value
-  },
-  { immediate: true },
-)
+useLeafCrumb(() => crumbOf(productId.value, product.data.value, (p) => p.id, (p) => p.name))
 
 const quality = computed(() => (product.data.value ? qualityScore(product.data.value) : null))
 const errorInfo = computed(() => describeError(product.error.value))

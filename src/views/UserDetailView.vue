@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
@@ -9,6 +9,7 @@ import StatusPill from '../components/StatusPill.vue'
 import BarChart from '../components/BarChart.vue'
 import CopyValue from '../components/CopyValue.vue'
 import { useQuery, describeError } from '../lib/useQuery'
+import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
 import { fetchUserDetail } from '../lib/data/users'
 import { formatCount, formatDateTime, formatRelative, humanizeKind, initialOf } from '../lib/format'
 
@@ -19,14 +20,8 @@ const userId = computed(() => String(route.params.userId ?? ''))
 
 const detail = useQuery((signal) => fetchUserDetail(userId.value, signal), { watch: [userId] })
 
-// The breadcrumb leaf, set once the name is known. Route meta is reactive, so
-// the topbar picks this up without the two components knowing about each other.
-watch(
-  () => detail.data.value,
-  (data) => {
-    route.meta.leafCrumb = data?.profile.display_name ?? userId.value
-  },
-  { immediate: true },
+useLeafCrumb(() =>
+  crumbOf(userId.value, detail.data.value?.profile, (p) => p.user_id, (p) => p.display_name),
 )
 
 const profile = computed(() => detail.data.value?.profile ?? null)
