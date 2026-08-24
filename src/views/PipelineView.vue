@@ -17,11 +17,12 @@ import { useQuery, describeError } from '../lib/useQuery'
 import {
   fetchPipeline,
   fetchPipelineLogs,
-  fetchRunLedger,
+  runLedger,
   triggerCapability,
   type IngestionRun,
 } from '../lib/data/pipeline'
 import { catalogConfigured, refreshCatalogShape } from '../lib/data/products'
+import { unavailable } from '../lib/data/types'
 import type { Column, Series } from '../lib/uiTypes'
 import { formatCount, formatDate, formatDateTime, formatRelative, formatShare } from '../lib/format'
 import { useDensity, type Density } from '../lib/useDensity'
@@ -40,7 +41,7 @@ const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const configured = catalogConfigured()
 
-const pipeline = useQuery(() => fetchPipeline(), { manual: !configured })
+const pipeline = useQuery((signal) => fetchPipeline(signal), { manual: !configured })
 
 function refresh() {
   // Everything on this page is derived from the catalog shape, which is cached
@@ -54,7 +55,17 @@ const trigger = triggerCapability()
 const logs = fetchPipelineLogs()
 
 const openRun = ref<IngestionRun | null>(null)
-const ledger = computed(() => fetchRunLedger(openRun.value?.version ?? null))
+// Pure now, over a row the drawer already holds. A run with no ledger row
+// predates the importer's publish step, which is a different fact from a run
+// whose score half was never recorded -- so it gets its own sentence.
+const ledger = computed(() =>
+  openRun.value?.row
+    ? runLedger(openRun.value.row)
+    : unavailable(
+        'This run predates the import ledger, so only what its rows imply is known.',
+        'Nothing -- runs published from now on carry their own counts.',
+      ),
+)
 
 const snapshot = computed(() => pipeline.data.value)
 
