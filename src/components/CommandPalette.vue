@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 import { fetchUsers } from '../lib/data/users'
 import { fetchHouseholds } from '../lib/data/households'
 import { catalogConfigured, fetchCatalogProducts } from '../lib/data/products'
 import { shortUserId } from '../lib/format'
+import { useModal } from '../lib/useModal'
 
 // Global search. One box over three different things, because an operator
 // arrives knowing a name and not knowing which section it belongs to.
@@ -20,6 +21,7 @@ const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const router = useRouter()
+const panel = ref<HTMLElement | null>(null)
 const input = ref<HTMLInputElement | null>(null)
 const query = ref('')
 const busy = ref(false)
@@ -122,21 +124,25 @@ watch(query, (value) => {
   debounce = setTimeout(() => void run(value), 180)
 })
 
+// Focus in, Escape out, Tab confined, page behind locked. See useModal.ts.
+useModal({
+  open: () => props.open,
+  close: () => emit('close'),
+  panel,
+  initialFocus: () => input.value,
+})
+
 watch(
   () => props.open,
-  async (open) => {
-    if (!open) {
-      // Closing must actually stop the search. Clearing `query` alone fires the
-      // watcher above, which schedules ANOTHER run -- of the empty string, but
-      // still after an in-flight one that nothing had cancelled.
-      cancel()
-      query.value = ''
-      hits.value = []
-      busy.value = false
-      return
-    }
-    await nextTick()
-    input.value?.focus()
+  (open) => {
+    if (open) return
+    // Closing must actually stop the search. Clearing `query` alone fires the
+    // watcher above, which schedules ANOTHER run -- of the empty string, but
+    // still after an in-flight one that nothing had cancelled.
+    cancel()
+    query.value = ''
+    hits.value = []
+    busy.value = false
   },
 )
 
@@ -169,10 +175,11 @@ function choose(hit?: Hit) {
 </script>
 
 <template>
+  <Teleport to="body">
   <div v-if="open" class="palette" role="dialog" aria-modal="true" aria-label="Search">
     <div class="palette__scrim" @click="emit('close')"></div>
 
-    <div class="palette__panel">
+    <div ref="panel" class="palette__panel" tabindex="-1">
       <div class="palette__field">
         <AppIcon class="palette__icon" name="search" :size="17" />
         <input
@@ -186,7 +193,6 @@ function choose(hit?: Hit) {
           @keydown.down.prevent="move(1)"
           @keydown.up.prevent="move(-1)"
           @keydown.enter.prevent="choose()"
-          @keydown.esc.prevent="emit('close')"
         />
         <span v-if="busy" class="palette__busy" aria-label="Searching">…</span>
       </div>
@@ -223,6 +229,7 @@ function choose(hit?: Hit) {
       </footer>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

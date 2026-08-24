@@ -9,7 +9,7 @@ import BarChart from '../components/BarChart.vue'
 import DataTable from '../components/DataTable.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import TruncationNotice from '../components/TruncationNotice.vue'
-import { useQuery, describeError } from '../lib/useQuery'
+import { useQuery, useQueryGroup, describeError } from '../lib/useQuery'
 import {
   fetchAutocompletePerformance,
   fetchCatalogAdoption,
@@ -41,7 +41,7 @@ const topAdded = useQuery((signal) => fetchTopAddedProducts(range.value, 25, sig
   watch: [range],
 })
 const misses = useQuery((signal) => fetchCatalogMisses(30, signal))
-const adoption = useQuery(() => fetchCatalogAdoption(), { manual: !configured })
+const adoption = useQuery(() => fetchCatalogAdoption(), { enabled: () => configured })
 
 // The four with no source. Computed rather than fetched: they are constants
 // today, and the shape is the contract for when they are not.
@@ -89,16 +89,16 @@ const adoptionRate = computed(() => {
   return a.adopted / a.total
 })
 
+const page = useQueryGroup([topAdded, misses, adoption])
+
 function refreshAll() {
-  void topAdded.refetch()
-  void misses.refetch()
-  if (configured) {
-    // Adoption is derived from the session-cached catalog shape. Refetching the
-    // query alone would re-await the same cached promise and change nothing,
-    // while PageHeader stamped a fresh "as of" time next to it.
-    void refreshCatalogShape()
-    void adoption.refetch()
-  }
+  // Adoption is derived from the session-cached catalog shape. Refetching the
+  // query alone would re-await the same cached promise and change nothing,
+  // while PageHeader stamped a fresh "as of" time next to it. The adoption
+  // query itself is `enabled` on the catalog being configured, so the group
+  // refresh below is a no-op for it when there is no catalog to read.
+  if (configured) void refreshCatalogShape()
+  page.refresh()
 }
 </script>
 
@@ -107,8 +107,8 @@ function refreshAll() {
     <PageHeader
       title="Search Analytics"
       description="What the catalog served, and what it missed. Search itself is not instrumented, so this page is careful about which is which."
-      :fetched-at="topAdded.fetchedAt.value"
-      :busy="topAdded.fetching.value || misses.fetching.value"
+      :fetched-at="page.fetchedAt.value"
+      :busy="page.busy.value"
       @refresh="refreshAll"
     >
       <template #tools>

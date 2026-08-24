@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref } from 'vue'
-import { describeError, useQuery } from '../src/lib/useQuery'
+import { describeError, useQuery, useQueryGroup } from '../src/lib/useQuery'
 
 // useQuery is the async primitive every panel in the tool is built on, and its
 // entire reason to exist is the four states each panel would otherwise get
@@ -359,6 +359,75 @@ describe('useQuery enabled', () => {
     await Promise.resolve()
     expect(fetcher).toHaveBeenCalledOnce()
     expect(query.data.value).toBe('rows')
+    scope.stop()
+  })
+})
+
+describe('useQueryGroup', () => {
+  /** A stand-in for one panel's query, with only the fields the group reads. */
+  function panel(fetchedAt: number | null, fetching = false) {
+    const refetch = vi.fn(async () => {})
+    return {
+      data: ref(null),
+      error: ref(null),
+      state: ref('success' as const),
+      loading: ref(false),
+      fetching: ref(fetching),
+      fetchedAt: ref(fetchedAt),
+      refetch,
+    }
+  }
+
+  it('is busy while ANY member is fetching', () => {
+    // Overview watched three of its five queries and Health two of its five, so
+    // the spinner said "done" with three requests still in the air.
+    const quiet = panel(1000)
+    const working = panel(1000, true)
+    const scope = effectScope()
+    const group = scope.run(() => useQueryGroup([quiet, working]))!
+
+    expect(group.busy.value).toBe(true)
+
+    working.fetching.value = false
+    expect(group.busy.value).toBe(false)
+    scope.stop()
+  })
+
+  it('reports the OLDEST timestamp, not the newest', () => {
+    // A header claiming 10:04 over a panel last read at 09:12 is the dashboard
+    // vouching for a number it has not re-read.
+    const scope = effectScope()
+    const group = scope.run(() => useQueryGroup([panel(9_120), panel(10_040), panel(9_500)]))!
+
+    expect(group.fetchedAt.value).toBe(9_120)
+    scope.stop()
+  })
+
+  it('ignores a member that has never loaded', () => {
+    // It is rendering its own loading or error state a few pixels below, which
+    // says more than a blank header would.
+    const scope = effectScope()
+    const group = scope.run(() => useQueryGroup([panel(null), panel(10_040)]))!
+
+    expect(group.fetchedAt.value).toBe(10_040)
+    scope.stop()
+  })
+
+  it('has no timestamp at all before anything has loaded', () => {
+    const scope = effectScope()
+    const group = scope.run(() => useQueryGroup([panel(null), panel(null)]))!
+
+    expect(group.fetchedAt.value).toBeNull()
+    scope.stop()
+  })
+
+  it('refetches every member', () => {
+    const members = [panel(1), panel(2), panel(3)]
+    const scope = effectScope()
+    const group = scope.run(() => useQueryGroup(members))!
+
+    group.refresh()
+    for (const member of members) expect(member.refetch).toHaveBeenCalledOnce()
     scope.stop()
   })
 })
