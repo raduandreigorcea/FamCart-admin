@@ -121,3 +121,42 @@ export async function fetchHouseholdDetail(
   }
   return (data as HouseholdDetail | null) ?? null
 }
+
+// ─── deletion, which is a flag and not a delete ──────────────────────────────
+//
+// The RPCs behind these set households.deleted_at and everything inside the
+// household disappears through active_household_ids() in the database. Nothing
+// is removed, which is what makes the Trash view honest rather than decorative.
+
+/** One row of the Trash view. */
+export interface DeletedHouseholdRow {
+  id: string
+  name: string
+  emoji: string | null
+  deleted_at: string
+  /** Still inside it. The number that answers "is this safe to leave deleted?" */
+  members: number
+  items_total: number
+}
+
+export async function deleteHousehold(id: string, signal: AbortSignal): Promise<void> {
+  const { error } = await getAppSupabase()
+    .rpc('admin_delete_household', { p_id: id })
+    .abortSignal(signal)
+  if (error) queryError('admin_delete_household', error)
+}
+
+export async function restoreHousehold(id: string, signal: AbortSignal): Promise<void> {
+  const { error } = await getAppSupabase()
+    .rpc('admin_restore_household', { p_id: id })
+    .abortSignal(signal)
+  if (error) queryError('admin_restore_household', error)
+}
+
+export async function fetchDeletedHouseholds(signal: AbortSignal): Promise<DeletedHouseholdRow[]> {
+  const { data, error } = await getAppSupabase()
+    .rpc('admin_deleted_households')
+    .abortSignal(signal)
+  if (error) queryError('admin_deleted_households', error)
+  return (data ?? []) as DeletedHouseholdRow[]
+}

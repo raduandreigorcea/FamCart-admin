@@ -13,6 +13,8 @@ export interface UserDetail {
     display_name: string
     image_url: string | null
     profile_updated_at: string
+    /** Set means the app refuses this account. Comes from admin_user_facts. */
+    banned_at: string | null
     households: number
     owned_households: number
     moderator_of: number
@@ -147,4 +149,24 @@ export async function fetchIsAdmin(): Promise<boolean> {
   const { data, error } = await getAppSupabase().rpc('is_admin')
   if (error) queryError('is_admin', error)
   return data === true
+}
+
+// ─── bans ────────────────────────────────────────────────────────────────────
+//
+// Not a delete: deleting a profile row does not stick, because the app upserts
+// one on every boot. admin_ban_user sets profiles.banned_at and those upserts
+// then refuse. Memberships are deliberately left alone -- see the RPC.
+
+export async function banUser(userId: string, reason: string, signal: AbortSignal): Promise<void> {
+  const { error } = await getAppSupabase()
+    .rpc('admin_ban_user', { p_user_id: userId, p_reason: reason })
+    .abortSignal(signal)
+  if (error) queryError('admin_ban_user', error)
+}
+
+export async function unbanUser(userId: string, signal: AbortSignal): Promise<void> {
+  const { error } = await getAppSupabase()
+    .rpc('admin_unban_user', { p_user_id: userId })
+    .abortSignal(signal)
+  if (error) queryError('admin_unban_user', error)
 }
