@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
@@ -11,6 +11,7 @@ import CopyValue from '../components/CopyValue.vue'
 import SideDrawer from '../components/SideDrawer.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
+import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
 import { fetchHouseholdDetail, type HouseholdDetail } from '../lib/data/households'
 import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/format'
 
@@ -23,12 +24,8 @@ const detail = useQuery((signal) => fetchHouseholdDetail(householdId.value, sign
   watch: [householdId],
 })
 
-watch(
-  () => detail.data.value,
-  (data) => {
-    route.meta.leafCrumb = data?.household.name ?? householdId.value
-  },
-  { immediate: true },
+useLeafCrumb(() =>
+  crumbOf(householdId.value, detail.data.value?.household, (h) => h.id, (h) => h.name),
 )
 
 const household = computed(() => detail.data.value?.household ?? null)

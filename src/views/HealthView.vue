@@ -48,7 +48,7 @@ const eventOffset = ref(0)
 
 const LIMIT = 25
 
-const probes = useQuery(() => probeProjects())
+const probes = useQuery((signal) => probeProjects(signal))
 const health = useQuery((signal) => fetchHealth(signal))
 const digest = useQuery((signal) => fetchEventDigest(range.value, signal), { watch: [range] })
 const events = useQuery(

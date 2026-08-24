@@ -5,9 +5,9 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 // refuses every query regardless, so a guard would be a third place to keep the
 // same rule in step with the other two.
 //
-// `crumb` feeds the breadcrumb trail in TopBar. A detail route sets `leafCrumb`
-// on the route meta once it knows what it is showing, so the trail can say
-// "Households / The Smiths" rather than "Households / a uuid".
+// `crumb` feeds the breadcrumb trail in TopBar. A detail view appends the last
+// segment itself through useLeafCrumb(), so the trail can say "Households / The
+// Smiths" rather than "Households / a uuid".
 
 const routes: RouteRecordRaw[] = [
   {

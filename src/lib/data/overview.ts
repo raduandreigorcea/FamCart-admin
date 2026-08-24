@@ -34,26 +34,31 @@ export async function fetchOverview(range: TimeRange, signal: AbortSignal): Prom
 }
 
 /**
- * The same window immediately before this one, so a tile can show a delta.
+ * BOTH windows -- this one and the one before it -- as a single cumulative
+ * count, which is what a delta is computed FROM rather than what it compares
+ * against.
+ *
+ * The distinction is the whole reason this is not called fetchPreviousWindow,
+ * which is what it was called for as long as it has existed. admin_overview
+ * counts everything since a timestamp; hand it the start of the previous window
+ * and it counts the previous window AND the current one together. Subtracting
+ * is deltaOf()'s job, and the old name promised that had already happened --
+ * making deltaOf(current, previous) read like the obvious call and produce a
+ * number that is wrong by exactly one window.
  *
  * Fetched as a second call rather than computed inside one RPC deliberately: the
  * comparison is a presentation choice, and baking it into the function would
  * mean every caller pays for it including the ones that only want totals.
  */
-export async function fetchPreviousWindow(
+export async function fetchCumulativeWindow(
   range: TimeRange,
   signal: AbortSignal,
 ): Promise<OverviewWindow> {
   const { data, error } = await db()
     .rpc('admin_overview', { p_since: previousSinceIso(range) })
     .abortSignal(signal)
-  if (error) rpcError('admin_overview (previous)', error)
-  const payload = data as OverviewPayload
-
-  // admin_overview counts everything since a timestamp, so the "previous" call
-  // covers BOTH windows. Subtracting the current one leaves the earlier period
-  // alone, which is what a delta compares against.
-  return payload.window
+  if (error) rpcError('admin_overview (cumulative)', error)
+  return (data as OverviewPayload).window
 }
 
 export interface Delta {
@@ -64,9 +69,10 @@ export interface Delta {
 }
 
 /**
- * `current` counts the last N hours. `cumulative` counts the last 2N hours, so
- * the preceding window is the difference. Returns null when there is nothing to
- * compare against, which a tile renders as no delta rather than as +100%.
+ * `current` counts the last N hours. `cumulative` counts the last 2N hours --
+ * what fetchCumulativeWindow returns -- so the preceding window is the
+ * difference. Returns null when there is nothing to compare against, which a
+ * tile renders as no delta rather than as +100%.
  */
 export function deltaOf(current: number, cumulative: number): Delta | null {
   const previous = cumulative - current

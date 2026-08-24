@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 import { fetchUsers } from '../lib/data/users'
@@ -34,21 +34,46 @@ interface Hit {
 }
 
 const hits = ref<Hit[]>([])
+
+// Two guards, and they do different jobs. `searchId` stops a slow answer from
+// overwriting a fast one; the controller stops the slow request from being made
+// at all. Only the first was here, so every keystroke past the debounce left
+// three requests running to completion against three databases -- their results
+// discarded on arrival, their cost already paid.
 let searchId = 0
+let controller: AbortController | null = null
+let debounce: ReturnType<typeof setTimeout> | null = null
+
+/** Stop whatever is in flight and forget whatever is about to start. */
+function cancel() {
+  searchId += 1
+  controller?.abort()
+  controller = null
+  if (debounce) {
+    clearTimeout(debounce)
+    debounce = null
+  }
+}
 
 async function run(term: string) {
   const id = ++searchId
   const trimmed = term.trim()
+
+  controller?.abort()
   if (trimmed.length < 2) {
+    controller = null
     hits.value = []
     busy.value = false
     return
   }
 
+  controller = new AbortController()
+  const { signal } = controller
+
   busy.value = true
 
   const tasks: Promise<Hit[]>[] = [
-    fetchUsers({ query: trimmed, limit: 5 }, new AbortController().signal).then((page) =>
+    fetchUsers({ query: trimmed, limit: 5 }, signal).then((page) =>
       page.rows.map((row) => ({
         id: `u-${row.user_id}`,
         group: 'Users' as const,
@@ -57,7 +82,7 @@ async function run(term: string) {
         to: `/users/${encodeURIComponent(row.user_id)}`,
       })),
     ),
-    fetchHouseholds({ query: trimmed, limit: 5 }, new AbortController().signal).then((page) =>
+    fetchHouseholds({ query: trimmed, limit: 5 }, signal).then((page) =>
       page.rows.map((row) => ({
         id: `h-${row.id}`,
         group: 'Households' as const,
@@ -70,7 +95,7 @@ async function run(term: string) {
 
   if (catalogConfigured()) {
     tasks.push(
-      fetchCatalogProducts({ query: trimmed, limit: 6 }, new AbortController().signal).then((page) =>
+      fetchCatalogProducts({ query: trimmed, limit: 6 }, signal).then((page) =>
         page.rows.map((row) => ({
           id: `p-${row.id}`,
           group: 'Catalog' as const,
@@ -90,8 +115,6 @@ async function run(term: string) {
   busy.value = false
 }
 
-let debounce: ReturnType<typeof setTimeout> | null = null
-
 watch(query, (value) => {
   if (debounce) clearTimeout(debounce)
   // Long enough to mean "stopped typing" on a keyboard, which is faster than the
@@ -103,14 +126,24 @@ watch(
   () => props.open,
   async (open) => {
     if (!open) {
+      // Closing must actually stop the search. Clearing `query` alone fires the
+      // watcher above, which schedules ANOTHER run -- of the empty string, but
+      // still after an in-flight one that nothing had cancelled.
+      cancel()
       query.value = ''
       hits.value = []
+      busy.value = false
       return
     }
     await nextTick()
     input.value?.focus()
   },
 )
+
+// The palette lives for the life of the shell, so this fires on teardown rather
+// than on every close -- but a pending timer holding a closure over an unmounted
+// component is the kind of thing that is only ever noticed in a test run.
+onBeforeUnmount(cancel)
 
 const grouped = computed(() => {
   const order: Hit['group'][] = ['Users', 'Households', 'Catalog']

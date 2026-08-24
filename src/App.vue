@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
-import { useAuth, useClerk, useUser, SignIn } from '@clerk/vue'
+import { useAuth, useUser, SignIn } from '@clerk/vue'
 import SideNav from './components/SideNav.vue'
 import TopBar from './components/TopBar.vue'
 import CommandPalette from './components/CommandPalette.vue'
@@ -10,6 +10,7 @@ import ErrorBoundary from './components/ErrorBoundary.vue'
 import ProjectSwitcher from './components/ProjectSwitcher.vue'
 import AppIcon from './components/AppIcon.vue'
 import { activeProject, appTarget, useSupabaseAuthBridge } from './lib/supabase'
+import { useSignOut } from './lib/useSignOut'
 import { useAdminCheck } from './lib/useAdminCheck'
 
 // The shell, and the three gates a request has to pass before any panel renders:
@@ -23,7 +24,6 @@ import { useAdminCheck } from './lib/useAdminCheck'
 
 const { isLoaded, isSignedIn } = useAuth()
 const { user } = useUser()
-const clerk = useClerk()
 
 /**
  * The way out.
@@ -34,10 +34,10 @@ const clerk = useClerk()
  * you could only leave by clearing site data. Clerk authenticates anyone with
  * a FamCart login, so landing there is normal rather than exceptional, and it
  * is exactly the case that needs an exit.
+ *
+ * An exit that can fail silently is not an exit -- see useSignOut.ts.
  */
-async function signOut() {
-  await clerk.value?.signOut()
-}
+const { signOut, busy: signingOut, error: signOutError } = useSignOut()
 
 // Installs the token resolver the data layer uses. Done once, here, because the
 // data layer is plain functions with no component context of their own -- the
@@ -174,8 +174,11 @@ on conflict (user_id) do nothing;</pre>
 
       <div class="gate__actions">
         <ProjectSwitcher />
-        <button type="button" class="gate__signout" @click="signOut">Sign out</button>
+        <button type="button" class="gate__signout" :disabled="signingOut" @click="signOut">
+          {{ signingOut ? 'Signing out…' : 'Sign out' }}
+        </button>
       </div>
+      <p v-if="signOutError" class="gate__signout-error" role="alert">{{ signOutError }}</p>
       <p class="gate__who">
         Signed in as {{ user?.primaryEmailAddress?.emailAddress || user?.fullName || 'this account' }}
       </p>
@@ -195,8 +198,11 @@ on conflict (user_id) do nothing;</pre>
 
       <div class="gate__actions">
         <ProjectSwitcher />
-        <button type="button" class="gate__signout" @click="signOut">Sign out</button>
+        <button type="button" class="gate__signout" :disabled="signingOut" @click="signOut">
+          {{ signingOut ? 'Signing out…' : 'Sign out' }}
+        </button>
       </div>
+      <p v-if="signOutError" class="gate__signout-error" role="alert">{{ signOutError }}</p>
       <p class="gate__who">
         Signed in as {{ user?.primaryEmailAddress?.emailAddress || user?.fullName || 'this account' }}
       </p>
@@ -346,9 +352,20 @@ on conflict (user_id) do nothing;</pre>
   cursor: pointer;
 }
 
-.gate__signout:hover {
+.gate__signout:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.gate__signout:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.gate__signout-error {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--danger-text);
 }
 
 /* Sits under the overlay rail and over the content, below 900px only. */

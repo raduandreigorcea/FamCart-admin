@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
-import { useClerk, useUser } from '@clerk/vue'
+import { useUser } from '@clerk/vue'
 import AppIcon from './AppIcon.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import { applyResolvedTheme, loadThemeMode, saveThemeMode, type ThemeMode } from '../vendor/theme'
 import { initialOf } from '../lib/format'
+import { leafCrumb } from '../lib/breadcrumb'
+import { useSignOut } from '../lib/useSignOut'
 import type { AppProject } from '../lib/supabase'
 
 // Breadcrumbs, the global search trigger, the project switcher, the theme toggle
@@ -24,8 +26,8 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
+const leaf = leafCrumb()
 const { user } = useUser()
-const clerk = useClerk()
 
 // Breadcrumbs from the matched route records rather than from the URL, so a
 // detail page can say "Households / The Smiths" and not "households / a uuid".
@@ -36,8 +38,7 @@ const crumbs = computed(() => {
       label: String(record.meta.crumb),
       to: record.path.includes(':') ? '' : record.path,
     }))
-  const leaf = route.meta?.leafCrumb as string | undefined
-  if (leaf) trail.push({ label: leaf, to: '' })
+  if (leaf.value) trail.push({ label: leaf.value, to: '' })
   return trail
 })
 
@@ -81,9 +82,13 @@ onBeforeUnmount(() => media?.removeEventListener('change', onSystemChange))
 
 const accountOpen = ref(false)
 
-async function signOut() {
-  accountOpen.value = false
-  await clerk.value?.signOut()
+const { signOut, busy: signingOut, error: signOutError } = useSignOut()
+
+async function requestSignOut() {
+  await signOut()
+  // The menu stays open on failure, because the message is inside it. Closing
+  // it on the way out would hide the only explanation the operator gets.
+  if (!signOutError.value) accountOpen.value = false
 }
 </script>
 
@@ -138,7 +143,15 @@ async function signOut() {
           <strong class="account__name">{{ user?.fullName || 'Signed in' }}</strong>
           <span class="account__id u-mono">{{ user?.id }}</span>
         </div>
-        <button type="button" class="account__action" @click="signOut">Sign out</button>
+        <button
+          type="button"
+          class="account__action"
+          :disabled="signingOut"
+          @click="requestSignOut"
+        >
+          {{ signingOut ? 'Signing out…' : 'Sign out' }}
+        </button>
+        <p v-if="signOutError" class="account__error" role="alert">{{ signOutError }}</p>
       </div>
       <div v-if="accountOpen" class="account__scrim" @click="accountOpen = false"></div>
     </div>
@@ -365,7 +378,18 @@ async function signOut() {
   cursor: pointer;
 }
 
-.account__action:hover {
+.account__action:hover:not(:disabled) {
   background: var(--danger-bg);
+}
+
+.account__action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.account__error {
+  margin: 0 var(--space-2) var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--danger-text);
 }
 </style>

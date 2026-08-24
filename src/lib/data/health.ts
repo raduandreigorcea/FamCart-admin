@@ -66,13 +66,24 @@ async function probe(
  * Deliberately mirrors how src/lib/productSuggestions.ts queries them in the app
  * itself: an unreachable catalog must cost only its own tile. A health page that
  * goes blank because one of the things it monitors is down is not a health page.
+ *
+ * The signal matters more here than anywhere else in the data layer. These are
+ * the only requests the dashboard makes whose PURPOSE is to sit and wait for a
+ * project that may never answer, so without it, leaving the Health page left two
+ * hanging requests behind per visit.
+ *
+ * An aborted probe resolves as `ok: false` like any other failure, which sounds
+ * alarming and is not: useQuery drops the whole result when its signal aborted,
+ * so a cancelled probe never reaches the screen. What must never happen is the
+ * opposite -- a cancellation rendered as "this project is down" -- and the check
+ * that prevents it lives in useQuery, not here.
  */
-export async function probeProjects(): Promise<ProbeResult[]> {
+export async function probeProjects(signal: AbortSignal): Promise<ProbeResult[]> {
   const catalog = getCatalogSupabase()
 
   const probes: Promise<ProbeResult>[] = [
     probe('App database', 'app', async () => {
-      const { error } = await getAppSupabase().rpc('is_admin')
+      const { error } = await getAppSupabase().rpc('is_admin').abortSignal(signal)
       return { error }
     }),
   ]
@@ -84,6 +95,7 @@ export async function probeProjects(): Promise<ProbeResult[]> {
           .from('product_catalog')
           .select('id', { count: 'exact', head: true })
           .limit(1)
+          .abortSignal(signal)
         return { error }
       }),
     )
