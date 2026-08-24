@@ -17,6 +17,7 @@ import { useQuery, describeError } from '../lib/useQuery'
 import {
   fetchPipeline,
   fetchPipelineLogs,
+  runFunnel,
   runLedger,
   triggerCapability,
   type IngestionRun,
@@ -29,11 +30,15 @@ import { useDensity, type Density } from '../lib/useDensity'
 
 // The Product Pipeline.
 //
-// Two tiers, and the page is built around the line between them. Everything
-// above the fold is reconstructed exactly from the rows the importer created:
-// which runs happened, what each produced, how complete it was, and whether a
-// source has gone quiet. Everything the importer discarded -- records read,
-// rejected, deduped, errored -- left no row and is therefore not here.
+// This page used to be built around a line between what the database recorded
+// and what it could not: runs were reconstructed from the rows they created,
+// and everything the importer DISCARDED left no row and so was not here at all.
+//
+// catalog-importer now publishes a ledger -- catalog_import_runs and
+// catalog_import_outcomes -- so the second tier is real. What remains
+// unavailable is narrower and more specific: a run with no score half, a run
+// whose records retention has pruned, and per-step logs, which are still
+// written to a terminal and nowhere else.
 //
 // See src/lib/data/pipeline.ts for the full account of why.
 
@@ -68,6 +73,38 @@ const ledger = computed(() =>
 )
 
 const snapshot = computed(() => pipeline.data.value)
+
+// The newest run that recorded a funnel. Not simply runs[0]: a run published
+// from a load with no matching score has no stage counts, and falling back to
+// the one behind it beats showing an empty tile.
+const latestFunnel = computed(() => {
+  for (const run of snapshot.value?.runs ?? []) {
+    if (!run.row) continue
+    const funnel = runFunnel(run.row)
+    if (funnel.available) return funnel.value
+  }
+  return null
+})
+
+const funnelBars = computed(() => {
+  const funnel = latestFunnel.value
+  if (!funnel) return []
+  return [
+    { key: 'read', label: 'Read', value: funnel.read, meta: 'from the market subset' },
+    { key: 'rejected', label: 'Rejected', value: funnel.rejected, meta: 'before scoring' },
+    { key: 'dropped', label: 'Dropped', value: funnel.dropped, meta: 'by the gate' },
+    { key: 'review', label: 'In review', value: funnel.review, meta: 'awaiting a verdict' },
+    { key: 'auto', label: 'Auto-load', value: funnel.auto, meta: 'accepted' },
+    { key: 'capped', label: 'Capped', value: funnel.capped, meta: 'over the per-market cap' },
+  ]
+})
+
+/** Everything the newest run read and did not write. */
+const didNotLand = computed(() =>
+  latestFunnel.value
+    ? latestFunnel.value.rejected + latestFunnel.value.dropped + latestFunnel.value.review
+    : null,
+)
 
 const runColumns: Column<RunRow>[] = [
   { key: 'version', label: 'Run', width: '20%' },
@@ -196,15 +233,15 @@ function statusLabel(status: string, ageDays: number | null): string {
         <div class="span-3">
           <StatTile
             label="Records processed"
-            unrecorded
-            unrecorded-reason="Not persisted by import_catalog_products()"
+            :value="latestFunnel?.read ?? null"
+            hint="Read from the market subset by the newest run"
           />
         </div>
         <div class="span-3">
           <StatTile
-            label="Rejected records"
-            unrecorded
-            unrecorded-reason="A rejected record leaves no row"
+            label="Didn't land"
+            :value="didNotLand"
+            hint="Rejected, dropped, or left in the review band"
           />
         </div>
       </div>
@@ -339,6 +376,21 @@ function statusLabel(status: string, ageDays: number | null): string {
         </DataTable>
       </PanelCard>
 
+      <PanelCard
+        title="Where everything went"
+        note="The newest run that recorded a funnel. Each stage is what the importer decided, not what the catalog implies."
+        fill
+      >
+        <StateBlock
+          v-if="!latestFunnel"
+          state="unrecorded"
+          title="No run has published a funnel"
+          message="Runs recorded before the import ledger existed carry only the rows they created."
+          would-require="Run `npm run publish` in catalog-importer against a scored run."
+        />
+        <BarChart v-else :bars="funnelBars" :format="formatCount" dense />
+      </PanelCard>
+
       <PanelCard title="Pipeline logs" flush>
         <StateBlock
           v-if="!logs.available"
@@ -400,6 +452,46 @@ function statusLabel(status: string, ageDays: number | null): string {
             :message="ledger.reason"
             :would-require="ledger.wouldRequire"
           />
+          <dl v-else class="drawer-facts u-facts">
+            <div>
+              <dt>Records read</dt>
+              <dd class="u-num">{{ formatCount(ledger.value.recordsRead) }}</dd>
+            </div>
+            <div>
+              <dt>Rejected before scoring</dt>
+              <dd class="u-num">{{ formatCount(ledger.value.recordsRejected) }}</dd>
+            </div>
+            <div>
+              <dt>Rows refreshed</dt>
+              <dd class="u-num">{{ formatCount(ledger.value.updated) }}</dd>
+            </div>
+            <div>
+              <dt>Barcode conflicts</dt>
+              <dd class="u-num">{{ formatCount(ledger.value.barcodeConflicts) }}</dd>
+            </div>
+            <div>
+              <dt>Deduped</dt>
+              <dd class="u-num">{{ formatCount(ledger.value.duplicates) }}</dd>
+            </div>
+            <div>
+              <dt>Failed chunks</dt>
+              <dd class="u-num">{{ formatCount(ledger.value.errors) }}</dd>
+            </div>
+          </dl>
+
+          <StateBlock
+            v-if="openRun.row?.outcomes_pruned"
+            state="unrecorded"
+            title="The records themselves are gone"
+            message="Retention keeps the discarded records of the 5 most recent runs per source. This run's counts above are exact; its individual records have been pruned."
+            would-require="Nothing -- this is the retention rule working. Re-publish from catalog-importer if you still have this run's out/ directory."
+            compact
+          />
+          <RouterLink
+            v-else-if="openRun.row"
+            :to="`/products?scope=outcomes&run=${encodeURIComponent(openRun.row.id)}`"
+            class="drawer-link"
+          >Browse what this run discarded</RouterLink>
 
           <RouterLink
             v-if="openRun.version"
