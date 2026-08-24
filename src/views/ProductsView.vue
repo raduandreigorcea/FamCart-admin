@@ -34,9 +34,30 @@ import { useDensity, type Density } from '../lib/useDensity'
 // The two tabs are two DIFFERENT TABLES in two different databases, and the page
 // says so rather than blending them into one list. The catalog project holds
 // imported and curated rows that belong to nobody; the app database holds what
-// households contributed and what has been promoted out of those. The same
-// product can be in both, and that is the thing an operator opens this page to
-// find out.
+// households contributed and the global rows those contributions were promoted
+// into. The same product can be in both, and that is the thing an operator opens
+// this page to find out.
+//
+// ─── TWO DELETIONS THAT SOUND LIKE ONE ───────────────────────────────────────
+//
+// The page description used to say the app database holds "what was promoted
+// out of it", which reads as promoted OUT OF the app database -- the opposite of
+// what happens -- and it cost a reader an afternoon.
+//
+// Promotion works on one axis only, inside the app database:
+// promote_product_from_scoped() in 006_product_catalog.sql waits for three
+// distinct contributors across three distinct households on one search_text,
+// then DELETES every scoped row for that key in the same statement that inserts
+// the single global one. Its own comment says why -- "leaving the scoped rows
+// would show their households the same product twice". So within this database
+// a product is household-scoped or global and never both, which is exactly what
+// the Scope filter's three segments assume.
+//
+// Nothing crosses the database boundary. Promotion never touches the catalog
+// project and the importer never touches this one, so a product genuinely can be
+// an imported row over there AND a promoted global here. FamCart's own search
+// hides that from users -- rankSuggestions() dedupes first-wins on productKey()
+// with catalog rows first -- which is precisely why this page does not.
 
 const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
@@ -181,7 +202,7 @@ function quality(row: CatalogProductRow) {
   <div class="page">
     <PageHeader
       title="Products"
-      description="Two tables in two databases. The catalog project holds imported and curated rows that belong to nobody; the app database holds what households contributed and what was promoted out of it. A product can be in both."
+      description="Two tables in two databases. The catalog project holds imported and curated rows that belong to nobody; the app database holds what households contributed, plus the global rows those contributions were promoted into. Promotion deletes the scoped rows it collapses, so inside the app database a product is one or the other — but it never touches the catalog project, so the same product can sit in both."
       :fetched-at="active.fetchedAt.value"
       :busy="active.fetching.value"
       @refresh="refresh"
@@ -249,8 +270,16 @@ function quality(row: CatalogProductRow) {
               :model-value="localScope"
               :segments="[
                 { value: 'all', label: 'All' },
-                { value: 'community', label: 'Household-scoped' },
-                { value: 'promoted', label: 'Promoted' },
+                {
+                  value: 'community',
+                  label: 'Household-scoped',
+                  title: 'Contributed by one household and visible only to it. Still short of the three households and three accounts a promotion needs.',
+                },
+                {
+                  value: 'promoted',
+                  label: 'Promoted',
+                  title: 'Global rows, visible to everyone. The scoped rows they were collapsed from no longer exist.',
+                },
               ]"
               label="Scope"
               @update:model-value="localScope = $event as 'all' | 'community' | 'promoted'"
