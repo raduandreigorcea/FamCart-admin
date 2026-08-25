@@ -20,6 +20,7 @@ guarded RPC, and there are seven:
 | Delete and restore a household | Household detail, Trash | yes, soft delete |
 | Ban and unban an account | User detail | yes, by the opposite action |
 | Record, clear or bulk-approve a review verdict | Review | yes, and unconfirmed for that reason |
+| Start or cancel a pipeline run | Pipeline | the request is; what a stage writes is not |
 
 Every one but the last asks for confirmation first. The review verdicts do not,
 deliberately: confirming four hundred approvals one at a time makes that screen
@@ -70,4 +71,5 @@ in the file that made it:
 | Why there is no cache, and what Refresh promises | `src/lib/useQuery.ts` |
 | Why a stale chunk reloads the page after a deploy | `src/router/index.ts` |
 | Why a verdict does nothing until the next importer run | `src/views/ReviewView.vue` |
+| Why a run is queued rather than started, and what happens with no worker | `src/components/RunControl.vue` |
 | Which Supabase project holds what, and the Clerk instance | `../CLAUDE.md` |
