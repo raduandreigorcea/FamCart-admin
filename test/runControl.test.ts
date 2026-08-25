@@ -54,6 +54,7 @@ const liveWorker = {
   last_seen_at: '2026-08-25T00:00:00.000Z',
   current_request: null,
   seconds_since_seen: 2,
+  sources: ['openfoodfacts', 'openbeautyfacts'],
 }
 
 const runningRequest = {
@@ -168,6 +169,31 @@ describe('RunControl', () => {
     await flush()
 
     expect(cancelRun).toHaveBeenCalledWith('r1')
+  })
+
+  // Pressing Normalize for a source nobody acquired failed in under a second
+  // with "no market subset". The error was right; the button was wrong.
+  it('refuses a source the runner has not acquired, and names the command', async () => {
+    const w = mount(RunControl, { global: { stubs } })
+    await flush()
+
+    await w.find('select').setValue('openproductsfacts')
+    await flush()
+
+    expect(w.find('[data-test="not-acquired"]').exists()).toBe(true)
+    expect(w.text()).toMatch(/acquire:opf/)
+    expect(w.find('[data-test="run-normalize"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('leaves the buttons live for a source the runner has acquired', async () => {
+    const w = mount(RunControl, { global: { stubs } })
+    await flush()
+
+    await w.find('select').setValue('openbeautyfacts')
+    await flush()
+
+    expect(w.find('[data-test="not-acquired"]').exists()).toBe(false)
+    expect(w.find('[data-test="run-normalize"]').attributes('disabled')).toBeUndefined()
   })
 
   it('renders a failure with its reason', async () => {

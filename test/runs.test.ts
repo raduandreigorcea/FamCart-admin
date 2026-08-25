@@ -4,6 +4,7 @@ import {
   isActive,
   isStalled,
   runnerOnline,
+  sourceReady,
   type RunRequest,
   type WorkerRow,
 } from '../src/lib/data/runs'
@@ -15,6 +16,7 @@ const worker = (seconds: number, over: Partial<WorkerRow> = {}): WorkerRow => ({
   last_seen_at: '2026-08-25T00:00:00.000Z',
   current_request: null,
   seconds_since_seen: seconds,
+  sources: ['openfoodfacts', 'openbeautyfacts'],
   ...over,
 })
 
@@ -72,22 +74,59 @@ describe('isActive', () => {
 })
 
 describe('isStalled', () => {
-  // The worker marks its own request failed on ctrl-c, so this is the other
-  // case: a power cut. A spinner that never finishes is the one state the panel
-  // must not show.
-  it('is stalled when a running request has nobody listening', () => {
-    expect(isStalled(request(), null)).toBe(true)
+  it('is stalled when nothing is listening at all', () => {
+    expect(isStalled(request(), [])).toBe(true)
   })
 
-  it('is not stalled while a worker is online', () => {
-    expect(isStalled(request(), worker(2))).toBe(false)
+  it('is not stalled while the worker that claimed it is alive', () => {
+    expect(isStalled(request({ claimed_by: 'w1' }), [worker(2)])).toBe(false)
+  })
+
+  // The one that bit: a worker killed outright never marks its request, so
+  // restarting the worker left the old request running forever while the new
+  // one reported itself healthy. Asking "is anyone online" called that Running
+  // and let it block every button on the panel.
+  it('is stalled when a DIFFERENT worker is online', () => {
+    const replacement = worker(2, { id: 'w2' })
+    expect(isStalled(request({ claimed_by: 'w1' }), [replacement])).toBe(true)
+  })
+
+  it('is stalled when the claiming worker has gone stale', () => {
+    expect(isStalled(request({ claimed_by: 'w1' }), [worker(120)])).toBe(true)
   })
 
   it('is not stalled for a queued request, which nobody has claimed yet', () => {
-    expect(isStalled(request({ status: 'queued' }), null)).toBe(false)
+    expect(isStalled(request({ status: 'queued' }), [])).toBe(false)
   })
 
   it('is not stalled for a finished request', () => {
-    expect(isStalled(request({ status: 'done' }), null)).toBe(false)
+    expect(isStalled(request({ status: 'done' }), [])).toBe(false)
+  })
+})
+
+// Pressing Normalize for a source nobody has acquired failed in under a second
+// with "no market subset". The error was right; the button should not have been
+// offered. Only the worker can see which subsets exist, so it reports them.
+describe('sourceReady', () => {
+  it('is false with no runner at all', () => {
+    expect(sourceReady(null, 'openfoodfacts')).toBe(false)
+  })
+
+  it('is true for a source the runner has acquired', () => {
+    expect(sourceReady(worker(2), 'openfoodfacts')).toBe(true)
+  })
+
+  it('is false for a source the runner has not acquired', () => {
+    expect(sourceReady(worker(2), 'openproductsfacts')).toBe(false)
+  })
+
+  it('is false when the runner has acquired nothing', () => {
+    expect(sourceReady(worker(2, { sources: [] }), 'openfoodfacts')).toBe(false)
+  })
+
+  // An older worker that never reports the column must not read as a machine
+  // with nothing acquired, or every button goes dead on a runner that works.
+  it('allows everything when the runner reports nothing at all', () => {
+    expect(sourceReady(worker(2, { sources: null }), 'openproductsfacts')).toBe(true)
   })
 })
