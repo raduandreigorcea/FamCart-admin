@@ -127,19 +127,18 @@ defineProps({
 /* ── not recorded ────────────────────────────────────────────────────────── */
 /* The hatch is the whole point: it reads as "no signal here" at a glance and
    cannot be mistaken for a panel reporting a real zero. Kept low-contrast so it
-   is texture rather than pattern. */
+   is texture rather than pattern.
+
+   It is --rule-hatch rather than a gradient of its own. This block and the empty
+   rule under a stat tile are the same statement at two sizes -- "nobody recorded
+   this" -- and they were drawn at different angles and different pitches, which
+   made them look like two unrelated textures instead of one idea. */
 .unrecorded {
   border: var(--border-width-thin) dashed var(--unrecorded-line);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
   background-color: var(--unrecorded-bg);
-  background-image: repeating-linear-gradient(
-    135deg,
-    transparent 0,
-    transparent 7px,
-    var(--unrecorded-line) 7px,
-    var(--unrecorded-line) 8px
-  );
+  background-image: var(--rule-hatch);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
