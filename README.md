@@ -11,8 +11,20 @@ exist and how active they are, which accounts contribute products, what the
 imported catalog actually contains, whether the three Supabase projects are
 answering, and what the audit trail recorded.
 
-It is a **read-only tool with two exceptions**: granting and revoking admin
-access, both single-click confirmed.
+It is **mostly a read-only tool**. Everything it can change, it changes through a
+guarded RPC, and there are seven:
+
+| Write | Where | Reversible |
+|---|---|---|
+| Grant and revoke admin access | Access | yes, by the opposite action |
+| Delete and restore a household | Household detail, Trash | yes, soft delete |
+| Ban and unban an account | User detail | yes, by the opposite action |
+| Record, clear or bulk-approve a review verdict | Review | yes, and unconfirmed for that reason |
+
+Every one but the last asks for confirmation first. The review verdicts do not,
+deliberately: confirming four hundred approvals one at a time makes that screen
+useless, and unlike a deletion a verdict is an upsert with Undo one click away.
+The bulk approve is confirmed, because that one is not row-by-row reversible.
 
 ## What enforces the rules
 
@@ -57,4 +69,5 @@ in the file that made it:
 | Why the catalog aggregate is computed in the browser, and when to stop | `src/lib/data/products.ts` |
 | Why there is no cache, and what Refresh promises | `src/lib/useQuery.ts` |
 | Why a stale chunk reloads the page after a deploy | `src/router/index.ts` |
+| Why a verdict does nothing until the next importer run | `src/views/ReviewView.vue` |
 | Which Supabase project holds what, and the Clerk instance | `../CLAUDE.md` |

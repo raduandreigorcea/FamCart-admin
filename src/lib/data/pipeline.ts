@@ -379,6 +379,11 @@ export function fetchPipelineLogs(): Metric<PipelineLogEntry[]> {
 //
 // The UI shows the control as unavailable with this explanation and the command
 // to run instead, which is the honest version of the feature.
+//
+// Note what is NO LONGER in that list: approving the review band. Verdicts are
+// recorded on the Review screen now and read from catalog_review_decisions at
+// the start of every score run, so the only thing left that needs a terminal is
+// STARTING one.
 export interface TriggerCapability {
   supported: false
   reason: string
