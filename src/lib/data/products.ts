@@ -251,17 +251,18 @@ export interface CatalogShape {
   popularity: { adopted: number; totalAddCount: number; topAddCount: number }
 }
 
-const SHAPE_PAGE = 1000
 
-/**
- * How many rows the client-side aggregate will pull before giving up.
- *
- * At roughly 10,800 rows today this is ~20x headroom. When it is reached the
- * answer is not to raise it: the fix named at the top of this section is a
- * `catalog_stats()` definer function in the catalog project returning
- * CatalogShape's shape, which moves the work to the database where it belongs.
- */
-const SHAPE_ROW_CEILING = 200_000
+/** What a catalog nobody has imported into looks like. */
+const EMPTY_SHAPE: CatalogShape = {
+  total: 0,
+  truncated: false,
+  bySource: [],
+  byVersion: [],
+  byMarket: [],
+  byCreatedDay: [],
+  coverage: { withBarcode: 0, withMaker: 0, withAliases: 0, withMarkets: 0 },
+  popularity: { adopted: 0, totalAddCount: 0, topAddCount: 0 },
+}
 
 let shapeCache: Promise<CatalogShape> | null = null
 let shapeBuild: AbortController | null = null
@@ -319,136 +320,25 @@ export function refreshCatalogShape(): Promise<CatalogShape> {
   return loadCatalogShape(true)
 }
 
-type ShapeRow = Pick<
-  CatalogProductRow,
-  'source' | 'source_version' | 'created_at' | 'barcode' | 'markets' | 'add_count' | 'base_weight' | 'search_aliases' | 'maker'
->
-
 async function buildCatalogShape(signal: AbortSignal): Promise<CatalogShape> {
   const client = getCatalogSupabase()
   if (!client) throw new CatalogNotConfigured()
 
-  const rows: ShapeRow[] = []
-  let truncated = false
-  for (let offset = 0; ; offset += SHAPE_PAGE) {
-    const { data, error } = await client
-      .from('product_catalog')
-      .select('source,source_version,created_at,barcode,markets,add_count,base_weight,search_aliases,maker')
-      .order('id', { ascending: true })
-      .range(offset, offset + SHAPE_PAGE - 1)
-      .abortSignal(signal)
+  // One call, and it reads a cached row rather than scanning the table.
+  //
+  // This used to page product_catalog a thousand rows at a time and tally the
+  // result in the browser, which was the right call at 13,975 rows and became
+  // 192 sequential requests at 191,394. The section header above named the fix
+  // before there was anything to fix, and this is it: catalog_stats() in the
+  // catalog project, returning this type.
+  //
+  // The database does not compute it on read either. These numbers only change
+  // when an import runs, so catalog-importer refreshes them at the end of a
+  // load and this reads the answer. 18.7 seconds became 0.19.
+  const { data, error } = await client.rpc('catalog_stats').abortSignal(signal)
+  if (error) queryError('catalog_stats', error)
 
-    // The signal has to be read here as well as handed to the request. Aborting
-    // between two pages leaves the loop mid-flight with a resolved page in hand
-    // and nothing to stop it asking for the next one.
-    if (signal.aborted) throw new DOMException('Catalog shape build superseded', 'AbortError')
-
-    if (error) {
-      queryError('product_catalog shape', error)
-    }
-    const page = (data ?? []) as ShapeRow[]
-    rows.push(...page)
-    if (page.length < SHAPE_PAGE) break
-    // A guard rather than a limit. Past this point the aggregate describes a
-    // prefix of the catalog and not the catalog, so the flag travels with it --
-    // a wrong number shown confidently is the failure mode this whole file is
-    // written to avoid, and a ceiling that trips silently IS that failure.
-    if (rows.length >= SHAPE_ROW_CEILING) {
-      truncated = true
-      break
-    }
-  }
-
-  const bySource = new Map<string, { rows: number; withBarcode: number; withMarkets: number }>()
-  const byVersion = new Map<
-    string,
-    {
-      source: string
-      version: string | null
-      rows: number
-      firstSeen: string
-      lastSeen: string
-      withBarcode: number
-      withAliases: number
-      withMarkets: number
-    }
-  >()
-  const byMarket = new Map<string, number>()
-  const byDay = new Map<string, number>()
-
-  let withBarcode = 0
-  let withMaker = 0
-  let withAliases = 0
-  let withMarkets = 0
-  let adopted = 0
-  let totalAddCount = 0
-  let topAddCount = 0
-
-  for (const row of rows) {
-    const source = row.source ?? 'unknown'
-    const hasBarcode = Boolean(row.barcode)
-    const hasMarkets = Boolean(row.markets?.length)
-    const hasAliases = Boolean(row.search_aliases)
-
-    if (hasBarcode) withBarcode += 1
-    if (row.maker) withMaker += 1
-    if (hasAliases) withAliases += 1
-    if (hasMarkets) withMarkets += 1
-    if ((row.add_count ?? 0) > 0) adopted += 1
-    totalAddCount += row.add_count ?? 0
-    topAddCount = Math.max(topAddCount, row.add_count ?? 0)
-
-    const s = bySource.get(source) ?? { rows: 0, withBarcode: 0, withMarkets: 0 }
-    s.rows += 1
-    if (hasBarcode) s.withBarcode += 1
-    if (hasMarkets) s.withMarkets += 1
-    bySource.set(source, s)
-
-    const versionKey = `${source}::${row.source_version ?? ''}`
-    const v =
-      byVersion.get(versionKey) ??
-      {
-        source,
-        version: row.source_version,
-        rows: 0,
-        firstSeen: row.created_at,
-        lastSeen: row.created_at,
-        withBarcode: 0,
-        withAliases: 0,
-        withMarkets: 0,
-      }
-    v.rows += 1
-    if (row.created_at < v.firstSeen) v.firstSeen = row.created_at
-    if (row.created_at > v.lastSeen) v.lastSeen = row.created_at
-    if (hasBarcode) v.withBarcode += 1
-    if (hasAliases) v.withAliases += 1
-    if (hasMarkets) v.withMarkets += 1
-    byVersion.set(versionKey, v)
-
-    for (const market of row.markets ?? []) {
-      byMarket.set(market, (byMarket.get(market) ?? 0) + 1)
-    }
-
-    const day = (row.created_at ?? '').slice(0, 10)
-    if (day) byDay.set(day, (byDay.get(day) ?? 0) + 1)
-  }
-
-  return {
-    total: rows.length,
-    truncated,
-    bySource: [...bySource.entries()]
-      .map(([source, v]) => ({ source, ...v }))
-      .sort((a, b) => b.rows - a.rows),
-    byVersion: [...byVersion.values()].sort((a, b) => b.lastSeen.localeCompare(a.lastSeen)),
-    byMarket: [...byMarket.entries()]
-      .map(([market, count]) => ({ market, rows: count }))
-      .sort((a, b) => b.rows - a.rows),
-    byCreatedDay: [...byDay.entries()]
-      .map(([day, count]) => ({ day, rows: count }))
-      .sort((a, b) => a.day.localeCompare(b.day)),
-    coverage: { withBarcode, withMaker, withAliases, withMarkets },
-    popularity: { adopted, totalAddCount, topAddCount },
-  }
+  return (data ?? EMPTY_SHAPE) as CatalogShape
 }
 
 // ─── the app database's own rows ─────────────────────────────────────────────
