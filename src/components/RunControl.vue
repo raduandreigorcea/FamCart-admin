@@ -16,6 +16,7 @@ import {
   isActive,
   isStalled,
   runnerOnline,
+  sourceReady,
   type RunKind,
   type RunRequest,
 } from '../lib/data/runs'
@@ -125,7 +126,35 @@ const busy = ref(false)
 const actionError = ref('')
 const pendingApply = ref<RunKind | null>(null)
 
-const canStart = computed(() => runner.value !== null && activeRequest.value === null && !busy.value)
+/**
+ * The active request is running but the worker that claimed it is gone.
+ *
+ * Declared before canStart because canStart depends on it: a stalled request is
+ * never going to finish, and letting it disable the panel is how one killed
+ * process locks the page until somebody edits the database.
+ */
+const stalled = computed(
+  () => activeRequest.value !== null && isStalled(activeRequest.value, workers.data.value ?? []),
+)
+
+const ready = computed(() => sourceReady(runner.value, source.value))
+
+const canStart = computed(
+  () =>
+    runner.value !== null &&
+    ready.value &&
+    // A stalled request is never going to finish, so it must not hold the panel
+    // hostage. Cancel is offered beside it; starting something else is fine too.
+    (activeRequest.value === null || stalled.value) &&
+    !busy.value,
+)
+
+/** The acquire command for the selected source, which the dashboard cannot run. */
+const acquireHint = computed(() => {
+  const suffix =
+    source.value === 'openproductsfacts' ? ':opf' : source.value === 'openbeautyfacts' ? ':obf' : ''
+  return `npm run acquire${suffix} && npm run acquire${suffix}:filter`
+})
 
 async function start(kind: RunKind) {
   if (busy.value) return
@@ -166,10 +195,6 @@ async function cancel() {
 }
 
 // ─── rendering ───────────────────────────────────────────────────────────────
-const stalled = computed(
-  () => activeRequest.value !== null && isStalled(activeRequest.value, runner.value),
-)
-
 const statusTone: Record<string, Tone> = {
   queued: 'idle',
   running: 'accent',
@@ -243,6 +268,17 @@ const columns: Column<RunRequest>[] = [
         service-role key. The dashboard cannot do this part itself.
       </span>
     </div>
+
+    <!--
+      A source with no subset on the runner would fail in under a second with
+      "no market subset". The button should not be offered, and the reason is
+      one the dashboard genuinely cannot fix for you: acquire is not queueable.
+    -->
+    <p v-if="runner && !ready" class="notready" data-test="not-acquired">
+      <strong>{{ source }}</strong> has not been acquired on {{ runner.hostname ?? runner.id }}.
+      Run <code>{{ acquireHint }}</code> there first. It is a large download, which is why
+      it is not a button here.
+    </p>
 
     <div class="controls">
       <label class="controls__label" for="run-source">Source</label>

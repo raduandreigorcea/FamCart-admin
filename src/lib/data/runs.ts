@@ -62,6 +62,15 @@ export interface WorkerRow {
   last_seen_at: string
   current_request: string | null
   seconds_since_seen: number
+  /**
+   * Source ids this worker has a market subset cached for.
+   *
+   * Only the worker can know this: the subsets are files on its disk. Without
+   * it the dashboard offers all three sources and two of them fail in under a
+   * second with "no market subset", which is a button that should never have
+   * been enabled.
+   */
+  sources: string[] | null
 }
 
 /**
@@ -89,15 +98,44 @@ export function runnerOnline(
   return live.length ? live[0] : null
 }
 
+/** Every worker that has checked in recently enough to still be doing something. */
+export function liveWorkers(
+  workers: WorkerRow[],
+  staleAfterSeconds: number = WORKER_STALE_SECONDS,
+): WorkerRow[] {
+  return workers.filter((w) => Number(w.seconds_since_seen) <= staleAfterSeconds)
+}
+
 /**
- * A request that says it is running while nothing is listening.
+ * A request that says it is running while the worker that claimed it is gone.
  *
- * The worker marks its own request failed on ctrl-c, so this is the other case:
- * a power cut, or a process killed outright. Rendering it as Running would be a
- * spinner that never finishes, which is the one state this panel must not show.
+ * Asks about THAT worker, not about whether any worker is online, and the
+ * difference is not academic: a worker killed outright never marks its request,
+ * so restarting it leaves the old request running forever while the new worker
+ * reports itself perfectly healthy. Checking only "is anyone listening" called
+ * that Running and let it block every button on the panel.
+ *
+ * A request with no claimed_by has not been picked up yet, which is queued
+ * rather than stalled.
  */
-export function isStalled(request: RunRequest | RunRequestDetail, runner: WorkerRow | null): boolean {
-  return request.status === 'running' && runner === null
+export function isStalled(request: RunRequest, workers: WorkerRow[]): boolean {
+  if (request.status !== 'running') return false
+  if (!request.claimed_by) return true
+  return !liveWorkers(workers).some((w) => w.id === request.claimed_by)
+}
+
+/**
+ * Whether the runner could actually run a stage for this source.
+ *
+ * A worker that reports nothing -- an older one, or one that has not heartbeated
+ * since the column existed -- is treated as able to run anything, which is what
+ * it was before this existed. Guessing the other way would disable every button
+ * on a runner that is working fine.
+ */
+export function sourceReady(runner: WorkerRow | null, source: string): boolean {
+  if (!runner) return false
+  if (runner.sources === null) return true
+  return runner.sources.includes(source)
 }
 
 function client() {
