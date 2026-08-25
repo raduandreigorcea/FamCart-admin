@@ -11,6 +11,7 @@ import BarChart from '../components/BarChart.vue'
 import LineChart from '../components/LineChart.vue'
 import SideDrawer from '../components/SideDrawer.vue'
 import CopyValue from '../components/CopyValue.vue'
+import StageLadder from '../components/StageLadder.vue'
 import RunControl from '../components/RunControl.vue'
 import TruncationNotice from '../components/TruncationNotice.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
@@ -85,25 +86,7 @@ const latestFunnel = computed(() => {
   return null
 })
 
-const funnelBars = computed(() => {
-  const funnel = latestFunnel.value
-  if (!funnel) return []
-  return [
-    { key: 'read', label: 'Read', value: funnel.read, meta: 'from the market subset' },
-    { key: 'rejected', label: 'Rejected', value: funnel.rejected, meta: 'before scoring' },
-    { key: 'dropped', label: 'Dropped', value: funnel.dropped, meta: 'by the gate' },
-    { key: 'review', label: 'In review', value: funnel.review, meta: 'awaiting a verdict' },
-    { key: 'auto', label: 'Auto-load', value: funnel.auto, meta: 'accepted' },
-    { key: 'capped', label: 'Capped', value: funnel.capped, meta: 'over the per-market cap' },
-  ]
-})
 
-/** Everything the newest run read and did not write. */
-const didNotLand = computed(() =>
-  latestFunnel.value
-    ? latestFunnel.value.rejected + latestFunnel.value.dropped + latestFunnel.value.review
-    : null,
-)
 
 const runColumns: Column<RunRow>[] = [
   { key: 'version', label: 'Run', width: '20%' },
@@ -180,7 +163,7 @@ function statusLabel(status: string, ageDays: number | null): string {
   <div class="page">
     <PageHeader
       title="Product Pipeline"
-      description="Ingestion reconstructed from the rows each run created. The importer is a local CLI; the database keeps its output and no record of the run itself."
+      description="Where the catalog comes from, and what it cost to get there."
       :fetched-at="pipeline.fetchedAt.value"
       :busy="pipeline.fetching.value"
       @refresh="refresh"
@@ -215,39 +198,44 @@ function statusLabel(status: string, ageDays: number | null): string {
 
     <template v-else>
       <div class="grid">
-        <div class="span-3">
+        <div class="span-6">
           <StatTile
             label="Catalog rows"
             :value="snapshot?.totalRows ?? null"
             hint="Every row in the catalog project"
           />
         </div>
-        <div class="span-3">
+        <div class="span-6">
           <StatTile
             label="Import runs"
             :value="snapshot?.runs.length ?? null"
             hint="Distinct source versions"
           />
         </div>
-        <div class="span-3">
-          <StatTile
-            label="Records processed"
-            :value="latestFunnel?.read ?? null"
-            hint="Read from the market subset by the newest run"
-          />
-        </div>
-        <div class="span-3">
-          <StatTile
-            label="Didn't land"
-            :value="didNotLand"
-            hint="Rejected, dropped, or left in the review band"
-          />
-        </div>
       </div>
 
       <div class="grid">
         <div class="span-8">
-          <PanelCard title="Ingestion history" note="Rows created per day. Imports are events, not a rate." fill>
+          <!-- The hero, and deliberately a diagram rather than a row of numbers.
+         What somebody wants to know on arriving here is how much of what the
+         importer read is actually in the catalog, and that is a shape before it
+         is a figure. -->
+    <PanelCard
+      title="What the last run did"
+      note="Every record it read, and where each one ended up."
+      flush
+    >
+      <StageLadder v-if="latestFunnel" :funnel="latestFunnel" />
+      <StateBlock
+        v-else
+        state="unrecorded"
+        title="No run has recorded its stages yet"
+        message="Runs from before the import ledger existed kept only the rows they created, not the account of what they threw away."
+        would-require="Start a re-score below and this fills in when it finishes."
+      />
+    </PanelCard>
+
+    <PanelCard title="Ingestion history" note="Rows created per day. Imports are events, not a rate." fill>
             <StateBlock
               v-if="!snapshot?.byDay.length"
               state="empty"
@@ -365,21 +353,6 @@ function statusLabel(status: string, ageDays: number | null): string {
             </span>
           </template>
         </DataTable>
-      </PanelCard>
-
-      <PanelCard
-        title="Where everything went"
-        note="The newest run that recorded a funnel. Each stage is what the importer decided, not what the catalog implies."
-        fill
-      >
-        <StateBlock
-          v-if="!latestFunnel"
-          state="unrecorded"
-          title="No run has published a funnel"
-          message="Runs recorded before the import ledger existed carry only the rows they created."
-          would-require="Run `npm run publish` in catalog-importer against a scored run."
-        />
-        <BarChart v-else :bars="funnelBars" :format="formatCount" dense />
       </PanelCard>
 
       <PanelCard title="Pipeline logs" flush>
