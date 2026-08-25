@@ -102,6 +102,19 @@ describe('isStalled', () => {
   it('is not stalled for a finished request', () => {
     expect(isStalled(request({ status: 'done' }), [])).toBe(false)
   })
+
+  // The one that locked the panel for two hours. cancel_run asks the worker to
+  // stop between chunks; a worker that never comes back leaves the row asking
+  // forever, and `cancelling` counted as active without ever counting as
+  // stalled, so every button stayed grey with no way out but editing the
+  // database by hand.
+  it('is stalled when a cancelling request has lost its worker', () => {
+    expect(isStalled(request({ status: 'cancelling', claimed_by: 'w1' }), [])).toBe(true)
+  })
+
+  it('is not stalled while a cancelling request still has its worker', () => {
+    expect(isStalled(request({ status: 'cancelling', claimed_by: 'w1' }), [worker(2)])).toBe(false)
+  })
 })
 
 // Pressing Normalize for a source nobody has acquired failed in under a second

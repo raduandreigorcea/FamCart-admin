@@ -278,7 +278,7 @@ function statusLabel(status: string, ageDays: number | null): string {
       </div>
 
       <div class="grid">
-        <div class="span-5">
+        <div class="span-12">
           <PanelCard title="Source health" note="Rows per source, and how long since each last produced one." fill>
             <BarChart :bars="sourceBars" :format="formatCount" dense />
 
@@ -296,18 +296,15 @@ function statusLabel(status: string, ageDays: number | null): string {
             </ul>
           </PanelCard>
         </div>
-
-        <div class="span-7">
-          <PanelCard
-            title="Start a run"
-            note="Queued here, performed by a worker on the machine that holds the dump."
-            fill
-            flush
-          >
-            <RunControl @finished="refresh" />
-          </PanelCard>
-        </div>
       </div>
+
+      <PanelCard
+        title="Start a run"
+        note="Queued here, performed by a worker on the machine that holds the dump."
+        flush
+      >
+        <RunControl @finished="refresh" />
+      </PanelCard>
 
       <PanelCard
         title="Runs"
