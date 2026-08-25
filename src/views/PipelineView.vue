@@ -11,6 +11,7 @@ import BarChart from '../components/BarChart.vue'
 import LineChart from '../components/LineChart.vue'
 import SideDrawer from '../components/SideDrawer.vue'
 import CopyValue from '../components/CopyValue.vue'
+import RunControl from '../components/RunControl.vue'
 import TruncationNotice from '../components/TruncationNotice.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
@@ -19,7 +20,6 @@ import {
   fetchPipelineLogs,
   runFunnel,
   runLedger,
-  triggerCapability,
   type IngestionRun,
 } from '../lib/data/pipeline'
 import { catalogConfigured, refreshCatalogShape } from '../lib/data/products'
@@ -56,7 +56,6 @@ function refresh() {
   void pipeline.refetch()
 }
 
-const trigger = triggerCapability()
 const logs = fetchPipelineLogs()
 
 const openRun = ref<IngestionRun | null>(null)
@@ -312,20 +311,12 @@ function statusLabel(status: string, ageDays: number | null): string {
 
         <div class="span-7">
           <PanelCard
-            title="Trigger a run"
-            note="Not available, and this is structural rather than missing work."
+            title="Start a run"
+            note="Queued here, performed by a worker on the machine that holds the dump."
             fill
+            flush
           >
-            <StateBlock
-              state="unrecorded"
-              title="Runs cannot be started from a browser"
-              :message="trigger.reason"
-              would-require="A service that holds the service-role key and the disk to work on. That is backend infrastructure this tool was scoped not to build."
-            />
-            <div class="runbook">
-              <p class="runbook__label u-caption">Run it here instead</p>
-              <pre class="runbook__code"><code>{{ trigger.runInstead.join('\n') }}</code></pre>
-            </div>
+            <RunControl @finished="refresh" />
           </PanelCard>
         </div>
       </div>

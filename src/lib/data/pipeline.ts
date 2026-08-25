@@ -365,44 +365,18 @@ export function fetchPipelineLogs(): Metric<PipelineLogEntry[]> {
 
 // ─── triggering a run ────────────────────────────────────────────────────────
 //
-// Asked for, and deliberately not built, because a button that cannot work is
-// worse than no button. The reasons are structural rather than a matter of
-// effort:
+// This used to be a panel explaining that a run could not be started from a
+// browser, and it was right about why: the importer holds a service-role key
+// that can rewrite every row in the catalog, needs ~15 GB of disk, and is a CLI
+// with nothing listening.
 //
-//   * The importer needs CATALOG_SUPABASE_SERVICE_ROLE_KEY, which can write every
-//     row in the catalog. It exists in .env.scripts on one machine and must never
-//     reach a browser.
-//   * A full acquire downloads a ~12GB dump and needs ~15GB of free disk.
-//   * It is a Node CLI on a filesystem. There is no service listening, and adding
-//     one would be exactly the backend infrastructure this tool was scoped not to
-//     build.
+// None of that changed. What changed is that the dashboard no longer tries to
+// run anything: it writes a row to catalog_run_requests and a worker on the
+// operator's machine claims it. See src/components/RunControl.vue and
+// src/lib/data/runs.ts.
 //
-// The UI shows the control as unavailable with this explanation and the command
-// to run instead, which is the honest version of the feature.
-//
-// Note what is NO LONGER in that list: approving the review band. Verdicts are
-// recorded on the Review screen now and read from catalog_review_decisions at
-// the start of every score run, so the only thing left that needs a terminal is
-// STARTING one.
-export interface TriggerCapability {
-  supported: false
-  reason: string
-  runInstead: string[]
-}
-
-export function triggerCapability(): TriggerCapability {
-  return {
-    supported: false,
-    reason:
-      'The importer is a local CLI holding a service-role key, not a service. Nothing is listening for a request to start a run.',
-    runInstead: [
-      'cd catalog-importer',
-      'npm run acquire:delta      # fold in what changed upstream',
-      'npm run normalize && npm run score',
-      'npm run load               # dry run, then read out/load-diff.md',
-      'npm run load:apply',
-    ],
-  }
-}
+// `acquire` is still not startable from here, deliberately. A ~12 GB download
+// measured in hours does not belong behind a button that looks like the other
+// four, and it would need cancellation and resumption semantics none of them do.
 
 export type { Unavailable }
