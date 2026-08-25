@@ -18,6 +18,8 @@ import {
   isStalled,
   runnerOnline,
   sourceReady,
+  stepBlockedReason,
+  stepReady,
   type RunKind,
   type RunRequest,
 } from '../lib/data/runs'
@@ -149,15 +151,26 @@ const stalled = computed(
 
 const ready = computed(() => sourceReady(runner.value, source.value))
 
-const canStart = computed(
+/** Per step, because they are not equally available. */
+function available(kind: RunKind): boolean {
+  return canAct.value && stepReady(runner.value, kind, source.value)
+}
+
+function blocked(kind: RunKind): string {
+  return canAct.value ? stepBlockedReason(runner.value, kind, source.value) : ''
+}
+
+const canAct = computed(
   () =>
     runner.value !== null &&
-    ready.value &&
     // A stalled request is never going to finish, so it must not hold the panel
     // hostage. Cancel is offered beside it; starting something else is fine too.
     (activeRequest.value === null || stalled.value) &&
     !busy.value,
 )
+
+/** Kept for the source-level notice, which is about the source, not a step. */
+const canStart = computed(() => canAct.value && ready.value)
 
 /** The acquire command for the selected source, which the dashboard cannot run. */
 const acquireHint = computed(() => {
@@ -320,27 +333,25 @@ const columns: Column<RunRequest>[] = [
       The runner first, because everything below depends on it. A button that
       queues into a void is worse than a disabled one.
     -->
-    <div class="runner" :class="{ 'runner--off': !runner }">
-      <StatusPill :tone="runner ? 'good' : 'idle'" :label="runner ? 'Runner online' : 'Runner offline'" />
-      <span v-if="runner" class="runner__text">
-        <strong>{{ runner.hostname ?? runner.id }}</strong> is listening.
-      </span>
-      <span v-else class="runner__text">
-        Nothing is listening. Run <code>npm run worker</code> in
-        <code>catalog-importer</code> on the machine that holds the dump and the
-        service-role key. The dashboard cannot do this part itself.
-      </span>
-    </div>
+    <!-- Loud when something is wrong, nearly silent when nothing is.
+         "Runner online / radu is listening" spent a full line saying everything
+         was normal, and personified a hostname while doing it. The normal state
+         is the one that needs the least room. -->
+    <p v-if="!runner" class="runner runner--off">
+      <StatusPill tone="bad" label="No runner" />
+      Nothing is listening. Run <code>npm run worker</code> in
+      <code>catalog-importer</code> on the machine that holds the dump and the
+      service-role key. The dashboard cannot do this part itself.
+    </p>
 
-    <!--
-      A source with no subset on the runner would fail in under a second with
-      "no market subset". The button should not be offered, and the reason is
-      one the dashboard genuinely cannot fix for you: acquire is not queueable.
-    -->
-    <p v-if="runner && !ready" class="notready" data-test="not-acquired">
-      <strong>{{ source }}</strong> has not been acquired on {{ runner.hostname ?? runner.id }}.
-      Run <code>{{ acquireHint }}</code> there first. It is a large download, which is why
-      it is not a button here.
+    <!-- A source with no subset on the runner cannot run any step, so this is
+         said once here rather than four times on four buttons. acquire is the
+         one thing the dashboard genuinely cannot do for you. -->
+    <p v-if="runner && !ready" class="runner" data-test="not-acquired">
+      <StatusPill tone="warn" :label="source" />
+      Not acquired on {{ runner.hostname ?? runner.id }}. Run
+      <code>{{ acquireHint }}</code> there first. It is a large download, which
+      is why it is not a button here.
     </p>
 
     <!-- The four stages, drawn as the sequence they are.
@@ -350,6 +361,12 @@ const columns: Column<RunRequest>[] = [
          the part that was hard to learn. Apply is the only one set apart,
          because it is the only one that writes. -->
     <div class="controls">
+      <span
+        v-if="runner"
+        class="ready"
+        :title="`Ready on ${runner.hostname ?? runner.id}`"
+        aria-label="Runner ready"
+      ></span>
       <label class="controls__label" for="run-source">Source</label>
       <select id="run-source" v-model="source" class="select" :disabled="!canStart">
         <option v-for="s in SOURCES" :key="s" :value="s">{{ s }}</option>
@@ -363,11 +380,12 @@ const columns: Column<RunRequest>[] = [
             class="stage"
             :class="{ 'stage--writes': k.confirm }"
             :data-test="`run-${k.kind}`"
-            :disabled="!canStart"
+            :disabled="!available(k.kind)"
+            :title="blocked(k.kind) || k.hint"
             @click="press(k.kind)"
           >
             <span class="stage__label">{{ k.label }}</span>
-            <span class="stage__hint">{{ k.hint }}</span>
+            <span class="stage__hint">{{ blocked(k.kind) || k.hint }}</span>
           </button>
         </li>
       </ol>
@@ -467,29 +485,39 @@ const columns: Column<RunRequest>[] = [
 </template>
 
 <style scoped>
+/* Only rendered when something needs saying, so it can afford to say it
+   properly rather than compressing an explanation into a badge. */
 .runner {
   display: flex;
   align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
   flex-wrap: wrap;
-}
-
-.runner--off {
-  background: var(--bg-subtle);
-}
-
-.runner__text {
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
-.runner__text code {
-  font-family: var(--font-mono, monospace);
+.runner--off {
+  background: var(--danger-bg);
+}
+
+.runner code {
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   background: var(--bg-subtle);
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
+}
+
+/* Ready is a dot beside the source, not a sentence of its own. It is the state
+   the panel is in almost always, and it should cost almost nothing. */
+.ready {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--status-good, var(--color-primary));
+  flex: none;
 }
 
 .controls {

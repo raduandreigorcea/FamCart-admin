@@ -55,6 +55,7 @@ const liveWorker = {
   current_request: null,
   seconds_since_seen: 2,
   sources: ['openfoodfacts', 'openbeautyfacts'],
+  stages: { staged: 'openfoodfacts', scored: 'openfoodfacts' },
 }
 
 const runningRequest = {
@@ -85,10 +86,27 @@ beforeEach(() => {
 })
 
 describe('RunControl', () => {
-  it('names the machine that is listening', async () => {
+  // Ready is a dot beside the source, not a sentence. The old line spent a
+  // whole row saying everything was normal, and personified a hostname doing it.
+  it('says nothing about the runner when the runner is fine', async () => {
     const w = mount(RunControl, { global: { stubs } })
     await flush()
-    expect(w.text()).toMatch(/desktop/)
+
+    expect(w.find('.ready').exists()).toBe(true)
+    expect(w.text()).not.toMatch(/is listening/)
+  })
+
+  // A step whose input does not exist must not be offered. Apply was lit with an
+  // empty out/ and would have failed on a missing scored.jsonl.
+  it('offers only normalize when out/ is empty', async () => {
+    fetchWorkers.mockResolvedValue([{ ...liveWorker, stages: {} }])
+    const w = mount(RunControl, { global: { stubs } })
+    await flush()
+
+    expect(w.find('[data-test=\"run-normalize\"]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-test=\"run-score\"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test=\"run-load-apply\"]').attributes('disabled')).toBeDefined()
+    expect(w.text()).toMatch(/Normalize first/)
   })
 
   // A button that queues into a void is worse than a disabled one.
