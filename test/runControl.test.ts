@@ -103,9 +103,9 @@ describe('RunControl', () => {
     const w = mount(RunControl, { global: { stubs } })
     await flush()
 
-    expect(w.find('[data-test=\"run-normalize\"]').attributes('disabled')).toBeUndefined()
-    expect(w.find('[data-test=\"run-score\"]').attributes('disabled')).toBeDefined()
-    expect(w.find('[data-test=\"run-load-apply\"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="run-normalize"]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-test="run-score"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-test="run-load-apply"]').attributes('disabled')).toBeDefined()
     expect(w.text()).toMatch(/Normalize first/)
   })
 

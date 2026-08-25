@@ -11,7 +11,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const pages = vi.hoisted(() => ({
   calls: 0,
-  rows: [] as Record<string, unknown>[],
+  /** What catalog_stats() hands back. The server aggregates now, not us. */
+  shape: null as Record<string, unknown> | null,
   /** Set to make the next read fail the way PostgREST reports an error. */
   error: null as { message: string; code?: string } | null,
   /** Every signal the build has handed to the client, in order. */
@@ -20,23 +21,20 @@ const pages = vi.hoisted(() => ({
   gate: null as { promise: Promise<void>; release: () => void } | null,
 }))
 
+// The shape now comes from one catalog_stats() call rather than a paging loop,
+// so the mock moved with it. What these tests assert did not: how many times the
+// database is read, and whether Refresh really re-reads it.
 vi.mock('../src/lib/supabase', () => ({
   getCatalogSupabase: () => ({
-    from: () => ({
-      select: () => ({
-        order: () => ({
-          range: () => ({
-            abortSignal: async (signal: AbortSignal) => {
-              pages.calls += 1
-              pages.signals.push(signal)
-              if (pages.gate) await pages.gate.promise
-              if (signal.aborted) throw new DOMException('aborted', 'AbortError')
-              if (pages.error) return { data: null, error: pages.error }
-              return { data: pages.rows, error: null }
-            },
-          }),
-        }),
-      }),
+    rpc: () => ({
+      abortSignal: async (signal: AbortSignal) => {
+        pages.calls += 1
+        pages.signals.push(signal)
+        if (pages.gate) await pages.gate.promise
+        if (signal.aborted) throw new DOMException('aborted', 'AbortError')
+        if (pages.error) return { data: null, error: pages.error }
+        return { data: pages.shape, error: null }
+      },
     }),
   }),
   getAppSupabase: () => {
@@ -46,17 +44,16 @@ vi.mock('../src/lib/supabase', () => ({
 
 const { loadCatalogShape, refreshCatalogShape } = await import('../src/lib/data/products')
 
-function row(over: Record<string, unknown> = {}) {
+function shape(over: Record<string, unknown> = {}) {
   return {
-    source: 'openfoodfacts',
-    source_version: 'off-2026-08-20',
-    created_at: '2026-08-20T10:00:00.000Z',
-    barcode: '5941234567890',
-    markets: ['RO'],
-    add_count: 2,
-    base_weight: 40,
-    search_aliases: 'milk',
-    maker: 'Napolact',
+    total: 1,
+    truncated: false,
+    bySource: [{ source: 'openfoodfacts', rows: 1, withBarcode: 1, withMarkets: 1 }],
+    byVersion: [],
+    byMarket: [{ market: 'RO', rows: 1 }],
+    byCreatedDay: [{ day: '2026-08-20', rows: 1 }],
+    coverage: { withBarcode: 1, withMaker: 1, withAliases: 1, withMarkets: 1 },
+    popularity: { adopted: 1, totalAddCount: 2, topAddCount: 2 },
     ...over,
   }
 }
@@ -73,7 +70,7 @@ beforeEach(async () => {
   await refreshCatalogShape().catch(() => {})
 
   pages.error = null
-  pages.rows = [row()]
+  pages.shape = shape()
   pages.calls = 0
   pages.signals = []
   pages.gate = null
@@ -122,7 +119,7 @@ describe('refreshCatalogShape', () => {
     const before = await loadCatalogShape()
     expect(before.total).toBe(1)
 
-    pages.rows = [row(), row({ barcode: null }), row({ source: 'curated' })]
+    pages.shape = shape({ total: 3 })
     const after = await refreshCatalogShape()
 
     expect(after.total).toBe(3)
@@ -135,7 +132,7 @@ describe('refreshCatalogShape', () => {
     // without awaiting in between. If the swap were deferred, the refetch would
     // pick up the stale promise and the button would silently do nothing again.
     await loadCatalogShape()
-    pages.rows = [row(), row()]
+    pages.shape = shape({ total: 2 })
 
     const forced = refreshCatalogShape()
     const followUp = loadCatalogShape()
@@ -152,28 +149,22 @@ describe('truncation (BG-5)', () => {
     expect(shape.truncated).toBe(false)
   })
 
-  it('trips, and says so, once the row ceiling is reached', async () => {
-    // The loop stops when a page comes back short, so a full page every time is
-    // what drives it to the ceiling. 200 pages of 1,000 rows reaches 200,000.
-    pages.rows = Array.from({ length: 1000 }, () => row())
-
-    const shape = await refreshCatalogShape()
-
-    expect(shape.truncated).toBe(true)
-    expect(shape.total).toBe(200_000)
-    // 200 pages, not 201: the guard fires the moment the ceiling is reached
-    // rather than after one more round trip.
-    expect(pages.calls).toBe(200)
-  })
-
+  // The client-side row ceiling is gone: there is no paging loop left to trip
+  // it, and catalog_stats() aggregates the whole table or nothing. The test that
+  // drove 200 pages to 200,000 rows went with it.
+  //
+  // `truncated` did NOT go with it. It is still in the contract and still
+  // propagates, because the thing that sets it moved to the server rather than
+  // stopping being true -- and a partial answer presented as a complete one is
+  // the failure this whole file exists to prevent, wherever it is computed.
   it('carries the flag into the pipeline snapshot', async () => {
     const { buildPipelineSnapshot } = await import('../src/lib/data/pipeline')
 
-    pages.rows = Array.from({ length: 1000 }, () => row())
+    pages.shape = shape({ truncated: true })
     const truncatedShape = await refreshCatalogShape()
     expect(buildPipelineSnapshot(truncatedShape, []).truncated).toBe(true)
 
-    pages.rows = [row()]
+    pages.shape = shape({ truncated: false })
     const wholeShape = await refreshCatalogShape()
     expect(buildPipelineSnapshot(wholeShape, []).truncated).toBe(false)
   })
@@ -226,7 +217,7 @@ describe('a superseded build', () => {
     const first = loadCatalogShape()
     await Promise.resolve()
 
-    pages.rows = [row(), row({ source: 'usda' })]
+    pages.shape = shape({ total: 2 })
     const second = refreshCatalogShape()
     release()
 
