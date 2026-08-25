@@ -18,7 +18,6 @@ import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import {
   fetchPipeline,
-  fetchPipelineLogs,
   runFunnel,
   runLedger,
   type IngestionRun,
@@ -57,7 +56,6 @@ function refresh() {
   void pipeline.refetch()
 }
 
-const logs = fetchPipelineLogs()
 
 const openRun = ref<IngestionRun | null>(null)
 // Pure now, over a row the drawer already holds. A run with no ledger row
@@ -214,93 +212,34 @@ function statusLabel(status: string, ageDays: number | null): string {
         </div>
       </div>
 
-      <div class="grid">
-        <div class="span-8">
-          <!-- The hero, and deliberately a diagram rather than a row of numbers.
-         What somebody wants to know on arriving here is how much of what the
-         importer read is actually in the catalog, and that is a shape before it
-         is a figure. -->
-    <PanelCard
-      title="What the last run did"
-      note="Every record it read, and where each one ended up."
-      flush
-    >
-      <StageLadder v-if="latestFunnel" :funnel="latestFunnel" />
-      <StateBlock
-        v-else
-        state="unrecorded"
-        title="No run has recorded its stages yet"
-        message="Runs from before the import ledger existed kept only the rows they created, not the account of what they threw away."
-        would-require="Start a re-score below and this fills in when it finishes."
-      />
-    </PanelCard>
-
-    <PanelCard title="Ingestion history" note="Rows created per day. Imports are events, not a rate." fill>
-            <StateBlock
-              v-if="!snapshot?.byDay.length"
-              state="empty"
-              title="Nothing imported"
-              message="The catalog holds no rows with a creation date."
-            />
-            <LineChart
-              v-else
-              :series="ingestionSeries"
-              :labels="ingestionLabels"
-              :height="220"
-              :format="formatCount"
-            />
-          </PanelCard>
-        </div>
-
-        <div class="span-4">
-          <PanelCard title="Last successful run" fill>
-            <div v-if="snapshot?.lastRunVersion" class="last">
-              <StatusPill tone="good" label="Completed" />
-              <p class="last__version u-mono">{{ snapshot.lastRunVersion }}</p>
-              <p class="last__when" :title="formatDateTime(snapshot.lastRunAt)">
-                Last row landed {{ formatRelative(snapshot.lastRunAt) }}
-              </p>
-              <p class="last__note">
-                A run is "successful" here because its rows exist. The importer's own report, with
-                what it rejected and why, is written to
-                <code class="u-mono">catalog-importer/out/</code> on the machine that ran it.
-              </p>
-            </div>
-            <StateBlock
-              v-else
-              state="empty"
-              title="No import has run"
-              message="Every row in the catalog is curated rather than imported."
-              compact
-            />
-          </PanelCard>
-        </div>
-      </div>
-
-      <div class="grid">
-        <div class="span-12">
-          <PanelCard title="Source health" note="Rows per source, and how long since each last produced one." fill>
-            <BarChart :bars="sourceBars" :format="formatCount" dense />
-
-            <ul class="sources">
-              <li v-for="source in snapshot?.sources ?? []" :key="source.source" class="sources__row">
-                <StatusPill
-                  :tone="statusTone(source.status)"
-                  :label="statusLabel(source.status, source.ageDays)"
-                />
-                <span class="sources__name">{{ source.source }}</span>
-                <span class="sources__meta u-num">
-                  {{ source.rows ? formatShare(source.withBarcode, source.rows) : '--' }} scannable
-                </span>
-              </li>
-            </ul>
-          </PanelCard>
-        </div>
-      </div>
-
+      <!-- The answer first: what the last run did. Full width, because the
+           shape of it is the point, and it had been squeezed into two thirds of
+           a row while a box explaining terminology took the other third. -->
       <PanelCard
-        title="Start a run"
-        note="Queued here, performed by a worker on the machine that holds the dump."
+        title="What the last run did"
+        note="Every record it read, and where each one ended up."
+        flush
+      >
+        <StageLadder v-if="latestFunnel" :funnel="latestFunnel" />
+        <StateBlock
+          v-else
+          state="unrecorded"
+          title="No run has recorded its stages yet"
+          message="Runs from before the import ledger existed kept only the rows they created, not the account of what they threw away."
+          would-require="Start a re-score below and this fills in when it finishes."
+        />
+      </PanelCard>
+
+      <!-- Then the action, directly under the answer. It was three panels down,
+           below two charts and a box of terminology.
+
+           "Start a run" assumed you knew what a run was and what starting one
+           would do to the catalog. The title now says what it is for and the
+           note says how to use it, because the sequence is the part that was
+           hard to learn. -->
+      <PanelCard
+        title="Update the catalog"
+        note="Pick a source and work left to right. Each step reads what the one before it wrote."
         flush
       >
         <RunControl @finished="refresh" />
@@ -352,15 +291,44 @@ function statusLabel(status: string, ageDays: number | null): string {
         </DataTable>
       </PanelCard>
 
-      <PanelCard title="Pipeline logs" flush>
-        <StateBlock
-          v-if="!logs.available"
-          state="unrecorded"
-          title="No log is kept"
-          :message="logs.reason"
-          :would-require="logs.wouldRequire"
-        />
-      </PanelCard>
+      <!-- Context last. Both answer "how has this gone over time", which is a
+           question you ask after the two above, not before. -->
+      <div class="grid">
+        <div class="span-6">
+          <PanelCard title="Ingestion history" note="Rows created per day. Imports are events, not a rate." fill>
+            <StateBlock
+              v-if="!snapshot?.byDay.length"
+              state="empty"
+              title="Nothing imported"
+              message="The catalog holds no rows with a creation date."
+            />
+            <LineChart
+              v-else
+              :series="ingestionSeries"
+              :labels="ingestionLabels"
+              :height="200"
+              :format="formatCount"
+            />
+          </PanelCard>
+        </div>
+        <div class="span-6">
+          <PanelCard title="Source health" note="Rows per source, and how long since each last produced one." fill>
+            <BarChart :bars="sourceBars" :format="formatCount" dense />
+            <ul class="sources">
+              <li v-for="source in snapshot?.sources ?? []" :key="source.source" class="sources__row">
+                <StatusPill
+                  :tone="statusTone(source.status)"
+                  :label="statusLabel(source.status, source.ageDays)"
+                />
+                <span class="sources__name">{{ source.source }}</span>
+                <span class="sources__meta u-num">
+                  {{ source.rows ? formatShare(source.withBarcode, source.rows) : '--' }} scannable
+                </span>
+              </li>
+            </ul>
+          </PanelCard>
+        </div>
+      </div>
 
       <SideDrawer
         :open="openRun !== null"
