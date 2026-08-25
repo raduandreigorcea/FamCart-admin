@@ -162,14 +162,19 @@ const marketOptions = computed(() => [
 ])
 
 const catalogColumns: Column<CatalogProductRow>[] = [
-  { key: 'name', label: 'Product', sortable: true, width: '28%' },
-  { key: 'maker', label: 'Brand', width: '13%' },
-  { key: 'barcode', label: 'Barcode / GTIN', width: '13%', hideBelow: 1100 },
-  { key: 'markets', label: 'Markets', width: '11%', hideBelow: 1400 },
-  { key: 'source', label: 'Source', width: '12%' },
-  { key: 'quality', label: 'Quality', numeric: true, width: '9%', title: 'Derived from completeness, not the importer’s own scorer' },
-  { key: 'add_count', label: 'Adds', numeric: true, sortable: true, width: '7%', title: 'Times a household picked this suggestion' },
-  { key: 'popularity', label: 'Rank', numeric: true, sortable: true, width: '7%', title: 'base_weight + add_count' },
+  { key: 'name', label: 'Product', sortable: true, width: '42%' },
+  { key: 'maker', label: 'Brand', width: '17%' },
+  { key: 'barcode', label: 'Barcode', width: '14%', hideBelow: 1100 },
+  // Markets and Source were columns here and carried nothing: every one of the
+  // 13,975 imported rows reads `universal` and `openfoodfacts`, and both are
+  // already filters six inches above the table. A column whose every cell is
+  // identical is width spent on nothing.
+  //
+  // Rank went for a different reason. Its own tooltip described it as
+  // `base_weight + add_count`, which is a sort key rather than a fact: it moved
+  // with Adds, sat beside Adds, and answered the same question twice.
+  { key: 'add_count', label: 'Times added', numeric: true, sortable: true, width: '14%', title: 'How many times a household picked this out of the suggestions. The only number here that comes from somebody using FamCart.' },
+  { key: 'quality', label: 'Detail', numeric: true, width: '13%', title: 'How complete the imported record is: name, brand, quantity, barcode, categories. Not a judgement of the product.' },
 ]
 
 const localColumns: Column<LocalProductRow>[] = [
@@ -266,7 +271,7 @@ function quality(row: CatalogProductRow) {
   <div class="page">
     <PageHeader
       title="Products"
-      description="Two tables in two databases. The catalog project holds imported and curated rows that belong to nobody; the app database holds what households contributed, plus the global rows those contributions were promoted into. Promotion deletes the scoped rows it collapses, so inside the app database a product is one or the other — but it never touches the catalog project, so the same product can sit in both. A third scope shows what the importer decided NOT to write — rejected before scoring, dropped by the gate, or still in the review band — for the runs retention still holds."
+      description="Every product FamCart can suggest, and everything it decided not to keep."
       :fetched-at="active.fetchedAt.value"
       :busy="active.fetching.value"
       @refresh="refresh"
@@ -294,9 +299,9 @@ function quality(row: CatalogProductRow) {
         <SegmentedControl
           :model-value="scope"
           :segments="[
-            { value: 'catalog', label: 'Catalog project', title: 'Imported and curated reference rows' },
-            { value: 'local', label: 'App database', title: 'Household-contributed and promoted rows' },
-            { value: 'outcomes', label: 'Didn’t land', title: 'Records the importer rejected, dropped, or left in the review band' },
+            { value: 'catalog', label: 'Imported', title: 'Reference products pulled from Open Food Facts and its siblings, in the shared catalog project' },
+            { value: 'local', label: 'From households', title: 'Products a household added itself, and the ones promoted out of them, in this app database' },
+            { value: 'outcomes', label: 'Rejected', title: 'Records the importer read and decided not to write: rejected before scoring, dropped by the gate, or still awaiting a verdict' },
           ]"
           aria-label="Which table"
           @update:model-value="onScope"
@@ -404,25 +409,13 @@ function quality(row: CatalogProductRow) {
           <CopyValue v-if="row.barcode" :value="String(row.barcode)" label="barcode" />
           <span v-else class="u-muted">--</span>
         </template>
-        <template #cell-markets="{ row }">
-          <span v-if="(row.markets as string[])?.length" class="markets">
-            <span v-for="m in (row.markets as string[]).slice(0, 3)" :key="m" class="markets__code">{{ m }}</span>
-            <span v-if="(row.markets as string[]).length > 3" class="markets__more">
-              +{{ (row.markets as string[]).length - 3 }}
-            </span>
-          </span>
-          <span v-else class="u-muted" title="An empty array means universal, not unknown">universal</span>
-        </template>
-        <template #cell-source="{ row }">
-          <StatusPill
-            :tone="row.source === 'curated' ? 'accent' : 'idle'"
-            :label="String(row.source)"
-            :dot="false"
-          />
-        </template>
+        <!-- A bare "50" answered nothing: no scale, no direction, and every row
+             within a point of every other. Shown as a proportion of a record
+             that is either filled in or not, which is what it measures. -->
         <template #cell-quality="{ row }">
           <span class="quality" :class="`quality--${qualityLabel(quality(row).score)}`">
-            {{ quality(row).score }}
+            <span class="quality__bar" :style="{ '--fill': `${quality(row).score}%` }"></span>
+            <span class="quality__num u-num">{{ quality(row).score }}%</span>
           </span>
         </template>
       </DataTable>
@@ -584,9 +577,43 @@ function quality(row: CatalogProductRow) {
 
 /* The quality figure is coloured AND numeric, so the number carries the meaning
    even where the tint does not read. */
+/* Completeness, shown as a proportion rather than a bare integer.
+ *
+ * It read "50" against 13,975 rows that are all within a point of each other,
+ * with the scale living in a tooltip. A number nobody can place on a scale is
+ * not information, so the bar carries the magnitude and the figure confirms it. */
 .quality {
-  font-weight: var(--weight-bold);
-  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.quality__bar {
+  flex: 1;
+  min-width: 28px;
+  max-width: 64px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--rule-empty);
+  overflow: hidden;
+}
+
+.quality__bar::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: var(--fill);
+  background: currentColor;
+  border-radius: inherit;
+}
+
+.quality__num {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-xs);
+  min-width: 3ch;
+  text-align: right;
 }
 
 .quality--strong { color: var(--status-good); }
