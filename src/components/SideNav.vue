@@ -45,6 +45,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/products', label: 'Products', icon: 'package-search', title: 'The catalog project and the app database, side by side' },
       { to: '/pipeline', label: 'Pipeline', icon: 'workflow', title: 'Ingestion runs, source health and what the importer left behind' },
+      { to: '/review', label: 'Review', icon: 'check', title: 'Records the gate could not decide on its own' },
       { to: '/search', label: 'Search', icon: 'search', title: 'What the catalog served, and what it missed' },
     ],
   },
