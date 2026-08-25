@@ -69,8 +69,18 @@
    * `--rule-ink` is deliberately darker than --border-main: it is a baseline
    * carrying a number, not a box edge, and at --border-main it read as a table
    * that had lost its cell. */
-  --rule-ink: #c3c9d2;
-  --rule-empty: #dfe3e9;
+  /* Ink, not furniture.
+   *
+   * This was #c3c9d2 -- the same grey family as --border-main, which is already
+   * drawn around every card on the screen. The rule was technically present and
+   * visually absent: it read as one more box edge in a tool that is mostly box
+   * edges, which is the opposite of the job it was given.
+   *
+   * A baseline under a number has to look DRAWN. Dark enough to be a mark
+   * somebody made, warm-shifted off pure slate so it belongs to the same family
+   * as the brand rather than to the browser's default grey. */
+  --rule-ink: #3a4650;
+  --rule-empty: #c9cfd7;
   /* 2px, not 1.5. A sub-pixel border rounds down to 1px at DPR 1, which made the
    * rule exactly as heavy as an ordinary box edge and cost it the one job it
    * has: reading as a baseline a number rests on rather than as a cell that
@@ -83,8 +93,8 @@
    * one. */
   --rule-hatch: repeating-linear-gradient(
     45deg,
-    transparent 0 5px,
-    var(--rule-empty) 5px 6px
+    transparent 0 4px,
+    var(--rule-empty) 4px 6px
   );
 
   /* ── the value ───────────────────────────────────────────────────────────
@@ -122,6 +132,16 @@
   --chart-seq-4: #2f8f68;
   --chart-seq-5: #0f6446;
 
+  /* What fell out of the pipeline.
+   *
+   * Deliberately not the danger red. A rejected record is the gate doing its
+   * job, not a fault: the run that discards 12,000 unusable rows is the run
+   * working. Red would make every healthy import look like an incident, and an
+   * operator who learns to ignore red here will ignore it on the Health page
+   * too. A set-aside grey says "handled" instead of "wrong". */
+  --stage-shed: #b3b9c2;
+  --stage-shed-ink: #6b7280;
+
   /* Recessive by design. A grid line that competes with the data is a grid line
    * drawn too dark. */
   --chart-grid: rgba(15, 23, 42, 0.08);
@@ -155,6 +175,9 @@
 }
 
 :root[data-theme='dark'] {
+  --stage-shed: #4a5561;
+  --stage-shed-ink: #98a2b0;
+
   /* The rule has to stay a baseline in the dark, not a glow: lifted just enough
    * off the surface to carry a number, and the hatch lifted with it. */
   --rule-ink: #454f5c;

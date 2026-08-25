@@ -119,14 +119,20 @@ const deltaTone = computed(() => {
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-3);
-  padding-bottom: var(--space-2);
+  padding-bottom: var(--space-1-5);
   border-bottom: var(--rule-weight) solid var(--rule-ink);
 }
 
+/* Seated ON the rule, and sized so the seating reads.
+ *
+ * A number at text-2xl floating a few pixels above a hairline looks like text
+ * that happens to have a border under it. Bigger, tighter and sat right down on
+ * a drawn baseline looks like a figure entered on a form, which is what every
+ * value in this tool actually is. */
 .tile__value {
-  font-size: var(--text-2xl);
+  font-size: var(--text-3xl);
   font-weight: var(--weight-bold);
-  line-height: 1.1;
+  line-height: 1;
   color: var(--text-primary);
   /* Compared down a column far more often than read in a sentence, so the
      figure widths are locked and the eye gets a grid to run down. */
