@@ -59,6 +59,12 @@ const routes: RouteRecordRaw[] = [
     meta: { crumb: 'Pipeline' },
   },
   {
+    path: '/review',
+    name: 'review',
+    component: () => import('../views/ReviewView.vue'),
+    meta: { crumb: 'Review' },
+  },
+  {
     path: '/search',
     name: 'search',
     component: () => import('../views/SearchView.vue'),
