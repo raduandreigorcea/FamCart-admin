@@ -119,7 +119,12 @@ export function liveWorkers(
  * rather than stalled.
  */
 export function isStalled(request: RunRequest, workers: WorkerRow[]): boolean {
-  if (request.status !== 'running') return false
+  // `cancelling` belongs here as much as `running` does, and leaving it out is
+  // what made a killed worker lock the panel for two hours: cancel_run asks the
+  // worker to stop between chunks, so a worker that never comes back leaves the
+  // row asking forever. It counted as active, it never counted as stalled, and
+  // every button stayed grey.
+  if (request.status !== 'running' && request.status !== 'cancelling') return false
   if (!request.claimed_by) return true
   return !liveWorkers(workers).some((w) => w.id === request.claimed_by)
 }
@@ -148,6 +153,19 @@ export async function enqueueRun(kind: RunKind, source: string): Promise<string>
   const { data, error } = await client().rpc('enqueue_run', { p_kind: kind, p_source: source })
   if (error) queryError('enqueue_run', error)
   return String(data)
+}
+
+/**
+ * End a request whose worker is never coming back.
+ *
+ * cancelRun asks the worker to stop; this is for when there is nobody left to
+ * ask. Separate calls on purpose: one is a polite request that the run itself
+ * honours, the other is an admin overruling a row, and the audit trail should
+ * be able to tell them apart.
+ */
+export async function forceClearRun(id: string): Promise<void> {
+  const { error } = await client().rpc('force_clear_run', { p_id: id })
+  if (error) queryError('force_clear_run', error)
 }
 
 export async function cancelRun(id: string): Promise<void> {

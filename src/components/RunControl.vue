@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PanelCard from './PanelCard.vue'
 import StateBlock from './StateBlock.vue'
 import StatusPill from './StatusPill.vue'
@@ -14,6 +14,7 @@ import {
   fetchRunRequests,
   fetchWorkers,
   isActive,
+  forceClearRun,
   isStalled,
   runnerOnline,
   sourceReady,
@@ -119,7 +120,16 @@ watch(
   },
 )
 
-onBeforeUnmount(stopPolling)
+onMounted(() => {
+  clock = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
+
+onBeforeUnmount(() => {
+  stopPolling()
+  if (clock) clearInterval(clock)
+})
 
 // ─── acting ──────────────────────────────────────────────────────────────────
 const busy = ref(false)
@@ -179,6 +189,21 @@ function press(kind: RunKind) {
   else void start(kind)
 }
 
+async function forceClear() {
+  const target = activeRequest.value
+  if (!target || busy.value) return
+  busy.value = true
+  actionError.value = ''
+  try {
+    await forceClearRun(target.id)
+    await requests.refetch()
+  } catch (caught) {
+    actionError.value = caught instanceof Error ? caught.message : String(caught)
+  } finally {
+    busy.value = false
+  }
+}
+
 async function cancel() {
   const target = activeRequest.value
   if (!target || busy.value) return
@@ -204,16 +229,54 @@ const statusTone: Record<string, Tone> = {
   cancelled: 'idle',
 }
 
+/** Elapsed, ticking, so a run that has hung looks hung. */
+const now = ref(Date.now())
+let clock: ReturnType<typeof setInterval> | null = null
+
+const elapsed = computed(() => {
+  const r = activeRequest.value
+  if (!r) return ''
+  const secs = Math.max(0, Math.round((now.value - new Date(r.requested_at).getTime()) / 1000))
+  if (secs < 60) return `${secs}s`
+  const m = Math.floor(secs / 60)
+  return `${m}m ${String(secs % 60).padStart(2, '0')}s`
+})
+
+/** 0-100, or null when the stage cannot count ahead and a bar would be a lie. */
+const progressPct = computed(() => {
+  const d = detail.data.value ?? activeRequest.value
+  if (!d || d.progress_done === null || !d.progress_total) return null
+  return Math.min(100, Math.round((d.progress_done / d.progress_total) * 100))
+})
+
+/**
+ * Progress, with the noun it is counting.
+ *
+ * It read "1,215,000" on its own, which is not a fact about anything. Load is
+ * the only stage that knows its denominator before it starts -- it chunks a
+ * known number of rows -- so a total means chunks and its absence means records
+ * streamed. Stated here rather than carried through the stage contract because
+ * it is a presentation choice, and adding a unit to every progress call in the
+ * importer to serve one label would be the tail wagging the dog.
+ */
 const progressText = computed(() => {
   const d = detail.data.value ?? activeRequest.value
   if (!d || d.progress_done === null) return ''
-  return d.progress_total !== null
-    ? `${formatCount(d.progress_done)} of ${formatCount(d.progress_total)}`
-    : formatCount(d.progress_done)
+  return d.progress_total
+    ? `chunk ${formatCount(d.progress_done)} of ${formatCount(d.progress_total)}`
+    : `${formatCount(d.progress_done)} records`
 })
 
 /** Newest last, which is how a terminal reads. */
-const logLines = computed(() => (detail.data.value?.log ?? []).slice(-12))
+const logLines = computed(() => (detail.data.value?.log ?? []).slice(-40))
+
+/** 12:20:31. The date is always today for a run you are watching. */
+function logTime(at: string): string {
+  const d = new Date(at)
+  return Number.isNaN(d.getTime())
+    ? ''
+    : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+}
 
 function duration(row: RunRequest): string {
   if (!row.finished_at) return ''
@@ -280,31 +343,40 @@ const columns: Column<RunRequest>[] = [
       it is not a button here.
     </p>
 
+    <!-- The four stages, drawn as the sequence they are.
+         normalize feeds score feeds load feeds apply, each reading the file the
+         one before it wrote. Drawn as four equal buttons it was four unrelated
+         things to guess between; drawn as a line it teaches the order, which is
+         the part that was hard to learn. Apply is the only one set apart,
+         because it is the only one that writes. -->
     <div class="controls">
       <label class="controls__label" for="run-source">Source</label>
       <select id="run-source" v-model="source" class="select" :disabled="!canStart">
         <option v-for="s in SOURCES" :key="s" :value="s">{{ s }}</option>
       </select>
 
-      <button
-        v-for="k in KINDS"
-        :key="k.kind"
-        type="button"
-        class="go"
-        :class="{ 'go--danger': k.confirm }"
-        :data-test="`run-${k.kind}`"
-        :disabled="!canStart"
-        :title="k.hint"
-        @click="press(k.kind)"
-      >
-        {{ k.label }}
-      </button>
+      <ol class="stages">
+        <li v-for="(k, i) in KINDS" :key="k.kind" class="stages__item">
+          <span v-if="i > 0" class="stages__arrow" aria-hidden="true">&rsaquo;</span>
+          <button
+            type="button"
+            class="stage"
+            :class="{ 'stage--writes': k.confirm }"
+            :data-test="`run-${k.kind}`"
+            :disabled="!canStart"
+            @click="press(k.kind)"
+          >
+            <span class="stage__label">{{ k.label }}</span>
+            <span class="stage__hint">{{ k.hint }}</span>
+          </button>
+        </li>
+      </ol>
     </div>
 
     <p v-if="actionError" class="error" role="alert">{{ actionError }}</p>
 
     <!-- The active run. -->
-    <div v-if="activeRequest" class="active">
+    <div v-if="activeRequest" class="active" :class="{ 'active--stalled': stalled }">
       <div class="active__head">
         <StatusPill
           :tone="stalled ? 'bad' : statusTone[activeRequest.status] ?? 'idle'"
@@ -312,24 +384,47 @@ const columns: Column<RunRequest>[] = [
         />
         <span class="active__what">
           {{ activeRequest.kind }} · {{ activeRequest.source }}
-          <template v-if="activeRequest.stage"> · {{ activeRequest.stage }}</template>
         </span>
-        <span v-if="progressText" class="active__progress">{{ progressText }}</span>
-        <button type="button" class="go" data-test="cancel-run" :disabled="busy" @click="cancel">
-          Cancel
+        <span v-if="activeRequest.stage" class="active__stage">{{ activeRequest.stage }}</span>
+        <span class="active__elapsed u-num">{{ elapsed }}</span>
+        <button
+          v-if="stalled"
+          type="button"
+          class="stage stage--writes"
+          data-test="force-clear"
+          :disabled="busy"
+          @click="forceClear"
+        >
+          <span class="stage__label">Clear it</span>
+        </button>
+        <button v-else type="button" class="stage" data-test="cancel-run" :disabled="busy" @click="cancel">
+          <span class="stage__label">Cancel</span>
         </button>
       </div>
 
       <p v-if="stalled" class="stalled">
-        This says it is running, but no worker has checked in for
-        {{ 30 }} seconds. The process was probably killed. Cancel it and start again.
+        Nothing has claimed this for over thirty seconds, so the worker that took
+        it is gone. Clearing it ends the row; the work itself never happened.
       </p>
 
-      <pre v-if="logLines.length" class="log"><span
+      <!-- Progress. A bar only when the stage can count ahead: normalize streams
+           a file of unknown length, and a bar that invents a denominator is a
+           bar that lies. -->
+      <div v-if="progressText" class="progress">
+        <div v-if="progressPct !== null" class="progress__track">
+          <span class="progress__fill" :style="{ width: `${progressPct}%` }"></span>
+        </div>
+        <div v-else class="progress__track progress__track--unknown">
+          <span class="progress__drift"></span>
+        </div>
+        <span class="progress__text u-num">{{ progressText }}</span>
+      </div>
+
+      <pre v-if="logLines.length" class="log" tabindex="0"><span
         v-for="(line, i) in logLines"
         :key="i"
         :class="`log__line log__line--${line.level}`"
-      >{{ line.text }}
+      ><span class="log__at">{{ logTime(line.at) }}</span>{{ line.text }}
 </span></pre>
     </div>
 
@@ -354,7 +449,7 @@ const columns: Column<RunRequest>[] = [
       </template>
       <template #cell-took="{ row }">{{ duration(row) || '—' }}</template>
       <template #cell-error="{ row }">
-        <span v-if="row.error" class="rowerror">{{ row.error }}</span>
+        <span v-if="row.error" class="rowerror" :title="row.error">{{ row.error }}</span>
       </template>
     </DataTable>
 
@@ -401,8 +496,8 @@ const columns: Column<RunRequest>[] = [
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-4) var(--space-3);
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
 }
 
 .controls__label {
@@ -415,33 +510,88 @@ const columns: Column<RunRequest>[] = [
   border-radius: var(--radius-md);
   background: var(--bg-input);
   color: var(--text-primary);
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   font-size: var(--text-sm);
-  margin-right: var(--space-2);
 }
 
-.go {
-  background: none;
+/* The sequence. The chevrons carry the order, which is real information here:
+   each stage reads the file the one before it wrote, and running them out of
+   order is the mistake this panel makes easiest to make. */
+.stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.stages__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.stages__arrow {
+  color: var(--text-disabled);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+  background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-md);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--text-xs);
+  padding: var(--space-2) var(--space-3);
   color: var(--text-primary);
   cursor: pointer;
+  transition: border-color var(--transition-fast) var(--ease-standard);
 }
 
-.go:hover:not(:disabled) {
+.stage:hover:not(:disabled) {
+  border-color: var(--border-dark);
   background: var(--bg-hover);
 }
 
-.go:disabled {
+.stage:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-.go--danger {
-  border-color: var(--border-strong);
-  font-weight: var(--weight-medium);
+/* The only one that writes to the catalog, and the only one set apart. */
+.stage--writes {
+  border-color: var(--color-primary);
+  color: var(--color-primary-text);
+  background: var(--color-primary-bg);
+}
+
+.stage--writes:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+.stage__label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+}
+
+.stage__hint {
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
+.stage--writes .stage__hint {
+  color: var(--color-primary-text);
+  opacity: 0.75;
 }
 
 .active {
@@ -458,13 +608,74 @@ const columns: Column<RunRequest>[] = [
 
 .active__what {
   font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
 
-.active__progress {
+.active__stage {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.active__elapsed {
+  margin-left: auto;
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  margin-left: auto;
+  font-variant-numeric: var(--value-figures);
+}
+
+/* Progress, and only a real bar when the stage knows its own denominator. */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.progress__track {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--rule-empty);
+  overflow: hidden;
+}
+
+.progress__fill {
+  display: block;
+  height: 100%;
+  background: var(--chart-seq-4);
+  border-radius: inherit;
+  transition: width var(--transition-base) var(--ease-standard);
+}
+
+/* Cannot count ahead, so it shows motion rather than a fraction it does not
+   have. A bar that invents a denominator is a bar that lies. */
+.progress__drift {
+  display: block;
+  height: 100%;
+  width: 28%;
+  border-radius: inherit;
+  background: var(--chart-seq-3);
+  animation: drift 1.8s var(--ease-standard) infinite;
+}
+
+@keyframes drift {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress__drift {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+.progress__text {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .stalled {
@@ -473,25 +684,49 @@ const columns: Column<RunRequest>[] = [
   color: var(--text-danger);
 }
 
+/* The log.
+ *
+ * It was a bare block of wrapped text that showed one line and looked like an
+ * afterthought. A run is the one thing on this page that happens over time, and
+ * watching it is most of why the panel exists, so it gets the treatment a
+ * terminal gets: fixed width, a time on every line, newest at the bottom, and
+ * enough height to see a run progress rather than a single sentence.
+ */
 .log {
   margin: var(--space-3) 0 0;
-  padding: var(--space-2);
-  max-height: 14rem;
+  padding: var(--space-3);
+  height: 11rem;
   overflow: auto;
-  background: var(--bg-subtle);
+  background: var(--admin-thead);
+  border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-md);
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-xs);
-  line-height: 1.5;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.65;
   white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
 }
 
-.log__line--warn {
-  color: var(--text-warning, var(--text-secondary));
+.log:focus-visible {
+  outline: var(--border-width-thick) solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
-.log__line--error {
-  color: var(--text-danger);
+/* The timestamp is a gutter, not part of the sentence: fixed width so the
+   messages start on one column and can be read down. */
+.log__at {
+  display: inline-block;
+  width: 4.75rem;
+  color: var(--text-disabled);
+  user-select: none;
+}
+
+.log__line--warn { color: var(--warning-text); }
+.log__line--error { color: var(--danger-text); }
+
+.active--stalled {
+  background: var(--danger-bg);
 }
 
 .error,
@@ -505,7 +740,14 @@ const columns: Column<RunRequest>[] = [
   padding: 0 var(--space-4) var(--space-2);
 }
 
+/* Errors here are file paths and shell commands and run long. In a table cell
+   they wrapped to four lines and pushed their neighbours around; the full text
+   is on the title, and the run drawer has it in full. */
 .rowerror {
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
