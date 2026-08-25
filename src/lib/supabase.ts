@@ -270,5 +270,22 @@ export function setTokenResolver(resolve: () => Promise<string | null>): void {
 /** Inside a component, where useAuth() is available. */
 export function useSupabaseAuthBridge(): void {
   const { getToken } = useAuth()
-  setTokenResolver(async () => getToken.value({ template: 'supabase' }))
+  // The plain session token, NOT getToken({ template: 'supabase' }).
+  //
+  // All three projects authenticate through Supabase's native Third-Party Auth,
+  // which verifies a Clerk session token against Clerk's JWKS directly. The
+  // `supabase` JWT template is the older integration, and asking for it cost two
+  // things for no benefit:
+  //
+  //   * Half the clock tolerance. A template token carries nbf = iat - 5; the
+  //     session token carries nbf = iat - 10. Five seconds is the entire margin
+  //     between a working dashboard and `JWT not yet valid` on every panel, and
+  //     that error was seen here once.
+  //   * A round trip. The session token is already in memory and refreshed by
+  //     the SDK; a template token is minted by a separate call to Clerk's API on
+  //     every resolve.
+  //
+  // It also removes a dependency on a template configured in the Clerk dashboard
+  // and described nowhere in either repo.
+  setTokenResolver(async () => getToken.value())
 }
