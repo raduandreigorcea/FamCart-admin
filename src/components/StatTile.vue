@@ -108,11 +108,19 @@ const deltaTone = computed(() => {
   text-overflow: ellipsis;
 }
 
+/* The rule.
+ *
+ * Every measured value on this screen sits on one. It is not a divider: it is
+ * the baseline the number rests on, and its whole job is that an EMPTY one
+ * reads as "nobody recorded this" rather than as a zero. types.ts makes that
+ * argument in prose; this is the same argument in a line. */
 .tile__row {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--rule-weight) solid var(--rule-ink);
 }
 
 .tile__value {
@@ -120,8 +128,12 @@ const deltaTone = computed(() => {
   font-weight: var(--weight-bold);
   line-height: 1.1;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  /* Compared down a column far more often than read in a sentence, so the
+     figure widths are locked and the eye gets a grid to run down. */
+  font-variant-numeric: var(--value-figures);
+  letter-spacing: var(--value-tracking);
 }
+
 
 .tile__spark {
   width: 92px;
@@ -164,15 +176,29 @@ const deltaTone = computed(() => {
 }
 
 .tile--unrecorded {
-  border-style: dashed;
   border-color: var(--unrecorded-line);
   background-color: var(--unrecorded-bg);
 }
 
+/* The empty rule, and the whole point of the device.
+ *
+ * A recorded tile rests its number on a solid baseline. This one shows the same
+ * baseline with nothing on it, hatched the way a blank field on a form is
+ * hatched. Read down a column of tiles and the ones nobody measured are obvious
+ * at a glance instead of being grey text you have to stop and parse.
+ *
+ * The tile's own border stays ordinary. It was dashed as well, which was two
+ * devices saying the same thing, and the quieter one had to go. */
 .tile__nodata {
   font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
   color: var(--text-disabled);
   line-height: 1.4;
+  padding-bottom: var(--space-2);
+  border-bottom: var(--rule-weight) solid var(--rule-empty);
+  background-image: var(--rule-hatch);
+  background-repeat: no-repeat;
+  background-position: left bottom var(--rule-weight);
+  background-size: 100% 10px;
 }
 </style>
