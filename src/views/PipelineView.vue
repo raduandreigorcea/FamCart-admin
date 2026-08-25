@@ -494,6 +494,12 @@ function statusLabel(status: string, ageDays: number | null): string {
           >Browse what this run discarded</RouterLink>
 
           <RouterLink
+            v-if="openRun.row"
+            :to="`/review?run=${encodeURIComponent(openRun.row.id)}`"
+            class="drawer-link"
+          >Decide this run's review band</RouterLink>
+
+          <RouterLink
             v-if="openRun.version"
             :to="`/products?version=${encodeURIComponent(openRun.version)}`"
             class="drawer-link"
