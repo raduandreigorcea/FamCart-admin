@@ -5,6 +5,8 @@ import {
   isStalled,
   runnerOnline,
   sourceReady,
+  stepBlockedReason,
+  stepReady,
   type RunRequest,
   type WorkerRow,
 } from '../src/lib/data/runs'
@@ -17,6 +19,7 @@ const worker = (seconds: number, over: Partial<WorkerRow> = {}): WorkerRow => ({
   current_request: null,
   seconds_since_seen: seconds,
   sources: ['openfoodfacts', 'openbeautyfacts'],
+  stages: { staged: 'openfoodfacts', scored: 'openfoodfacts' },
   ...over,
 })
 
@@ -141,5 +144,49 @@ describe('sourceReady', () => {
   // with nothing acquired, or every button goes dead on a runner that works.
   it('allows everything when the runner reports nothing at all', () => {
     expect(sourceReady(worker(2, { sources: null }), 'openproductsfacts')).toBe(true)
+  })
+})
+
+// The four buttons are drawn as a sequence and were enabled regardless, so with
+// an empty out/ Apply was lit and would have failed on a missing scored.jsonl.
+describe('stepReady', () => {
+  it('offers nothing at all with no runner', () => {
+    expect(stepReady(null, 'normalize', 'openfoodfacts')).toBe(false)
+  })
+
+  it('offers normalize for an acquired source with an empty out/', () => {
+    const w = worker(2, { stages: {} })
+    expect(stepReady(w, 'normalize', 'openfoodfacts')).toBe(true)
+  })
+
+  it('refuses score until something has been normalized', () => {
+    const w = worker(2, { stages: {} })
+    expect(stepReady(w, 'score', 'openfoodfacts')).toBe(false)
+    expect(stepBlockedReason(w, 'score', 'openfoodfacts')).toMatch(/Normalize first/)
+  })
+
+  it('refuses apply until something has been scored', () => {
+    const w = worker(2, { stages: { staged: 'openfoodfacts' } })
+    expect(stepReady(w, 'load-apply', 'openfoodfacts')).toBe(false)
+    expect(stepBlockedReason(w, 'load-apply', 'openfoodfacts')).toMatch(/Re-score first/)
+  })
+
+  // out/ is shared, so whose file it is matters as much as whether one exists.
+  it('refuses score when out/ belongs to another source', () => {
+    const w = worker(2, { stages: { staged: 'openbeautyfacts' } })
+    expect(stepReady(w, 'score', 'openfoodfacts')).toBe(false)
+    expect(stepBlockedReason(w, 'score', 'openfoodfacts')).toMatch(/holds openbeautyfacts/)
+  })
+
+  it('allows the whole sequence once both files are this source', () => {
+    const w = worker(2)
+    expect(['normalize', 'score', 'load', 'load-apply'].every((k) =>
+      stepReady(w, k as never, 'openfoodfacts'))).toBe(true)
+  })
+
+  // A worker predating the column must not read as an empty out/.
+  it('allows everything when the runner reports no stages at all', () => {
+    const w = worker(2, { stages: null })
+    expect(stepReady(w, 'load-apply', 'openfoodfacts')).toBe(true)
   })
 })

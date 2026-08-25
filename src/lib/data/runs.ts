@@ -71,6 +71,15 @@ export interface WorkerRow {
    * been enabled.
    */
   sources: string[] | null
+  /**
+   * Which stage outputs are in the worker's out/, and which source wrote each:
+   * `{ staged: 'openfoodfacts', scored: null }`.
+   *
+   * out/ is shared across sources, so "is there a staged.jsonl" is not the
+   * question -- whose it is, is. Re-scoring against another source's staged
+   * products would stamp them wrong at load time.
+   */
+  stages: { staged?: string | null; scored?: string | null } | null
 }
 
 /**
@@ -139,8 +148,57 @@ export function isStalled(request: RunRequest, workers: WorkerRow[]): boolean {
  */
 export function sourceReady(runner: WorkerRow | null, source: string): boolean {
   if (!runner) return false
-  if (runner.sources === null) return true
+  if (runner.sources == null) return true
   return runner.sources.includes(source)
+}
+
+/**
+ * Whether this step can actually run right now.
+ *
+ * The four buttons are drawn as a sequence and were enabled regardless, so with
+ * an empty out/ Apply was lit and would have failed on a missing file. Teaching
+ * an order in the layout and not enforcing it in the control is worse than not
+ * drawing it: it looks like a guarantee.
+ *
+ * A worker reporting nothing is treated as able to run anything, which is what
+ * it was before the column existed. Guessing the other way would kill every
+ * button past Normalize on a runner that is working.
+ */
+export function stepReady(
+  runner: WorkerRow | null,
+  kind: RunKind,
+  source: string,
+): boolean {
+  if (!runner) return false
+  if (!sourceReady(runner, source)) return false
+  if (runner.stages == null) return true
+
+  // normalize reads the acquired subset, which sourceReady already checked.
+  if (kind === 'normalize') return true
+  if (kind === 'score') return runner.stages.staged === source
+  return runner.stages.scored === source
+}
+
+/** Why a step is not available, in the words of what to do about it. */
+export function stepBlockedReason(
+  runner: WorkerRow | null,
+  kind: RunKind,
+  source: string,
+): string {
+  if (!runner) return 'No runner'
+  if (!sourceReady(runner, source)) return `${source} has not been acquired`
+  if (runner.stages == null) return ''
+  if (kind === 'score' && runner.stages.staged !== source) {
+    return runner.stages.staged
+      ? `out/ holds ${runner.stages.staged}, not ${source}. Normalize first.`
+      : 'Nothing normalized yet. Run Normalize first.'
+  }
+  if ((kind === 'load' || kind === 'load-apply') && runner.stages.scored !== source) {
+    return runner.stages.scored
+      ? `out/ holds ${runner.stages.scored}, not ${source}. Re-score first.`
+      : 'Nothing scored yet. Run Re-score first.'
+  }
+  return ''
 }
 
 function client() {
