@@ -201,3 +201,35 @@ describe('the button', () => {
     expect(body).not.toMatch(/height|padding|border-radius|font-size|font-weight/)
   })
 })
+
+describe('the filter row above a table', () => {
+  // This is here because it already went wrong. `.toolbar` was scoped CSS
+  // repeated in three views; two newer views carried `class="toolbar"` copied
+  // from a view that was later deleted, so the class matched nothing at all and
+  // their search boxes sat flush against the panel header with no padding and
+  // no rule. Nothing failed, nothing warned, and it was only visible by looking.
+  it('is defined once, in the global sheet', () => {
+    const admin = readFileSync('src/styles/admin.css', 'utf8')
+    expect(admin).toMatch(/\.u-toolbar \{/)
+    expect(admin).toMatch(/\.u-toolbar__count \{/)
+  })
+
+  it('is not redefined by a view', () => {
+    const offenders = files
+      .filter((f) => f.path !== 'src/styles/admin.css')
+      .filter((f) => /^\.u?-?toolbar(__count)?\s*\{/m.test(f.text))
+      .map((f) => f.path)
+
+    expect(offenders).toEqual([])
+  })
+
+  // The half a shared class cannot enforce: a view can still name a class that
+  // does not exist. Every toolbar in the tool has to be the shared one.
+  it('is the class every view actually uses', () => {
+    const offenders = files
+      .filter((f) => /class="toolbar"/.test(f.text))
+      .map((f) => f.path)
+
+    expect(offenders).toEqual([])
+  })
+})

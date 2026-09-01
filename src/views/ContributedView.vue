@@ -21,7 +21,7 @@ import {
   type ContributedScope,
   type ProductDraft,
 } from '../lib/data/contributed'
-import { formatDateTime, formatRelative } from '../lib/format'
+import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 import type { LocalProductRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 
@@ -62,6 +62,8 @@ const products = useQuery(
 
 const rows = computed(() => products.data.value?.rows ?? [])
 const total = computed(() => products.data.value?.total ?? 0)
+/** Nothing has answered yet, so `total` is a placeholder rather than a count. */
+const countUnknown = computed(() => products.data.value === null)
 const error = computed(() => (products.error.value ? describeError(products.error.value).detail : ''))
 
 const columns: Column<LocalProductRow>[] = [
@@ -198,12 +200,21 @@ const SEGMENTS = [
         />
       </template>
 
-      <div class="toolbar">
+      <div class="u-toolbar">
         <FilterBar
           v-model="query"
           placeholder="Search name, brand or barcode"
           :busy="products.fetching.value"
-        />
+        >
+          <template #end>
+            <!-- Withheld until it is known rather than shown as a zero, which
+                 would read as "nothing matched" during the first fetch. See the
+                 note in TablePager. -->
+            <span v-if="!countUnknown" class="u-toolbar__count u-num">
+              {{ formatCount(total) }} contributed
+            </span>
+          </template>
+        </FilterBar>
       </div>
 
       <DataTable

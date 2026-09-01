@@ -83,7 +83,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
     />
 
     <PanelCard flush>
-      <div class="toolbar">
+      <div class="u-toolbar">
         <FilterBar
           v-model="query"
           placeholder="Search by name or Clerk id"
@@ -91,7 +91,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         >
           <template #end>
             <!-- Withheld until it is known: see the note in TablePager. -->
-            <span v-if="!countUnknown" class="toolbar__count u-num">
+            <span v-if="!countUnknown" class="u-toolbar__count u-num">
               {{ formatCount(total) }} accounts
             </span>
           </template>
@@ -159,16 +159,6 @@ function activityTone(lastActive: string): 'good' | 'idle' {
 </template>
 
 <style scoped>
-.toolbar {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: var(--border-width-thin) solid var(--border-light);
-}
-
-.toolbar__count {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-
 .who {
   display: flex;
   align-items: center;

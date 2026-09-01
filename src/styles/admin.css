@@ -365,6 +365,29 @@ body {
  * 34px-tall rounded rectangle on the surface; a state is a short tinted pill
  * with a full radius. The shapes are what tell them apart, which leaves colour
  * free to mean what it means everywhere else in this tool. */
+/* ─── the filter row above a table ───────────────────────────────────────────
+ * The strip a FilterBar sits in: inset from the card's edge and ruled off from
+ * the rows below, so the search box reads as part of the table's frame rather
+ * than as the first row of it.
+ *
+ * Here rather than in each view because it was scoped CSS in three of them and
+ * absent from the two newest, which is exactly the failure this file exists to
+ * prevent: Catalog and Contributed carried `class="toolbar"` inherited from a
+ * view that had since been deleted, so the class matched nothing, and their
+ * search boxes sat flush against the header with no padding and no rule. A
+ * shared class cannot be deleted out from under a caller. */
+.u-toolbar {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width-thin) solid var(--border-light);
+}
+
+/* The count of what the filters matched, in the row's trailing slot. Withheld
+ * until it is known rather than shown as a zero -- see the note in TablePager. */
+.u-toolbar__count {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
 .u-btn {
   display: inline-flex;
   align-items: center;
