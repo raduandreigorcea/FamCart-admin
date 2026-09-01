@@ -22,7 +22,7 @@ import {
   type CatalogProductType,
   type CatalogDraft,
 } from '../lib/data/catalog'
-import { formatDateTime, formatRelative } from '../lib/format'
+import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 import type { Column } from '../lib/uiTypes'
 
 // The reference catalog. Everything the app can suggest that no household typed.
@@ -59,6 +59,8 @@ const products = useQuery(
 
 const rows = computed(() => products.data.value?.rows ?? [])
 const total = computed(() => products.data.value?.total ?? 0)
+/** Nothing has answered yet, so `total` is a placeholder rather than a count. */
+const countUnknown = computed(() => products.data.value === null)
 const error = computed(() => (products.error.value ? describeError(products.error.value).detail : ''))
 
 // Brand is no longer a column of its own. On a catalog that is mostly generics
@@ -274,12 +276,21 @@ const removalMessage = computed(() => {
         />
       </template>
 
-      <div class="toolbar">
+      <div class="u-toolbar">
         <FilterBar
           v-model="query"
           placeholder="Search names and aliases, or paste a barcode"
           :busy="products.fetching.value"
-        />
+        >
+          <template #end>
+            <!-- Withheld until it is known rather than shown as a zero, which
+                 would read as "nothing matched" during the first fetch. See the
+                 note in TablePager. -->
+            <span v-if="!countUnknown" class="u-toolbar__count u-num">
+              {{ formatCount(total) }} products
+            </span>
+          </template>
+        </FilterBar>
       </div>
 
       <DataTable
