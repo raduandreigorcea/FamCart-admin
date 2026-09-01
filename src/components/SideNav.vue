@@ -51,6 +51,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     heading: 'Monitor',
     items: [
       { to: '/', label: 'Overview', icon: 'layout-grid', title: 'System totals, activity and what just happened' },
+      { to: '/catalog', label: 'Catalog', icon: 'package-search', title: 'The reference products the app ships and discovers, shared by production and development' },
     ],
   },
   {
