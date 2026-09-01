@@ -102,14 +102,73 @@ describe('the catalog admin surface', () => {
     expect(id).toBe('new-id')
   })
 
-  it('updates by id and leaves markets alone when none were given', async () => {
+  it('updates by id and leaves unmentioned columns alone', async () => {
     resolving()
     await updateCatalogProduct('c-1', { name: 'Rice Cake', type: 'generic', lang: 'en' }, signal())
 
     expect(args().p_id).toBe('c-1')
-    // Null, not []. An empty array would clear them.
+    // Null, not [] or ''. The RPC reads null as "not mentioned", and an update
+    // that omitted the barcode would otherwise erase one.
     expect(args().p_markets).toBeNull()
     expect(args().p_base_weight).toBeNull()
+    expect(args().p_barcode).toBeNull()
+    expect(args().p_quantity).toBeNull()
+    expect(args().p_quantity_unit).toBeNull()
+    expect(args().p_image_url).toBeNull()
+    expect(args().p_quality_tier).toBeNull()
+  })
+
+  it('sends every editable column when the form supplies one', async () => {
+    resolving()
+    await updateCatalogProduct(
+      'c-1',
+      {
+        name: 'Rice Cake',
+        type: 'commercial',
+        lang: 'de',
+        brand: 'Acme',
+        category: 'snacks',
+        markets: ['DE'],
+        baseWeight: 9,
+        barcode: '4000000000038',
+        quantity: 750,
+        quantityUnit: 'ml',
+        imageUrl: 'https://example.com/a.jpg',
+        qualityTier: 'A',
+      },
+      signal(),
+    )
+
+    expect(args()).toEqual({
+      p_id: 'c-1',
+      p_name: 'Rice Cake',
+      p_type: 'commercial',
+      p_lang: 'de',
+      p_brand: 'Acme',
+      p_category: 'snacks',
+      p_markets: ['DE'],
+      p_base_weight: 9,
+      p_barcode: '4000000000038',
+      p_quantity: 750,
+      p_quantity_unit: 'ml',
+      p_image_url: 'https://example.com/a.jpg',
+      p_quality_tier: 'A',
+    })
+  })
+
+  // The distinction the whole convention rests on: '' clears, null leaves.
+  // Sending null for a cleared field would make the clear silently do nothing.
+  it('passes an emptied field through as empty rather than as null', async () => {
+    resolving()
+    await updateCatalogProduct(
+      'c-1',
+      { name: 'Rice Cake', type: 'generic', lang: 'en', barcode: '', imageUrl: '', quantityUnit: '' },
+      signal(),
+    )
+
+    expect(args().p_barcode).toBe('')
+    expect(args().p_image_url).toBe('')
+    expect(args().p_quantity_unit).toBe('')
   })
 
   it('passes an explicitly empty market list through as empty', async () => {

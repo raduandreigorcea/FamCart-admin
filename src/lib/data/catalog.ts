@@ -50,6 +50,9 @@ export interface CatalogProductRow {
   category: string | null
   markets: string[]
   quality_tier: string
+  quantity: number | null
+  quantity_unit: string | null
+  image_url: string | null
   base_weight: number
   add_count: number
   popularity: number
@@ -93,6 +96,10 @@ export interface CatalogDraft {
   markets?: string[]
   barcode?: string | null
   baseWeight?: number | null
+  quantity?: number | null
+  quantityUnit?: string | null
+  imageUrl?: string | null
+  qualityTier?: string | null
 }
 
 export async function createCatalogProduct(
@@ -117,12 +124,16 @@ export async function createCatalogProduct(
 }
 
 /**
- * Correct a reference product.
+ * Correct a reference product, every editable column of it.
  *
- * A null `markets` means "leave them alone" rather than "clear them", matching
- * the RPC. The two readings are both plausible and only one is right: markets
- * are a relevance signal the ranking leans on, and quietly emptying them on an
- * unrelated rename would demote the product everywhere at once.
+ * ONE CONVENTION, matching the RPC: `null` leaves a column exactly as it is, an
+ * empty string clears it, anything else sets it. That is why these are `?? null`
+ * rather than `?? ''` -- a caller that does not mention the barcode must not be
+ * able to remove one, and the difference between "not mentioned" and "emptied on
+ * purpose" is the whole reason the barcode is safe to offer here at all.
+ *
+ * The form sends every field on every save, so it says what it means: a cleared
+ * input arrives as '' and clears the column.
  */
 export async function updateCatalogProduct(
   id: string,
@@ -139,6 +150,11 @@ export async function updateCatalogProduct(
       p_category: draft.category ?? null,
       p_markets: draft.markets ?? null,
       p_base_weight: draft.baseWeight ?? null,
+      p_barcode: draft.barcode ?? null,
+      p_quantity: draft.quantity ?? null,
+      p_quantity_unit: draft.quantityUnit ?? null,
+      p_image_url: draft.imageUrl ?? null,
+      p_quality_tier: draft.qualityTier ?? null,
     })
     .abortSignal(signal)
 

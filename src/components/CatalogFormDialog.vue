@@ -15,12 +15,20 @@ import type { CatalogProductRow, CatalogProductType } from '../lib/data/catalog'
 //
 // add_count, for the reason it is unwritable everywhere: it is earned usage and
 // half of the generated popularity column, and bump_product_popularity() is the
-// only thing entitled to move it.
+// only thing entitled to move it. source_count likewise: it counts corroborating
+// sources rather than expressing an opinion.
 //
 // Aliases. A product's names in six languages are derived and imported, and a
 // text box here would be a fourth writer competing with the seed, discovery and
 // the import RPC. Editing the canonical name is enough to be useful; editing the
 // alias set is a different feature with a different shape.
+//
+// EVERYTHING ELSE IS EDITABLE, the barcode included. It was withheld at first
+// because a scan resolves through that value and nowhere else, so moving one
+// silently redirects every future scan -- but withholding the field was the
+// wrong answer to a real risk. The RPC refuses a code another product already
+// claims, and clearing is distinguishable from leaving alone, so the dangerous
+// version of the edit is impossible rather than merely undocumented.
 
 const LANGS = ['en', 'de', 'es', 'ro', 'fr', 'it']
 
@@ -28,6 +36,18 @@ const LANGS = ['en', 'de', 'es', 'ro', 'fr', 'it']
 // can emit. A code outside this list matches no product at all and looks exactly
 // like a ranking bug.
 const MARKETS = ['RO', 'MD', 'DE', 'AT', 'CH', 'ES', 'FR', 'BE', 'IT', 'GB', 'IE']
+
+// The seventeen the check constraint accepts. A free-text box here meant any
+// typo became a constraint violation naming a table.
+const CATEGORIES = [
+  'produce', 'dairy', 'bakery', 'meat', 'fish', 'pantry', 'frozen',
+  'snacks', 'drinks', 'alcohol', 'baby', 'household', 'personal-care',
+  'health', 'pet', 'home', 'other',
+]
+
+const UNITS = ['g', 'kg', 'ml', 'l', 'cl', 'piece']
+
+const TIERS = ['A', 'B', 'C']
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -46,6 +66,10 @@ const emit = defineEmits<{
     markets: string[]
     barcode: string | null
     baseWeight: number | null
+    quantity: number | null
+    quantityUnit: string | null
+    imageUrl: string | null
+    qualityTier: string | null
   }): void
   (e: 'cancel'): void
 }>()
@@ -61,6 +85,10 @@ const category = ref('')
 const markets = ref<string[]>([])
 const barcode = ref('')
 const baseWeight = ref('')
+const quantity = ref('')
+const quantityUnit = ref('')
+const imageUrl = ref('')
+const qualityTier = ref('')
 
 const editing = computed(() => props.product !== null)
 
@@ -79,6 +107,10 @@ watch(
     markets.value = [...(p?.markets ?? [])]
     barcode.value = p?.barcodes[0] ?? ''
     baseWeight.value = p ? String(p.base_weight) : ''
+    quantity.value = p?.quantity != null ? String(p.quantity) : ''
+    quantityUnit.value = p?.quantity_unit ?? ''
+    imageUrl.value = p?.image_url ?? ''
+    qualityTier.value = p?.quality_tier ?? ''
   },
   { immediate: true },
 )
@@ -93,20 +125,27 @@ const submittable = computed(() => name.value.trim().length > 0 && !props.busy)
 
 function submit() {
   if (!submittable.value) return
+
+  // Empty string, not null, for the fields the RPC treats as clearable. null
+  // there means "I am not mentioning this column"; this form mentions all of
+  // them every time, so an emptied input has to arrive as an emptied value or
+  // clearing a barcode would silently do nothing.
+  //
+  // Creating is the exception: there is nothing to leave alone yet, and the
+  // create RPC reads an empty barcode as no barcode.
   emit('submit', {
     name: name.value.trim(),
     type: type.value,
     lang: lang.value,
     brand: brand.value.trim() || null,
-    category: category.value.trim() || null,
+    category: editing.value ? category.value.trim() : category.value.trim() || null,
     markets: markets.value,
-    // The barcode is only ever set on a create. Changing an identifier on an
-    // existing product is a different operation from correcting its name, and
-    // the update RPC does not accept one: a scan resolves through that value and
-    // nowhere else, so moving it silently would send every scan of that code to
-    // a different product.
-    barcode: editing.value ? null : barcode.value.trim() || null,
+    barcode: editing.value ? barcode.value.trim() : barcode.value.trim() || null,
     baseWeight: Number(baseWeight.value.trim() || '0'),
+    quantity: quantity.value.trim() ? Number(quantity.value.trim()) : null,
+    quantityUnit: editing.value ? quantityUnit.value : quantityUnit.value || null,
+    imageUrl: editing.value ? imageUrl.value.trim() : imageUrl.value.trim() || null,
+    qualityTier: qualityTier.value || null,
   })
 }
 
@@ -174,10 +213,38 @@ useModal({
             <span class="cf__hint">Null is ordinary. A banana has no brand.</span>
           </label>
 
-          <label class="cf__field">
-            <span class="cf__label">Category</span>
-            <input v-model="category" class="cf__input" type="text" :disabled="busy" />
-          </label>
+          <div class="cf__row">
+            <label class="cf__field cf__field--grow">
+              <span class="cf__label">Category</span>
+              <select v-model="category" class="cf__input" :disabled="busy">
+                <option value="">None</option>
+                <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+              </select>
+            </label>
+
+            <label class="cf__field">
+              <span class="cf__label">Record tier</span>
+              <select v-model="qualityTier" class="cf__input" :disabled="busy">
+                <option value="">Unchanged</option>
+                <option v-for="t in TIERS" :key="t" :value="t">{{ t }}</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="cf__row">
+            <label class="cf__field cf__field--grow">
+              <span class="cf__label">Quantity</span>
+              <input v-model="quantity" class="cf__input" type="number" min="0" step="any" :disabled="busy" />
+            </label>
+
+            <label class="cf__field">
+              <span class="cf__label">Unit</span>
+              <select v-model="quantityUnit" class="cf__input" :disabled="busy">
+                <option value="">None</option>
+                <option v-for="u in UNITS" :key="u" :value="u">{{ u }}</option>
+              </select>
+            </label>
+          </div>
 
           <fieldset class="cf__field cf__markets" :disabled="busy">
             <legend class="cf__label">Markets</legend>
@@ -198,11 +265,19 @@ useModal({
             </span>
           </fieldset>
 
-          <!-- Create only. See the note in submit(). -->
-          <label v-if="!editing" class="cf__field">
+          <label class="cf__field">
             <span class="cf__label">Barcode</span>
             <input v-model="barcode" class="cf__input" type="text" inputmode="numeric" :disabled="busy" />
-            <span class="cf__hint">8 to 14 digits. A scan resolves through this and nothing else.</span>
+            <span class="cf__hint">
+              8 to 14 digits, and a scan resolves through this and nothing else. A code another
+              product already claims is refused; emptying it makes this one unscannable.
+            </span>
+          </label>
+
+          <label class="cf__field">
+            <span class="cf__label">Image address</span>
+            <input v-model="imageUrl" class="cf__input" type="url" :disabled="busy" />
+            <span class="cf__hint">https:// only, under 500 characters.</span>
           </label>
 
           <label class="cf__field">
