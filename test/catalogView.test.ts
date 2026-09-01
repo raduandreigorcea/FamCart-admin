@@ -61,6 +61,7 @@ const stubs = {
       <tr v-for="r in rows" :key="r[rowKey]" class="row">
         <td><slot name="cell-canonical_name" :row="r" /></td>
         <td><slot name="cell-markets" :row="r" /></td>
+        <td><slot name="cell-popularity" :row="r" /></td>
         <td><slot name="cell-actions" :row="r" /></td>
       </tr>
     </tbody></table>`,
@@ -212,6 +213,24 @@ describe('CatalogView', () => {
     expect(message).toContain('production and development')
     expect(message).toContain('5 aliases')
     expect(message).toContain('barcode')
+  })
+
+  // The bar this replaced scaled to the page maximum, and the page is ordered by
+  // popularity, so every row drew at 98-100%. What is actually worth seeing is
+  // how much of the number was earned rather than set.
+  it('says where a popularity came from rather than drawing a flat bar', async () => {
+    const wrapper = await mounted([
+      row({ id: 'c-1', popularity: 102, base_weight: 100, add_count: 2 }),
+      row({ id: 'c-2', popularity: 100, base_weight: 100, add_count: 0 }),
+      row({ id: 'c-3', popularity: 4, base_weight: 0, add_count: 4 }),
+    ])
+
+    const splits = wrapper.findAll('.pop__split').map((e) => e.text())
+    expect(splits).toEqual(['2 earned', 'editorial only', 'all earned'])
+
+    // Only the rows with real adds take any colour; most of a page is editorial
+    // and saying so in colour twenty-five times is noise.
+    expect(wrapper.findAll('.pop__split--earned')).toHaveLength(2)
   })
 
   it('keeps the form open and shows the reason when a write is refused', async () => {
