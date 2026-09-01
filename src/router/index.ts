@@ -47,34 +47,10 @@ const routes: RouteRecordRaw[] = [
     meta: { crumb: 'Households', icon: 'house' },
   },
   {
-    path: '/products',
-    name: 'products',
-    component: () => import('../views/ProductsView.vue'),
-    meta: { crumb: 'Products', icon: 'package-search' },
-  },
-  {
-    path: '/products/:productId',
-    name: 'product-detail',
-    component: () => import('../views/ProductDetailView.vue'),
-    meta: { crumb: 'Products', icon: 'package-search' },
-  },
-  {
-    path: '/pipeline',
-    name: 'pipeline',
-    component: () => import('../views/PipelineView.vue'),
-    meta: { crumb: 'Pipeline', icon: 'workflow' },
-  },
-  {
-    path: '/review',
-    name: 'review',
-    component: () => import('../views/ReviewView.vue'),
-    meta: { crumb: 'Review', icon: 'check' },
-  },
-  {
-    path: '/search',
-    name: 'search',
-    component: () => import('../views/SearchView.vue'),
-    meta: { crumb: 'Search', icon: 'search' },
+    path: '/contributed',
+    name: 'contributed',
+    component: () => import('../views/ContributedView.vue'),
+    meta: { crumb: 'Contributed', icon: 'package-search' },
   },
   {
     path: '/health',
@@ -100,6 +76,16 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/trash',
     redirect: '/bans',
+  },
+  // The Catalog section was four tabs reading a Supabase project that was
+  // rebuilt from scratch: not one of the RPCs they called survived it, so they
+  // showed an error where a page used to be. /products had a successor worth
+  // redirecting to -- the app database's own contributed rows were always the
+  // half of that page that worked. The other three had nothing to point at and
+  // fall through to Not found, which is the honest answer.
+  {
+    path: '/products/:pathMatch(.*)*',
+    redirect: '/contributed',
   },
   {
     path: '/:pathMatch(.*)*',

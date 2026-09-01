@@ -23,9 +23,12 @@ vi.mock('../src/lib/data/users', () => ({
 vi.mock('../src/lib/data/households', () => ({
   fetchHouseholds: (_params: unknown, signal: AbortSignal) => record(signal),
 }))
-vi.mock('../src/lib/data/products', () => ({
-  catalogConfigured: () => true,
-  fetchCatalogProducts: (_params: unknown, signal: AbortSignal) => record(signal),
+// Contributed products, which used to be catalog products behind a
+// catalogConfigured() guard. The guard is gone with the catalog section: these
+// rows are in the app database, so the palette always asks for them and the
+// count below is unconditional rather than dependent on a mocked config.
+vi.mock('../src/lib/data/contributed', () => ({
+  fetchContributedProducts: (_params: unknown, signal: AbortSignal) => record(signal),
 }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 

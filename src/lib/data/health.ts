@@ -92,8 +92,14 @@ export async function probeProjects(signal: AbortSignal): Promise<ProbeResult[]>
   if (catalog) {
     probes.push(
       probe('Catalog project', 'catalog', async () => {
+        // catalog_products, not product_catalog. The catalog project was rebuilt
+        // from scratch and renamed its table on the way -- deliberately, so that
+        // it can no longer be confused with the app database's own
+        // product_catalog, which is a different table holding different rows.
+        // This probe kept the old name and so reported a perfectly healthy
+        // project as unreachable.
         const { error } = await catalog
-          .from('product_catalog')
+          .from('catalog_products')
           .select('id', { count: 'exact', head: true })
           .limit(1)
           .abortSignal(signal)
