@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 import { fetchUsers } from '../lib/data/users'
 import { fetchHouseholds } from '../lib/data/households'
-import { catalogConfigured, fetchCatalogProducts } from '../lib/data/products'
+import { fetchContributedProducts } from '../lib/data/contributed'
 import UserAvatar from './UserAvatar.vue'
 import { shortUserId } from '../lib/format'
 import { useModal } from '../lib/useModal'
@@ -30,7 +30,7 @@ const activeIndex = ref(0)
 
 interface Hit {
   id: string
-  group: 'Users' | 'Households' | 'Catalog'
+  group: 'Users' | 'Households' | 'Contributed'
   title: string
   subtitle: string
   to: string
@@ -105,19 +105,28 @@ async function run(term: string) {
     ),
   ]
 
-  if (catalogConfigured()) {
-    tasks.push(
-      fetchCatalogProducts({ query: trimmed, limit: 6 }, signal).then((page) =>
-        page.rows.map((row) => ({
-          id: `p-${row.id}`,
-          group: 'Catalog' as const,
-          title: row.name,
-          subtitle: [row.maker, row.barcode, row.source].filter(Boolean).join(' · '),
-          to: `/products/${row.id}`,
-        })),
-      ),
-    )
-  }
+  // Contributed rows, not catalog ones. This used to search the catalog project,
+  // which no longer answers: its table was renamed in the rebuild and the whole
+  // Catalog section went with it. These rows live in the app database, so there
+  // is nothing to check for configuration first -- if the palette can search
+  // users it can search these.
+  //
+  // There is no detail page for a contributed product, so a hit leads to the
+  // household that added it, which is where anything you would do about it
+  // happens. A promoted row belongs to no household and leads to the list.
+  tasks.push(
+    fetchContributedProducts({ query: trimmed, limit: 6 }, signal).then((page) =>
+      page.rows.map((row) => ({
+        id: `p-${row.id}`,
+        group: 'Contributed' as const,
+        title: row.name,
+        subtitle: [row.maker, row.barcode, row.household_name ?? 'Promoted']
+          .filter(Boolean)
+          .join(' · '),
+        to: row.household_id ? `/households/${row.household_id}` : '/contributed',
+      })),
+    ),
+  )
 
   const settled = await Promise.allSettled(tasks)
   if (id !== searchId) return
@@ -162,7 +171,7 @@ watch(
 onBeforeUnmount(cancel)
 
 const grouped = computed(() => {
-  const order: Hit['group'][] = ['Users', 'Households', 'Catalog']
+  const order: Hit['group'][] = ['Users', 'Households', 'Contributed']
   return order
     .map((group) => ({ group, rows: hits.value.filter((h) => h.group === group) }))
     .filter((g) => g.rows.length > 0)

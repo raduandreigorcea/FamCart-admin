@@ -58,15 +58,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/users', label: 'Users', icon: 'users-round', title: 'Every account, what it belongs to and what it does' },
       { to: '/households', label: 'Households', icon: 'house', title: 'Groups, rosters, lists and buying patterns' },
-    ],
-  },
-  {
-    heading: 'Catalog',
-    items: [
-      { to: '/products', label: 'Products', icon: 'package-search', title: 'The catalog project and the app database, side by side' },
-      { to: '/pipeline', label: 'Pipeline', icon: 'workflow', title: 'Ingestion runs, source health and what the importer left behind' },
-      { to: '/review', label: 'Review', icon: 'check', title: 'Records the gate could not decide on its own' },
-      { to: '/search', label: 'Search', icon: 'search', title: 'What the catalog served, and what it missed' },
+      { to: '/contributed', label: 'Contributed', icon: 'package-search', title: 'Products households typed themselves, and the ones promoted out of them' },
     ],
   },
   {

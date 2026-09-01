@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { sortGuard } from '../src/lib/data/types'
 import { USER_SORTS, isUserSort } from '../src/lib/data/users'
 import { HOUSEHOLD_SORTS, isHouseholdSort } from '../src/lib/data/households'
-import { CATALOG_SORTS, isCatalogSort } from '../src/lib/data/products'
 
 // TQ-2. The *_SORTS arrays carry a comment saying they mirror the CASE arms in
 // the RPCs, and until now nothing used them: every view declared
@@ -50,11 +49,10 @@ describe('sortGuard', () => {
   })
 })
 
-describe('the three list guards', () => {
+describe('the two list guards', () => {
   it('accepts every key its own list declares', () => {
     for (const key of USER_SORTS) expect(isUserSort(key)).toBe(true)
     for (const key of HOUSEHOLD_SORTS) expect(isHouseholdSort(key)).toBe(true)
-    for (const key of CATALOG_SORTS) expect(isCatalogSort(key)).toBe(true)
   })
 
   it('rejects a column that exists on the row but not in the RPC', () => {
@@ -64,15 +62,13 @@ describe('the three list guards', () => {
     expect(isUserSort('image_url')).toBe(false)
     expect(isUserSort('items_open')).toBe(false)
     expect(isHouseholdSort('invite_code')).toBe(false)
-    expect(isCatalogSort('barcode')).toBe(false)
   })
 
   it('does not let one list accept the keys of another', () => {
-    // 'name' is a household and catalog sort; it is not a user sort, where the
-    // equivalent column is display_name.
+    // 'name' is a household sort; it is not a user sort, where the equivalent
+    // column is display_name.
     expect(isUserSort('name')).toBe(false)
     expect(isHouseholdSort('display_name')).toBe(false)
-    expect(isCatalogSort('last_active')).toBe(false)
   })
 
   it('rejects SQL-ish junk outright', () => {
