@@ -10,8 +10,17 @@ import SegmentedControl from '../components/SegmentedControl.vue'
 import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import UserChip from '../components/UserChip.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import ProductFormDialog from '../components/ProductFormDialog.vue'
 import { useQuery, describeError } from '../lib/useQuery'
-import { fetchContributedProducts, type ContributedScope } from '../lib/data/contributed'
+import {
+  fetchContributedProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  type ContributedScope,
+  type ProductDraft,
+} from '../lib/data/contributed'
 import { formatDateTime, formatRelative } from '../lib/format'
 import type { LocalProductRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
@@ -56,15 +65,97 @@ const total = computed(() => products.data.value?.total ?? 0)
 const error = computed(() => (products.error.value ? describeError(products.error.value).detail : ''))
 
 const columns: Column<LocalProductRow>[] = [
-  { key: 'name', label: 'Product', width: '24%' },
-  { key: 'maker', label: 'Brand', width: '12%' },
-  { key: 'barcode', label: 'Barcode / GTIN', width: '12%', hideBelow: 1100 },
-  { key: 'scope', label: 'Scope', width: '10%' },
-  { key: 'household_name', label: 'Household', width: '13%' },
-  { key: 'contributor_name', label: 'Contributed by', width: '13%', hideBelow: 1400 },
-  { key: 'add_count', label: 'Adds', numeric: true, width: '7%' },
-  { key: 'created_at', label: 'Added', width: '9%', hideBelow: 1100 },
+  { key: 'name', label: 'Product', width: '21%' },
+  { key: 'maker', label: 'Brand', width: '11%' },
+  { key: 'barcode', label: 'Barcode / GTIN', width: '11%', hideBelow: 1100 },
+  { key: 'scope', label: 'Scope', width: '9%' },
+  { key: 'household_name', label: 'Household', width: '11%' },
+  { key: 'contributor_name', label: 'Contributed by', width: '11%', hideBelow: 1400 },
+  { key: 'add_count', label: 'Adds', numeric: true, width: '6%' },
+  { key: 'created_at', label: 'Added', width: '8%', hideBelow: 1100 },
+  // Every other column gave up a point or two to pay for this one; the widths
+  // are asserted to total 100% in test/designSystem.ts, which is how the first
+  // draft of this row was caught at 112.
+  { key: 'actions', label: '', width: '12%', align: 'right' },
 ]
+
+// ─── writing ─────────────────────────────────────────────────────────────────
+// One busy flag and one error string for all three writes, because only one can
+// be in flight: each is behind a dialog and the dialog holds the screen until it
+// settles. Two flags would only create the possibility of them disagreeing.
+const editing = ref<LocalProductRow | null>(null)
+const formOpen = ref(false)
+const removing = ref<LocalProductRow | null>(null)
+const writing = ref(false)
+const writeError = ref('')
+
+function add() {
+  editing.value = null
+  writeError.value = ''
+  formOpen.value = true
+}
+
+function edit(row: LocalProductRow) {
+  editing.value = row
+  writeError.value = ''
+  formOpen.value = true
+}
+
+function closeForm() {
+  if (writing.value) return
+  formOpen.value = false
+  editing.value = null
+  writeError.value = ''
+}
+
+/**
+ * Run one write, then refetch.
+ *
+ * The refetch is not optional and not an optimistic local edit. A create can
+ * land anywhere in an ordering this page does not control -- the RPC sorts by
+ * popularity, not by recency -- and an edit can change which scope filter the
+ * row belongs to. Patching the array in place would show a row in a position it
+ * does not hold, which is worse than a round trip.
+ *
+ * The error is rendered rather than thrown: every one of these RPCs raises a
+ * sentence written to be shown ("Another product already claims that barcode."),
+ * which is the whole reason they check instead of letting a 23505 surface.
+ */
+async function run(work: (signal: AbortSignal) => Promise<unknown>, done: () => void) {
+  writing.value = true
+  writeError.value = ''
+  try {
+    await work(new AbortController().signal)
+    done()
+    await products.refetch()
+  } catch (err) {
+    writeError.value = describeError(err as Error).detail
+  } finally {
+    writing.value = false
+  }
+}
+
+function submitForm(draft: ProductDraft) {
+  const row = editing.value
+  void run(
+    (signal) => (row ? updateProduct(row.id, draft, signal) : createProduct(draft, signal)),
+    () => {
+      formOpen.value = false
+      editing.value = null
+    },
+  )
+}
+
+function confirmRemove() {
+  const row = removing.value
+  if (!row) return
+  void run(
+    (signal) => deleteProduct(row.id, signal),
+    () => {
+      removing.value = null
+    },
+  )
+}
 
 const SEGMENTS = [
   { value: 'all', label: 'All' },
@@ -91,7 +182,11 @@ const SEGMENTS = [
       :fetched-at="products.fetchedAt.value"
       :busy="products.fetching.value"
       @refresh="products.refetch()"
-    />
+    >
+      <template #tools>
+        <button type="button" class="u-btn" @click="add">Add product</button>
+      </template>
+    </PageHeader>
 
     <PanelCard flush>
       <template #actions>
@@ -171,6 +266,16 @@ const SEGMENTS = [
             {{ formatRelative(String(row.created_at)) }}
           </span>
         </template>
+        <!-- Remove wears the danger class and Edit does not: correcting a name
+             is reversible by correcting it again, and removing is not. -->
+        <template #cell-actions="{ row }">
+          <span class="row-actions">
+            <button type="button" class="u-btn" @click="edit(row)">Edit</button>
+            <button type="button" class="u-btn u-btn--danger" @click="removing = row">
+              Remove
+            </button>
+          </span>
+        </template>
       </DataTable>
 
       <template #footer>
@@ -183,5 +288,41 @@ const SEGMENTS = [
         />
       </template>
     </PanelCard>
+
+    <ProductFormDialog
+      :open="formOpen"
+      :product="editing"
+      :busy="writing"
+      :error="writeError"
+      @submit="submitForm"
+      @cancel="closeForm"
+    />
+
+    <!-- Names the product rather than asking an abstract question, for the
+         reason ConfirmDialog's own header gives: "Remove this product?" is
+         answerable without knowing which one. -->
+    <ConfirmDialog
+      :open="removing !== null"
+      :title="`Remove ${removing?.name ?? 'product'}?`"
+      :message="
+        removing?.household_id
+          ? 'This is one household\u2019s own row. Removing it takes the suggestion away from them; the items already on their list are plain text and are untouched.'
+          : 'This is a global product, so removing it takes the suggestion away from everyone. Items already on any list are plain text and are untouched.'
+      "
+      confirm-label="Remove"
+      tone="danger"
+      :busy="writing"
+      :error="writeError"
+      @confirm="confirmRemove"
+      @cancel="writing || ((removing = null), (writeError = ''))"
+    />
   </div>
 </template>
+
+<style scoped>
+.row-actions {
+  display: inline-flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+</style>

@@ -14,14 +14,25 @@ import type { Component } from 'vue'
 // the first page, because page 4 of "all" is not page 4 of "promoted".
 
 const fetchContributedProducts = vi.fn()
+const createProduct = vi.fn().mockResolvedValue('new-id')
+const updateProduct = vi.fn().mockResolvedValue(undefined)
+const deleteProduct = vi.fn().mockResolvedValue(undefined)
 
-vi.mock('../src/lib/data/contributed', () => ({ fetchContributedProducts }))
+vi.mock('../src/lib/data/contributed', () => ({
+  fetchContributedProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+}))
 
 const ContributedView = (await import('../src/views/ContributedView.vue'))
   .default as unknown as Component
 
 const stubs = {
-  PageHeader: { props: ['title'], template: '<div class="head">{{ title }}</div>' },
+  PageHeader: {
+    props: ['title'],
+    template: '<div class="head">{{ title }}<slot name="tools" /></div>',
+  },
   PanelCard: { template: '<section><slot name="actions" /><slot /><slot name="footer" /></section>' },
   FilterBar: {
     props: ['modelValue'],
@@ -53,8 +64,29 @@ const stubs = {
         <td><slot name="cell-name" :row="r" /></td>
         <td><slot name="cell-scope" :row="r" /></td>
         <td><slot name="cell-household_name" :row="r" /></td>
+        <td><slot name="cell-actions" :row="r" /></td>
       </tr>
     </tbody></table>`,
+  },
+  // Both dialogs emit rather than being reached into: the point of these tests
+  // is the wiring between a click and an RPC, and calling the handler directly
+  // would test the function while leaving that wiring uncovered.
+  ProductFormDialog: {
+    props: ['open', 'product', 'busy', 'error'],
+    emits: ['submit', 'cancel'],
+    template: `<div v-if="open" class="form" :data-editing="product ? product.id : ''">
+      <em class="form__error">{{ error }}</em>
+      <button class="form__save" @click="$emit('submit', { name: 'Typed', maker: null, barcode: null, baseWeight: 0 })">save</button>
+      <button class="form__cancel" @click="$emit('cancel')">cancel</button>
+    </div>`,
+  },
+  ConfirmDialog: {
+    props: ['open', 'title', 'busy', 'error'],
+    emits: ['confirm', 'cancel'],
+    template: `<div v-if="open" class="confirm">{{ title }}
+      <button class="confirm__go" @click="$emit('confirm')">go</button>
+      <button class="confirm__no" @click="$emit('cancel')">no</button>
+    </div>`,
   },
   StatusPill: { props: ['label'], template: '<span class="pill">{{ label }}</span>' },
   RouterLink: { props: ['to'], template: '<a class="link" :href="to"><slot /></a>' },
@@ -103,7 +135,13 @@ const lastOffset = () =>
 
 describe('ContributedView', () => {
   beforeEach(() => {
+    // All four, not just the read. The write mocks are module-level, so without
+    // this a toHaveBeenCalledTimes(1) passes or fails on the order the tests
+    // happen to run in, which is the shape of a test that is green by luck.
     fetchContributedProducts.mockReset()
+    createProduct.mockReset().mockResolvedValue('new-id')
+    updateProduct.mockReset().mockResolvedValue(undefined)
+    deleteProduct.mockReset().mockResolvedValue(undefined)
   })
 
   it('asks for everything on arrival', async () => {
@@ -173,5 +211,90 @@ describe('ContributedView', () => {
     await flush()
 
     expect(lastOffset()).toBe(0)
+  })
+  // ── writing ────────────────────────────────────────────────────────────────
+
+  it('opens an empty form to add, and a filled one to edit', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.head button').trigger('click')
+    expect(wrapper.find('.form').attributes('data-editing')).toBe('')
+
+    await wrapper.find('.form__cancel').trigger('click')
+    await wrapper.find('.row .u-btn').trigger('click')
+    expect(wrapper.find('.form').attributes('data-editing')).toBe('p-1')
+  })
+
+  it('creates when there is no row behind the form, and updates when there is', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.head button').trigger('click')
+    await wrapper.find('.form__save').trigger('click')
+    await flush()
+    expect(createProduct).toHaveBeenCalledTimes(1)
+    expect(updateProduct).not.toHaveBeenCalled()
+
+    await wrapper.find('.row .u-btn').trigger('click')
+    await wrapper.find('.form__save').trigger('click')
+    await flush()
+    expect(updateProduct).toHaveBeenCalledTimes(1)
+    expect(updateProduct.mock.calls[0][0]).toBe('p-1')
+  })
+
+  // The dialog is the only thing between a mis-tap and a product that everyone
+  // could see disappearing. Declining must write nothing at all.
+  it('writes nothing when the removal is declined', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.findAll('.row .u-btn')[1].trigger('click')
+    expect(wrapper.find('.confirm').exists()).toBe(true)
+
+    await wrapper.find('.confirm__no').trigger('click')
+    await flush()
+
+    expect(deleteProduct).not.toHaveBeenCalled()
+    expect(wrapper.find('.confirm').exists()).toBe(false)
+  })
+
+  it('deletes the row that was asked about, not the first one', async () => {
+    const wrapper = await mounted([row({ id: 'p-1' }), row({ id: 'p-2' })])
+
+    await wrapper.findAll('.row')[1].findAll('.u-btn')[1].trigger('click')
+    await wrapper.find('.confirm__go').trigger('click')
+    await flush()
+
+    expect(deleteProduct).toHaveBeenCalledTimes(1)
+    expect(deleteProduct.mock.calls[0][0]).toBe('p-2')
+  })
+
+  // A create can land anywhere in an ordering this page does not control, so the
+  // list has to be re-read rather than patched.
+  it('refetches after a successful write', async () => {
+    const wrapper = await mounted()
+    const before = fetchContributedProducts.mock.calls.length
+
+    await wrapper.find('.head button').trigger('click')
+    await wrapper.find('.form__save').trigger('click')
+    await flush()
+
+    expect(fetchContributedProducts.mock.calls.length).toBeGreaterThan(before)
+  })
+
+  // The RPCs raise sentences written to be shown. A dialog that closed on a
+  // failure would report a success that never happened.
+  it('keeps the form open and shows the reason when a write is refused', async () => {
+    const wrapper = await mounted()
+    createProduct.mockRejectedValueOnce(
+      Object.assign(new Error('Another product already claims that barcode.'), {
+        code: 'P0001',
+      }),
+    )
+
+    await wrapper.find('.head button').trigger('click')
+    await wrapper.find('.form__save').trigger('click')
+    await flush()
+
+    expect(wrapper.find('.form').exists()).toBe(true)
+    expect(wrapper.find('.form__error').text()).toContain('already claims that barcode')
   })
 })
