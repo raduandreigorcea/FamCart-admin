@@ -219,6 +219,7 @@ export interface RateLimitRow {
   hits: number
   /** Null where the actor is not an account with a profile. Normal, not missing. */
   actor_name: string | null
+  actor_image_url: string | null
 }
 
 export async function fetchRateLimits(signal: AbortSignal): Promise<RateLimitRow[]> {

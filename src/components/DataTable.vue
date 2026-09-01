@@ -43,7 +43,6 @@ const props = withDefaults(
     error?: string
     emptyTitle?: string
     emptyMessage?: string
-    dense?: boolean
     /** Rows respond to click and look it. */
     clickable?: boolean
     selectedKey?: string | number | null
@@ -56,7 +55,6 @@ const props = withDefaults(
     error: '',
     emptyTitle: 'Nothing here',
     emptyMessage: '',
-    dense: false,
     clickable: false,
     selectedKey: null,
   },
@@ -122,7 +120,7 @@ function cellValue(row: T, key: string): unknown {
 <template>
   <div class="table-wrap">
     <div class="table-scroll">
-      <table class="table" :class="{ 'table--dense': dense }">
+      <table class="table">
         <thead>
           <tr>
             <th
@@ -199,7 +197,7 @@ function cellValue(row: T, key: string): unknown {
              sitting on top of it. A skeleton whose whole job is to hold the
              shape of what is coming has to hold the right shape. -->
         <tbody v-else-if="showSkeleton" aria-hidden="true">
-          <tr v-for="n in dense ? 10 : 6" :key="`sk-${n}`" class="table__row--skeleton">
+          <tr v-for="n in 6" :key="`sk-${n}`" class="table__row--skeleton">
             <td
               v-for="column in columns"
               :key="column.key"
@@ -243,6 +241,22 @@ function cellValue(row: T, key: string): unknown {
 
 .table {
   width: 100%;
+  /* Fixed, so the width each column declares is the width it GETS.
+   *
+   * Auto layout treats a th's width as a hint and lets content overrule it,
+   * which means one long value decides the whole grid. A ban reason typed as
+   * 368 characters without a space stretched its column to 2272px, pushed the
+   * households count and the Lift ban button off the right-hand edge, wrapped
+   * the date column to three lines and left the panel scrolling sideways --
+   * from one row of test data. The reason cell had asked to ellipsize all
+   * along; ellipsis needs a bound, and auto layout never gave it one.
+   *
+   * Safe because every column in every table here declares a width, and each
+   * table's widths sum to 100%. Nothing was relying on a column growing.
+   *
+   * .table-scroll above stays: it is what keeps a narrow window from pushing
+   * the page sideways, which is a different problem from this one. */
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   font-size: var(--text-sm);
@@ -266,15 +280,16 @@ function cellValue(row: T, key: string): unknown {
 
 .table td {
   padding: 0 var(--space-3);
-  height: var(--admin-row-comfortable);
+  height: var(--admin-row);
   border-bottom: var(--border-width-thin) solid var(--border-light);
   color: var(--text-primary);
   vertical-align: middle;
-}
-
-.table--dense td {
-  height: var(--admin-row-compact);
-  font-size: var(--text-xs);
+  /* The other half of fixed layout: a token with nowhere to break -- a barcode,
+     a Clerk id, a reason typed without spaces -- now breaks inside its own
+     column rather than painting across the next one. Cells that would rather
+     cut the line and show an ellipsis say so on the element itself
+     (u-truncate, or white-space: nowrap), and this never reaches those. */
+  overflow-wrap: anywhere;
 }
 
 .table tbody tr:last-child td {
@@ -350,7 +365,6 @@ function cellValue(row: T, key: string): unknown {
 
 .table__caret {
   opacity: 0.3;
-  font-size: 0.9em;
 }
 
 .table__caret--on {

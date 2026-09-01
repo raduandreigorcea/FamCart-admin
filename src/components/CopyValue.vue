@@ -84,7 +84,6 @@ onBeforeUnmount(() => {
 .copy__glyph {
   flex: none;
   opacity: 0;
-  font-size: 0.85em;
   transition: opacity var(--transition-fast) var(--ease-standard);
 }
 

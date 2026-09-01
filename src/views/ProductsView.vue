@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import UserChip from '../components/UserChip.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import DataTable from '../components/DataTable.vue'
@@ -33,7 +34,6 @@ import {
 import type { CatalogProductRow, LocalProductRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
-import { useDensity, type Density } from '../lib/useDensity'
 
 // Products, and the split that makes them confusing.
 //
@@ -65,7 +65,6 @@ import { useDensity, type Density } from '../lib/useDensity'
 // hides that from users -- rankSuggestions() dedupes first-wins on productKey()
 // with catalog rows first -- which is precisely why this page does not.
 
-const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const router = useRouter()
 const route = useRoute()
@@ -178,14 +177,15 @@ const catalogColumns: Column<CatalogProductRow>[] = [
 ]
 
 const localColumns: Column<LocalProductRow>[] = [
-  { key: 'name', label: 'Product', width: '26%' },
-  { key: 'maker', label: 'Brand', width: '13%' },
-  { key: 'barcode', label: 'Barcode / GTIN', width: '13%', hideBelow: 1100 },
-  { key: 'scope', label: 'Scope', width: '12%' },
-  { key: 'household_name', label: 'Household', width: '15%' },
+  { key: 'name', label: 'Product', width: '24%' },
+  { key: 'maker', label: 'Brand', width: '12%' },
+  { key: 'barcode', label: 'Barcode / GTIN', width: '12%', hideBelow: 1100 },
+  { key: 'scope', label: 'Scope', width: '10%' },
+  { key: 'household_name', label: 'Household', width: '13%' },
+  // Holds a face and a name now, so it keeps its share.
   { key: 'contributor_name', label: 'Contributed by', width: '13%', hideBelow: 1400 },
   { key: 'add_count', label: 'Adds', numeric: true, width: '7%' },
-  { key: 'created_at', label: 'Added', width: '10%', hideBelow: 1100 },
+  { key: 'created_at', label: 'Added', width: '9%', hideBelow: 1100 },
 ]
 
 // Built from OUTCOME_STAGES rather than written out, so a stage added to the
@@ -275,16 +275,7 @@ function quality(row: CatalogProductRow) {
       :fetched-at="active.fetchedAt.value"
       :busy="active.fetching.value"
       @refresh="refresh"
-    >
-      <template #tools>
-        <SegmentedControl
-          :model-value="density"
-          :segments="densitySegments"
-          label="Rows"
-          @update:model-value="setDensity($event as Density)"
-        />
-      </template>
-    </PageHeader>
+    />
 
     <!-- Only the catalog tab's filter counts come from the aggregate; the app
          database table is paged server-side and is unaffected. -->
@@ -384,7 +375,6 @@ function quality(row: CatalogProductRow) {
       />
 
       <DataTable
-        :dense="dense"
         v-else-if="scope === 'catalog'"
         :columns="catalogColumns"
         :rows="catalogRows"
@@ -421,7 +411,6 @@ function quality(row: CatalogProductRow) {
       </DataTable>
 
       <DataTable
-        :dense="dense"
         v-else-if="scope === 'local'"
         :columns="localColumns"
         :rows="localRows"
@@ -460,13 +449,13 @@ function quality(row: CatalogProductRow) {
           <span v-else class="u-muted">--</span>
         </template>
         <template #cell-contributor_name="{ row }">
-          <RouterLink
+          <UserChip
             v-if="row.contributed_by"
-            :to="`/users/${encodeURIComponent(String(row.contributed_by))}`"
-            class="link u-truncate"
-          >
-            {{ row.contributor_name || 'Unknown' }}
-          </RouterLink>
+            :id="String(row.contributed_by)"
+            :name="row.contributor_name ? String(row.contributor_name) : null"
+            :src="row.contributor_image_url ? String(row.contributor_image_url) : null"
+            :size="20"
+          />
           <span v-else class="u-muted">--</span>
         </template>
         <template #cell-created_at="{ row }">
@@ -477,7 +466,6 @@ function quality(row: CatalogProductRow) {
       </DataTable>
 
       <DataTable
-        :dense="dense"
         v-else
         :columns="outcomeColumns"
         :rows="outcomeRows"

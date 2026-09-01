@@ -1,20 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import { useUser } from '@clerk/vue'
+import UserChip from '../components/UserChip.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import DataTable from '../components/DataTable.vue'
 import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
-import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { fetchAdmins, grantAdmin, revokeAdmin, type AdminRow } from '../lib/data/users'
 import { appTarget } from '../lib/supabase'
 import type { Column } from '../lib/uiTypes'
-import { formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/format'
-import { useDensity, type Density } from '../lib/useDensity'
+import { formatDateTime, formatRelative, shortUserId } from '../lib/format'
 
 // Who can use this dashboard, and the only two writes it can make.
 //
@@ -24,7 +22,6 @@ import { useDensity, type Density } from '../lib/useDensity'
 // out of it.
 
 const { user } = useUser()
-const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const target = appTarget
 
@@ -91,20 +88,10 @@ async function confirmRevoke() {
       :fetched-at="admins.fetchedAt.value"
       :busy="admins.fetching.value"
       @refresh="admins.refetch"
-    >
-      <template #tools>
-        <SegmentedControl
-          :model-value="density"
-          :segments="densitySegments"
-          label="Rows"
-          @update:model-value="setDensity($event as Density)"
-        />
-      </template>
-    </PageHeader>
+    />
 
     <PanelCard title="Admins" note="Every account that can open this dashboard." flush>
       <DataTable
-        :dense="dense"
         :columns="columns"
         :rows="rows"
         row-key="user_id"
@@ -115,13 +102,12 @@ async function confirmRevoke() {
       >
         <template #cell-display_name="{ row }">
           <div class="who">
-            <img v-if="row.image_url" class="who__avatar" :src="String(row.image_url)" alt="" loading="lazy" />
-            <span v-else class="who__initial" aria-hidden="true">
-              {{ initialOf(row.display_name ? String(row.display_name) : '?') }}
-            </span>
-            <RouterLink :to="`/users/${encodeURIComponent(String(row.user_id))}`" class="who__link u-truncate">
-              {{ row.display_name || 'No profile yet' }}
-            </RouterLink>
+            <UserChip
+              :id="String(row.user_id)"
+              :name="row.display_name ? String(row.display_name) : null"
+              :src="row.image_url ? String(row.image_url) : null"
+              fallback="No profile yet"
+            />
             <StatusPill v-if="row.is_self" tone="accent" label="You" :dot="false" />
           </div>
         </template>
@@ -134,10 +120,18 @@ async function confirmRevoke() {
           <span class="u-truncate u-muted">{{ row.note || '--' }}</span>
         </template>
 
+        <!-- The bootstrap admin was inserted by hand against a database with no
+             admin in it to do the granting, so a blank here is the ordinary
+             answer for exactly one row rather than a lookup that failed. -->
         <template #cell-granted_by_name="{ row }">
-          <span class="u-truncate u-muted">
-            {{ row.granted_by ? row.granted_by_name || shortUserId(String(row.granted_by)) : 'seeded by hand' }}
-          </span>
+          <UserChip
+            v-if="row.granted_by"
+            :id="String(row.granted_by)"
+            :name="row.granted_by_name ? String(row.granted_by_name) : null"
+            :src="row.granted_by_image_url ? String(row.granted_by_image_url) : null"
+            :size="20"
+          />
+          <span v-else class="u-truncate u-muted">seeded by hand</span>
         </template>
 
         <template #cell-granted_at="{ row }">
@@ -148,7 +142,7 @@ async function confirmRevoke() {
             <button
               v-if="!row.is_self"
               type="button"
-              class="granted__revoke"
+              class="u-btn u-btn--danger"
               @click="revoking = row"
             >Revoke</button>
             <span v-else class="granted__self" title="The database refuses to let an admin revoke their own access">
@@ -232,59 +226,11 @@ async function confirmRevoke() {
   min-width: 0;
 }
 
-.who__avatar,
-.who__initial {
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-pill);
-  flex: none;
-}
-
-.who__avatar {
-  object-fit: cover;
-}
-
-.who__initial {
-  display: grid;
-  place-items: center;
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-}
-
-.who__link {
-  color: var(--text-primary);
-  text-decoration: none;
-  font-weight: var(--weight-medium);
-  min-width: 0;
-}
-
-.who__link:hover {
-  color: var(--color-primary);
-  text-decoration: underline;
-}
-
 .granted {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-}
-
-.granted__revoke {
-  background: none;
-  border: var(--border-width-thin) solid var(--danger-border);
-  color: var(--danger-text);
-  border-radius: var(--radius-sm);
-  padding: 1px var(--space-2);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  cursor: pointer;
-}
-
-.granted__revoke:hover {
-  background: var(--danger-bg);
 }
 
 .granted__self {

@@ -16,7 +16,7 @@ vi.mock('../src/lib/supabase', () => ({
 const { deleteHousehold, restoreHousehold, fetchDeletedHouseholds } = await import(
   '../src/lib/data/households'
 )
-const { banUser, unbanUser } = await import('../src/lib/data/users')
+const { banUser, unbanUser, fetchBannedUsers } = await import('../src/lib/data/users')
 
 function resolving(data: unknown = null, error: unknown = null) {
   abortSignal.mockResolvedValue({ data, error })
@@ -85,5 +85,21 @@ describe('ban calls', () => {
     resolving()
     await unbanUser('user_2abc', signal())
     expect(rpc).toHaveBeenCalledWith('admin_unban_user', { p_user_id: 'user_2abc' })
+  })
+
+  it('lists the banned with no arguments at all', async () => {
+    // admin_banned_users() takes none. Passing an empty object would still
+    // resolve, but a later argument added in the SQL and not here would fail as
+    // a 404 naming neither -- so the call shape is asserted like the rest.
+    resolving([])
+    await fetchBannedUsers(signal())
+    expect(rpc).toHaveBeenCalledWith('admin_banned_users')
+  })
+
+  it('returns an empty list rather than null when nobody is banned', async () => {
+    // Same rule as fetchDeletedHouseholds: a view that has to guard against
+    // null AND empty is a view with two empty states, and one will be wrong.
+    resolving(null)
+    await expect(fetchBannedUsers(signal())).resolves.toEqual([])
   })
 })

@@ -10,12 +10,15 @@ import { catalogConfigured } from '../lib/data/products'
 import {
   cancelRun,
   enqueueRun,
+  availableArtifacts,
+  fetchArtifacts,
   fetchRunRequest,
   fetchRunRequests,
   fetchWorkers,
   isActive,
   forceClearRun,
   isStalled,
+  isUnclaimed,
   runnerOnline,
   sourceReady,
   stepBlockedReason,
@@ -33,12 +36,24 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 // importer holds a service-role key that can rewrite every row in the catalog,
 // needs ~15 GB of disk, and is a CLI with nothing listening -- and none of it
 // changed. What changed is that the dashboard stopped trying: it writes a row to
-// catalog_run_requests and a worker on the operator's machine claims it.
+// catalog_run_requests and something else claims it.
 //
-// Which makes the runner badge the most important thing on the panel. A button
+// The runner badge is therefore the most important thing on the panel: a button
 // that queues into a void is worse than a disabled one, so this asks who is
-// listening before it offers to start anything, and says the command when the
-// answer is nobody.
+// listening before it offers to start anything.
+//
+// RIGHT NOW NOTHING IS. The repo that provided the worker was deleted, and the
+// catalog project was reset to bare catalog_admins with it, so the queue table
+// this reads does not exist either. The panel needs no special case for that
+// beyond the error branch below -- every read fails, the ladder is not drawn,
+// and describeError() says why. Everything here is left standing because the
+// contract is the queue, not the repo: point a new worker at
+// catalog_run_requests and this panel works again unchanged.
+//
+// Readiness goes through availableArtifacts() rather than asking a worker
+// directly, for the same reason: a worker looking at its own disk answers when
+// there is one, and the artifact index answers when there is not, because a CI
+// runner is deleted before anyone can ask it anything.
 
 const emit = defineEmits<{ (e: 'finished'): void }>()
 
@@ -48,17 +63,59 @@ const POLL_MS = 2000
 const SOURCES = ['openfoodfacts', 'openproductsfacts', 'openbeautyfacts'] as const
 const source = ref<string>('openfoodfacts')
 
-const KINDS: { kind: RunKind; label: string; hint: string; confirm: boolean }[] = [
-  { kind: 'normalize', label: 'Normalize', hint: 'Market subset to staged.jsonl', confirm: false },
-  { kind: 'score', label: 'Re-score', hint: 'Applies every recorded verdict', confirm: false },
-  { kind: 'load', label: 'Load (dry run)', hint: 'Writes the diff, changes nothing', confirm: false },
-  { kind: 'load-apply', label: 'Apply', hint: 'Writes the catalog', confirm: true },
+// `confirm` names the dialog to put in front of a press, or null to just go.
+// Two of the six earn one, for opposite reasons: Apply is irreversible, and
+// Acquire is a whole evening. The other four cost minutes and confirming them
+// would make the panel tiresome for no protection.
+const KINDS: {
+  kind: RunKind
+  label: string
+  hint: string
+  confirm: { title: string; body: string; action: string } | null
+}[] = [
+  {
+    kind: 'acquire',
+    label: 'Acquire',
+    hint: 'Downloads the dump, writes the market subset',
+    confirm: {
+      title: 'Acquire',
+      body:
+        'Downloads the full dump (~12.7 GB for Open Food Facts) and filters it to the ' +
+        'configured markets. This takes hours. It resumes if interrupted, and Cancel ' +
+        'leaves the existing subset alone.',
+      action: 'Start it',
+    },
+  },
+  {
+    kind: 'acquire-delta',
+    label: 'Refresh',
+    hint: 'Folds the last 14 days of changes into the subset',
+    confirm: null,
+  },
+  { kind: 'normalize', label: 'Normalize', hint: 'Market subset to staged.jsonl', confirm: null },
+  { kind: 'score', label: 'Re-score', hint: 'Applies every recorded verdict', confirm: null },
+  { kind: 'load', label: 'Load (dry run)', hint: 'Writes the diff, changes nothing', confirm: null },
+  {
+    kind: 'load-apply',
+    label: 'Apply',
+    hint: 'Writes the catalog',
+    confirm: {
+      title: 'Apply the load',
+      body:
+        'This writes the catalog: new products are inserted and imported rows are ' +
+        "refreshed. Curated rows are never touched. Read the dry run's diff first if " +
+        'you have not.',
+      action: 'Apply it',
+    },
+  },
 ]
 
 const workers = useQuery((signal) => fetchWorkers(signal), { enabled: () => configured })
 const requests = useQuery((signal) => fetchRunRequests(20, signal), { enabled: () => configured })
+const artifacts = useQuery((signal) => fetchArtifacts(signal), { enabled: () => configured })
 
 const runner = computed(() => runnerOnline(workers.data.value ?? []))
+const stored = computed(() => availableArtifacts(runner.value, artifacts.data.value ?? []))
 const rows = computed(() => requests.data.value ?? [])
 
 // The newest request that has not finished. There is at most one per source and
@@ -108,6 +165,10 @@ watch(
       // One last look at the workers, so the badge does not sit stale after the
       // run that was keeping it fresh has finished.
       void workers.refetch()
+      // And at what is in the bucket, which is the point of the run that just
+      // ended: a finished normalize is a staged.jsonl that did not exist a
+      // moment ago, and Re-score stays grey until this is re-read.
+      void artifacts.refetch()
     }
   },
   { immediate: true },
@@ -136,12 +197,13 @@ onBeforeUnmount(() => {
 // ─── acting ──────────────────────────────────────────────────────────────────
 const busy = ref(false)
 const actionError = ref('')
-const pendingApply = ref<RunKind | null>(null)
+const pending = ref<RunKind | null>(null)
+const pendingSpec = computed(() => KINDS.find((k) => k.kind === pending.value)?.confirm ?? null)
 
 /**
  * The active request is running but the worker that claimed it is gone.
  *
- * Declared before canStart because canStart depends on it: a stalled request is
+ * Declared before canAct because canAct depends on it: a stalled request is
  * never going to finish, and letting it disable the panel is how one killed
  * process locks the page until somebody edits the database.
  */
@@ -149,35 +211,50 @@ const stalled = computed(
   () => activeRequest.value !== null && isStalled(activeRequest.value, workers.data.value ?? []),
 )
 
-const ready = computed(() => sourceReady(runner.value, source.value))
+/**
+ * A queued request nothing has picked up.
+ *
+ * The replacement for the old "No runner" badge, and a better question than the
+ * one it asked. There is no longer a process whose absence means anything --
+ * a runner is created per request and deleted after -- so the observable
+ * failure is that a request was written and no job ever claimed it, which means
+ * the dispatch chain is broken rather than merely idle.
+ */
+const unclaimed = computed(
+  () => activeRequest.value !== null && isUnclaimed(activeRequest.value, now.value),
+)
+
+const ready = computed(() => sourceReady(stored.value, source.value))
 
 /** Per step, because they are not equally available. */
 function available(kind: RunKind): boolean {
-  return canAct.value && stepReady(runner.value, kind, source.value)
+  return canAct.value && stepReady(stored.value, kind, source.value)
 }
 
 function blocked(kind: RunKind): string {
-  return canAct.value ? stepBlockedReason(runner.value, kind, source.value) : ''
+  return canAct.value ? stepBlockedReason(stored.value, kind, source.value) : ''
 }
+
+/**
+ * Whether anything at all would pick a request up.
+ *
+ * A live worker obviously would. So would the cloud pipeline, which has no
+ * process to be online -- a runner is created per request and deleted after --
+ * and whose only visible trace between runs is the artifact index it writes. So
+ * a populated index counts as evidence that something is claiming requests, and
+ * an empty one with no worker means a button would queue into a void.
+ */
+const listening = computed(() => runner.value !== null || stored.value.length > 0)
 
 const canAct = computed(
   () =>
-    runner.value !== null &&
+    listening.value &&
     // A stalled request is never going to finish, so it must not hold the panel
     // hostage. Cancel is offered beside it; starting something else is fine too.
     (activeRequest.value === null || stalled.value) &&
     !busy.value,
 )
 
-/** Kept for the source-level notice, which is about the source, not a step. */
-const canStart = computed(() => canAct.value && ready.value)
-
-/** The acquire command for the selected source, which the dashboard cannot run. */
-const acquireHint = computed(() => {
-  const suffix =
-    source.value === 'openproductsfacts' ? ':opf' : source.value === 'openbeautyfacts' ? ':obf' : ''
-  return `npm run acquire${suffix} && npm run acquire${suffix}:filter`
-})
 
 async function start(kind: RunKind) {
   if (busy.value) return
@@ -185,7 +262,7 @@ async function start(kind: RunKind) {
   actionError.value = ''
   try {
     await enqueueRun(kind, source.value)
-    pendingApply.value = null
+    pending.value = null
     await requests.refetch()
   } catch (caught) {
     actionError.value = caught instanceof Error ? caught.message : String(caught)
@@ -195,10 +272,7 @@ async function start(kind: RunKind) {
 }
 
 function press(kind: RunKind) {
-  const spec = KINDS.find((k) => k.kind === kind)
-  // Apply writes the catalog. The other three cost time and nothing else, and
-  // confirming them would make the panel tiresome for no protection.
-  if (spec?.confirm) pendingApply.value = kind
+  if (KINDS.find((k) => k.kind === kind)?.confirm) pending.value = kind
   else void start(kind)
 }
 
@@ -324,51 +398,84 @@ const columns: Column<RunRequest>[] = [
       state="error"
       title="Not a catalog admin"
       message="Starting a run is a write to the catalog project, and your account is not in its admin list."
-      would-require="npm run admins:add -- <your Clerk user id>, in catalog-importer."
+      would-require="a row in the catalog project's catalog_admins for your Clerk user id."
     />
   </template>
 
+  <!-- Any other read failure hides the ladder rather than drawing it over the
+       top of one. The queue lives in the catalog project, so a failure here
+       means this panel does not know what is queued, what has run, or whether
+       anything is listening -- and a row of live buttons under that is a
+       control offering to do something it cannot check. describeError() names
+       the common case: the catalog schema was removed along with the repo that
+       owned it, and there is no catalog_run_requests to write to. -->
+  <template v-else-if="error">
+    <StateBlock state="error" :title="error.title" :message="error.detail" />
+  </template>
+
   <template v-else>
-    <!--
-      The runner first, because everything below depends on it. A button that
-      queues into a void is worse than a disabled one.
-    -->
     <!-- Loud when something is wrong, nearly silent when nothing is.
          "Runner online / radu is listening" spent a full line saying everything
          was normal, and personified a hostname while doing it. The normal state
          is the one that needs the least room. -->
-    <p v-if="!runner" class="runner runner--off">
+    <!-- Two different failures, and they are not the same question.
+         Nothing listening: the worker on this machine is not running, which is
+         the arrangement in use today and is fixed by starting it. -->
+    <p v-if="!listening" class="runner runner--off">
       <StatusPill tone="bad" label="No runner" />
-      Nothing is listening. Run <code>npm run worker</code> in
-      <code>catalog-importer</code> on the machine that holds the dump and the
-      service-role key. The dashboard cannot do this part itself.
+      Nothing is listening. Starting a run needs a worker polling this queue on
+      the machine that holds the dump and the service-role key. There is no such
+      worker right now: the repo that provided it was removed.
     </p>
 
-    <!-- A source with no subset on the runner cannot run any step, so this is
-         said once here rather than four times on four buttons. acquire is the
-         one thing the dashboard genuinely cannot do for you. -->
-    <p v-if="runner && !ready" class="runner" data-test="not-acquired">
+    <!-- Something WAS listening, or at least the queue has been served before,
+         and yet nothing came for this request. That is the cloud pipeline's
+         failure mode rather than this one's, and it says so only once the wait
+         has gone past anything a runner allocation would explain. -->
+    <p v-else-if="unclaimed" class="runner runner--off" data-test="unclaimed">
+      <StatusPill tone="bad" label="Not picked up" />
+      Queued {{ elapsed }} ago and nothing has claimed it. Check the worker is
+      still running, or the pipeline workflow if this queue is being served from
+      GitHub Actions.
+    </p>
+
+    <!-- A source with no subset in the bucket cannot run the steps that read
+         one, so this is said once here rather than on each of them. It is not an
+         instruction: Acquire is the first button on the ladder, and pressing it
+         is the answer. -->
+    <p v-if="!ready" class="runner" data-test="not-acquired">
       <StatusPill tone="warn" :label="source" />
-      Not acquired on {{ runner.hostname ?? runner.id }}. Run
-      <code>{{ acquireHint }}</code> there first. It is a large download, which
-      is why it is not a button here.
+      Not acquired. Start with <strong>Acquire</strong> below; it runs for a few
+      hours.
     </p>
 
-    <!-- The four stages, drawn as the sequence they are.
-         normalize feeds score feeds load feeds apply, each reading the file the
-         one before it wrote. Drawn as four equal buttons it was four unrelated
-         things to guess between; drawn as a line it teaches the order, which is
-         the part that was hard to learn. Apply is the only one set apart,
-         because it is the only one that writes. -->
+    <!-- The stages, drawn as the sequence they are.
+         acquire feeds normalize feeds score feeds load feeds apply, each reading
+         the file the one before it wrote. Drawn as equal buttons they were
+         unrelated things to guess between; drawn as a line it teaches the order,
+         which is the part that was hard to learn. Apply is the only one set
+         apart, because it is the only one that writes the catalog.
+         Refresh sits beside Acquire as the cheap way to redo it. -->
     <div class="controls">
+      <!-- Used to mean "a worker is online", which now means "a stage happens to
+           be running this second" -- so it would be dark almost always and say
+           nothing when it was. It marks the fact that actually gates the panel
+           instead: this source has a subset stored, so the ladder can be run. -->
       <span
-        v-if="runner"
+        v-if="ready"
         class="ready"
-        :title="`Ready on ${runner.hostname ?? runner.id}`"
-        aria-label="Runner ready"
+        :title="`${source} is acquired and ready to run`"
+        aria-label="Source ready"
       ></span>
       <label class="controls__label" for="run-source">Source</label>
-      <select id="run-source" v-model="source" class="select" :disabled="!canStart">
+      <!-- Disabled by canAct alone, NEVER by `ready`.
+           It used to be both, and that made the picker disable itself: choosing
+           a source nobody had acquired set ready false, which disabled the one
+           control you would use to choose a different one. The way out of a
+           mis-click was Acquire, which is twelve gigabytes and several hours.
+           Readiness is about what may be RUN, not about what may be PICKED --
+           picking a source is how you find out whether it is ready. -->
+      <select id="run-source" v-model="source" class="select" :disabled="!canAct">
         <option v-for="s in SOURCES" :key="s" :value="s">{{ s }}</option>
       </select>
 
@@ -378,7 +485,7 @@ const columns: Column<RunRequest>[] = [
           <button
             type="button"
             class="stage"
-            :class="{ 'stage--writes': k.confirm }"
+            :class="{ 'stage--writes': k.kind === 'load-apply' }"
             :data-test="`run-${k.kind}`"
             :disabled="!available(k.kind)"
             :title="blocked(k.kind) || k.hint"
@@ -446,14 +553,15 @@ const columns: Column<RunRequest>[] = [
 </span></pre>
     </div>
 
-    <!-- Recent requests. -->
+    <!-- Recent requests. No error is passed down: a failed read of this queue is
+         caught by the branch above, so this table is never drawn under one. -->
     <DataTable
       :columns="columns"
       :rows="rows"
       row-key="id"
       dense
       :loading="requests.loading.value"
-      :error="error?.detail ?? ''"
+      error=""
       empty-title="No runs yet"
       empty-message="Nothing has been started from here."
     >
@@ -472,14 +580,14 @@ const columns: Column<RunRequest>[] = [
     </DataTable>
 
     <ConfirmDialog
-      :open="pendingApply !== null"
-      :title="`Apply the load to ${source}?`"
-      message="This writes the catalog: new products are inserted and imported rows are refreshed. Curated rows are never touched. Read the dry run's diff first if you have not."
-      confirm-label="Apply it"
+      :open="pendingSpec !== null"
+      :title="`${pendingSpec?.title} for ${source}?`"
+      :message="pendingSpec?.body ?? ''"
+      :confirm-label="pendingSpec?.action ?? 'Confirm'"
       :busy="busy"
       :error="actionError"
-      @confirm="start('load-apply')"
-      @cancel="pendingApply = null"
+      @confirm="pending && start(pending)"
+      @cancel="pending = null"
     />
   </template>
 </template>

@@ -11,7 +11,6 @@ import SideDrawer from '../components/SideDrawer.vue'
 import TablePager from '../components/TablePager.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useQuery, useQueryGroup, describeError } from '../lib/useQuery'
-import { useDensity, type Density } from '../lib/useDensity'
 import { catalogConfigured } from '../lib/data/products'
 import {
   approveAbove,
@@ -19,6 +18,7 @@ import {
   fetchReviewCandidates,
   fetchReviewDecisions,
   recordDecision,
+  rejectBelow,
   reviewSignal,
   type ReviewCandidate,
   type ReviewDecision,
@@ -45,14 +45,13 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 //
 // ─── WHY THERE IS NO CONFIRMATION DIALOG PER DECISION ────────────────────────
 //
-// Deliberate, and a break from the pattern TrashView and the detail views use
+// Deliberate, and a break from the pattern BansView and the detail views use
 // for delete and ban. Confirming four hundred approvals one at a time makes the
 // screen useless, and unlike a deletion a verdict is an upsert: Undo is one
 // click, on the row, and the Decided tab is where one gets revisited. The bulk
 // action is confirmed, because that one is not row-by-row reversible.
 
 const route = useRoute()
-const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const configured = catalogConfigured()
 
@@ -129,13 +128,22 @@ const error = computed(() =>
 )
 
 // Not `rows.length === 0`: that is also true before the first response, and an
-// empty band and an unanswered query are different answers. Same rule TrashView
+// empty band and an unanswered query are different answers. Same rule BansView
 // and TablePager follow.
 const knownEmpty = computed(
   () => active.value.data.value !== null && rows.value.length === 0,
 )
 
 const waitingCount = computed(() => waiting.data.value?.total ?? null)
+
+/**
+ * Whether the table -- and therefore the pager under it -- is on screen at all.
+ *
+ * Named rather than left as the `v-else` it used to be, because the pager moved
+ * into the panel's footer slot and a slot cannot be the else arm of a chain it
+ * is not part of. The two now have to agree, and a computed is how they do.
+ */
+const showTable = computed(() => !error.value?.forbidden && !knownEmpty.value)
 
 // Populated from what is on screen rather than from a lookup: the gate owns the
 // reason vocabulary and is free to change it, so a hardcoded list here would go
@@ -158,10 +166,10 @@ const candidateColumns: Column<ReviewCandidate>[] = [
 ]
 
 const decisionColumns: Column<ReviewDecision>[] = [
-  { key: 'name', label: 'Product', width: '28%' },
-  { key: 'verdict', label: 'Verdict', width: '12%' },
-  { key: 'decided_at', label: 'Decided', width: '18%' },
-  { key: 'decided_by', label: 'By', width: '18%', hideBelow: 1100 },
+  { key: 'name', label: 'Product', width: '32%' },
+  { key: 'verdict', label: 'Verdict', width: '14%' },
+  { key: 'decided_at', label: 'Decided', width: '19%' },
+  { key: 'decided_by', label: 'By', width: '19%', hideBelow: 1100 },
   { key: 'actions', label: '', align: 'right', width: '16%' },
 ]
 
@@ -210,19 +218,40 @@ async function undo(barcode: string) {
 }
 
 // ─── bulk ────────────────────────────────────────────────────────────────────
-const bulkScore = ref(55)
-const bulkOpen = ref(false)
+//
+// Two thresholds, one from each end, because a review band is not read from the
+// top down. It is mostly floor: sweeping the obviously-bad out of the way is
+// what leaves a set small enough to rule on one row at a time, and doing that
+// one click at a time is the thing this screen exists to replace.
+//
+// Both go through the same confirm dialog and the same handler. They differ in
+// which RPC they call and which way the comparison points, and keeping them one
+// path is what stops the reject arm from quietly drifting into a bulk action
+// whose filters no longer match the list it sits under.
+const approveScore = ref(55)
+const rejectScore = ref(25)
+const bulkVerdict = ref<Verdict | null>(null)
 const bulkBusy = ref(false)
 const bulkResult = ref('')
 
+const bulkPrompt = computed(() =>
+  bulkVerdict.value === 'reject'
+    ? `Reject everything scoring ${rejectScore.value} or below?`
+    : `Approve everything scoring ${approveScore.value} or above?`,
+)
+
 async function confirmBulk() {
-  if (bulkBusy.value) return
+  const verdict = bulkVerdict.value
+  if (bulkBusy.value || !verdict) return
   bulkBusy.value = true
   actionError.value = ''
   try {
-    const written = await approveAbove(bulkScore.value, pendingFilters.value)
-    bulkResult.value = `Approved ${formatCount(written)} products.`
-    bulkOpen.value = false
+    const written =
+      verdict === 'approve'
+        ? await approveAbove(approveScore.value, pendingFilters.value)
+        : await rejectBelow(rejectScore.value, pendingFilters.value)
+    bulkResult.value = `${verdict === 'approve' ? 'Approved' : 'Rejected'} ${formatCount(written)} products.`
+    bulkVerdict.value = null
     await Promise.all([candidates.refetch(), waiting.refetch()])
   } catch (caught) {
     actionError.value = caught instanceof Error ? caught.message : String(caught)
@@ -264,16 +293,7 @@ watch(rows, () => {
       :fetched-at="page.fetchedAt.value"
       :busy="page.busy.value"
       @refresh="page.refresh"
-    >
-      <template #tools>
-        <SegmentedControl
-          :model-value="density"
-          :segments="densitySegments"
-          label="Rows"
-          @update:model-value="setDensity($event as Density)"
-        />
-      </template>
-    </PageHeader>
+    />
 
     <StateBlock
       v-if="!configured"
@@ -348,9 +368,16 @@ watch(rows, () => {
           </button>
 
           <div v-if="tab === 'pending'" class="bulk">
-            <label class="bulk__label" for="bulk-score">Approve all at or above</label>
-            <input id="bulk-score" v-model.number="bulkScore" type="number" class="bulk__input" min="0" max="100" />
-            <button type="button" class="bulk__go" @click="bulkOpen = true">Approve</button>
+            <div class="bulk__rule">
+              <label class="bulk__label" for="bulk-approve">Approve all at or above</label>
+              <input id="bulk-approve" v-model.number="approveScore" type="number" class="bulk__input" min="0" max="100" />
+              <button type="button" class="bulk__go" data-test="bulk-approve" @click="bulkVerdict = 'approve'">Approve</button>
+            </div>
+            <div class="bulk__rule">
+              <label class="bulk__label" for="bulk-reject">Reject all at or below</label>
+              <input id="bulk-reject" v-model.number="rejectScore" type="number" class="bulk__input" min="0" max="100" />
+              <button type="button" class="bulk__go" data-test="bulk-reject" @click="bulkVerdict = 'reject'">Reject</button>
+            </div>
           </div>
         </div>
 
@@ -379,7 +406,7 @@ watch(rows, () => {
           message="Approve or reject something on the Pending tab and it appears here."
         />
 
-        <template v-else>
+        <template v-if="showTable">
           <div class="table" tabindex="0" @keydown="onKey">
             <DataTable
               v-if="tab === 'pending'"
@@ -387,7 +414,6 @@ watch(rows, () => {
               :rows="(rows as ReviewCandidate[])"
               row-key="barcode"
               clickable
-              :dense="dense"
               :loading="candidates.loading.value"
               :error="error?.detail ?? ''"
               @row-click="openRow = $event"
@@ -439,7 +465,6 @@ watch(rows, () => {
               :rows="(rows as ReviewDecision[])"
               row-key="barcode"
               clickable
-              :dense="dense"
               :loading="decisions.loading.value"
               :error="error?.detail ?? ''"
               @row-click="openRow = $event"
@@ -477,7 +502,14 @@ watch(rows, () => {
               </template>
             </DataTable>
           </div>
+        </template>
 
+        <!-- In the panel's footer slot rather than under the table, which is
+             where it used to sit: the panel is `flush`, so the body has no
+             padding and the pager was pressed against the last row with the
+             card's border a pixel below it. Every other table in the tool puts
+             it here and gets the tinted, padded foot for free. -->
+        <template v-if="showTable" #footer>
           <TablePager
             :total="total"
             :offset="offset"
@@ -510,15 +542,19 @@ watch(rows, () => {
       </dl>
     </SideDrawer>
 
+    <!-- One dialog for both thresholds. The message is the same sentence either
+         way because the caveat is the same one: it applies the filters on
+         screen, not the page on screen, and every verdict it writes is still
+         one click to undo on the Decided tab. -->
     <ConfirmDialog
-      :open="bulkOpen"
-      :title="`Approve everything scoring ${bulkScore} or above?`"
-      message="This applies the filters currently on screen, and writes a verdict for every matching record at once. Each one can still be undone individually afterwards."
-      confirm-label="Approve them"
+      :open="bulkVerdict !== null"
+      :title="bulkPrompt"
+      message="This applies the filters currently on screen, and writes a verdict for every matching record at once. A record with no score is left alone. Each one can still be undone individually afterwards."
+      :confirm-label="bulkVerdict === 'reject' ? 'Reject them' : 'Approve them'"
       :busy="bulkBusy"
       :error="actionError"
       @confirm="confirmBulk"
-      @cancel="bulkOpen = false"
+      @cancel="bulkVerdict = null"
     />
   </div>
 </template>
@@ -561,9 +597,16 @@ watch(rows, () => {
 
 .bulk {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-left: auto;
+}
+
+.bulk__rule {
+  display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-left: auto;
 }
 
 .bulk__label {
@@ -603,7 +646,7 @@ watch(rows, () => {
 }
 
 .verdict--approve {
-  border-color: var(--border-strong);
+  border-color: var(--border-dark);
   font-weight: var(--weight-medium);
 }
 

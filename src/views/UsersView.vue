@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import UserChip from '../components/UserChip.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import DataTable from '../components/DataTable.vue'
@@ -8,14 +9,12 @@ import TablePager from '../components/TablePager.vue'
 import FilterBar from '../components/FilterBar.vue'
 import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
-import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { useTableState } from '../lib/useTableState'
-import { useDensity, type Density } from '../lib/useDensity'
 import { fetchUsers, isUserSort } from '../lib/data/users'
 import type { AdminUserRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
-import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/format'
+import { formatCount, formatDateTime, formatRelative, shortUserId } from '../lib/format'
 
 // Every account, and what each one has actually done.
 //
@@ -23,7 +22,6 @@ import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } f
 // the table only reports the click. Sorting 25 of 300 rows in the browser would
 // look like sorting and be a lie.
 
-const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const router = useRouter()
 
@@ -38,15 +36,21 @@ const { query, sort, dir, offset, limit, params, onSort } = useTableState({
 const users = useQuery((signal) => fetchUsers(params.value, signal), { watch: [params] })
 
 const columns: Column<AdminUserRow>[] = [
+  // Nine columns, and the widest header is over the narrowest column, so these
+  // were measured rather than guessed: each one is comfortably above what its
+  // header needs at --text-2xs with its sort caret (Households, the tight one,
+  // needs 10.1%). They sum to 100 because fixed layout scales the whole set
+  // down when they do not, which is how Households came to overflow by 7px
+  // while claiming 9% of a set that added up to 105.
   { key: 'display_name', label: 'Account', sortable: true, width: '26%' },
-  { key: 'user_id', label: 'Clerk id', width: '16%', hideBelow: 1400 },
-  { key: 'households', label: 'Households', numeric: true, sortable: true, width: '9%' },
-  { key: 'items_added', label: 'Items', numeric: true, sortable: true, width: '8%', title: 'Items ever added to any list' },
-  { key: 'items_open', label: 'Open', numeric: true, width: '7%', hideBelow: 1100, title: 'Unchecked items on a list right now' },
+  { key: 'user_id', label: 'Clerk id', width: '12%', hideBelow: 1400 },
+  { key: 'households', label: 'Households', numeric: true, sortable: true, width: '11%' },
+  { key: 'items_added', label: 'Items', numeric: true, sortable: true, width: '7%', title: 'Items ever added to any list' },
+  { key: 'items_open', label: 'Open', numeric: true, width: '6%', hideBelow: 1100, title: 'Unchecked items on a list right now' },
   { key: 'purchases', label: 'Bought', numeric: true, sortable: true, width: '8%' },
-  { key: 'products_added', label: 'Products', numeric: true, width: '9%', hideBelow: 1400, title: 'Catalog rows this account contributed' },
-  { key: 'first_seen', label: 'First seen', sortable: true, width: '11%', hideBelow: 1100 },
-  { key: 'last_active', label: 'Last active', sortable: true, width: '11%' },
+  { key: 'products_added', label: 'Products', numeric: true, width: '8%', hideBelow: 1400, title: 'Catalog rows this account contributed' },
+  { key: 'first_seen', label: 'First seen', sortable: true, width: '10%', hideBelow: 1100 },
+  { key: 'last_active', label: 'Last active', sortable: true, width: '12%' },
 ]
 
 const rows = computed(() => users.data.value?.rows ?? [])
@@ -76,16 +80,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
       :fetched-at="users.fetchedAt.value"
       :busy="users.fetching.value"
       @refresh="users.refetch"
-    >
-      <template #tools>
-        <SegmentedControl
-          :model-value="density"
-          :segments="densitySegments"
-          label="Rows"
-          @update:model-value="setDensity($event as Density)"
-        />
-      </template>
-    </PageHeader>
+    />
 
     <PanelCard flush>
       <div class="toolbar">
@@ -111,7 +106,6 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         :dir="dir"
         :loading="users.loading.value"
         :error="error"
-        :dense="dense"
         clickable
         empty-title="No accounts match"
         empty-message="Clear the search, or check that you are pointed at the database you meant."
@@ -120,9 +114,14 @@ function activityTone(lastActive: string): 'good' | 'idle' {
       >
         <template #cell-display_name="{ row }">
           <div class="who">
-            <img v-if="row.image_url" class="who__avatar" :src="String(row.image_url)" alt="" loading="lazy" />
-            <span v-else class="who__initial" aria-hidden="true">{{ initialOf(String(row.display_name)) }}</span>
-            <span class="who__name u-truncate">{{ row.display_name }}</span>
+            <!-- Not linked: the whole row is already the way in, and a link
+                 inside a row that navigates on click is one target too many. -->
+            <UserChip
+              :id="String(row.user_id)"
+              :name="row.display_name ? String(row.display_name) : null"
+              :src="row.image_url ? String(row.image_url) : null"
+              :link="false"
+            />
             <StatusPill v-if="row.is_admin" tone="accent" label="Admin" :dot="false" />
             <StatusPill v-if="Number(row.owned_households) > 0" tone="idle" label="Owner" :dot="false" />
           </div>
@@ -174,32 +173,6 @@ function activityTone(lastActive: string): 'good' | 'idle' {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
-}
-
-.who__avatar,
-.who__initial {
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-pill);
-  flex: none;
-}
-
-.who__avatar {
-  object-fit: cover;
-}
-
-.who__initial {
-  display: grid;
-  place-items: center;
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-}
-
-.who__name {
-  font-weight: var(--weight-medium);
   min-width: 0;
 }
 

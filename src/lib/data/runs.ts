@@ -12,8 +12,22 @@ import { CatalogNotConfigured } from './products'
 // Which is why runnerOnline() matters as much as enqueueRun(). A button that
 // queues into a void is worse than a disabled one, so the UI asks who is
 // listening before it offers to start anything.
+//
+// No worker exists at the moment: the repo that carried it, and the catalog
+// schema it owned, were both removed. Every function here consequently fails on
+// a missing table, which RunControl renders as an error instead of a ladder of
+// buttons. None of it is deleted, because what this module depends on is the
+// shape of the queue rather than any particular worker -- a replacement that
+// claims catalog_run_requests and heartbeats into catalog_workers brings the
+// whole panel back with no change here.
 
-export type RunKind = 'normalize' | 'score' | 'load' | 'load-apply'
+export type RunKind =
+  | 'acquire'
+  | 'acquire-delta'
+  | 'normalize'
+  | 'score'
+  | 'load'
+  | 'load-apply'
 export type RunStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelling' | 'cancelled'
 
 export interface RunRequest {
@@ -63,23 +77,53 @@ export interface WorkerRow {
   current_request: string | null
   seconds_since_seen: number
   /**
-   * Source ids this worker has a market subset cached for.
+   * Source ids the worker had a market subset for, on its own disk.
    *
-   * Only the worker can know this: the subsets are files on its disk. Without
-   * it the dashboard offers all three sources and two of them fail in under a
-   * second with "no market subset", which is a button that should never have
-   * been enabled.
+   * Still reported, and no longer what the dashboard decides from. A runner is
+   * a CI job now: it pulls what its stage needs, runs, and is deleted, so this
+   * describes a machine that will not exist in ten minutes. catalog_artifacts
+   * describes the bucket, which is the thing that persists -- see ArtifactRow.
    */
   sources: string[] | null
-  /**
-   * Which stage outputs are in the worker's out/, and which source wrote each:
-   * `{ staged: 'openfoodfacts', scored: null }`.
-   *
-   * out/ is shared across sources, so "is there a staged.jsonl" is not the
-   * question -- whose it is, is. Re-scoring against another source's staged
-   * products would stamp them wrong at load time.
-   */
+  /** Same: what was in that job's out/, not what exists. */
   stages: { staged?: string | null; scored?: string | null } | null
+}
+
+/**
+ * One file the pipeline keeps between runs, as the database records it.
+ *
+ * This is the dashboard's answer to "can this step run", and it replaced asking
+ * the worker because there is no longer a worker to ask. `source` is which
+ * catalog the file is for: subsets are per source, while the out/ files are one
+ * shared slot carrying whoever last wrote them.
+ */
+export interface ArtifactRow {
+  key: string
+  source: string
+  remote_key: string
+  bytes: number
+  updated_at: string
+}
+
+/**
+ * How long a request may sit unclaimed before something is wrong.
+ *
+ * A dispatched job is not instant the way a polling worker was: the Edge
+ * Function call, GitHub allocating a runner, a checkout and an `npm ci` are two
+ * or three minutes before the stage starts. Below that this is just waiting.
+ * Above it, the dispatch chain is broken -- an unset app.dispatch_url, a revoked
+ * token, a disabled workflow -- and the request will sit there forever.
+ */
+export const UNCLAIMED_SECONDS = 240
+
+/** A queued request that nothing has picked up in long enough to worry. */
+export function isUnclaimed(
+  request: RunRequest,
+  now: number = Date.now(),
+  afterSeconds: number = UNCLAIMED_SECONDS,
+): boolean {
+  if (request.status !== 'queued') return false
+  return (now - new Date(request.requested_at).getTime()) / 1000 > afterSeconds
 }
 
 /**
@@ -138,65 +182,119 @@ export function isStalled(request: RunRequest, workers: WorkerRow[]): boolean {
   return !liveWorkers(workers).some((w) => w.id === request.claimed_by)
 }
 
+/** Which source produced the out/ file under this key, or null if there is none. */
+function holder(artifacts: ArtifactRow[], key: string): string | null {
+  return artifacts.find((a) => a.key === key)?.source ?? null
+}
+
 /**
- * Whether the runner could actually run a stage for this source.
+ * What exists, asked of whichever thing can actually see it.
  *
- * A worker that reports nothing -- an older one, or one that has not heartbeated
- * since the column existed -- is treated as able to run anything, which is what
- * it was before this existed. Guessing the other way would disable every button
- * on a runner that is working fine.
+ * There are two answers to "is there a staged.jsonl", and which one is true
+ * depends on where the worker runs.
+ *
+ * A worker on a real machine is looking straight at its own disk and says so
+ * over the heartbeat. That is the arrangement in use today, it is the more
+ * accurate of the two, and while such a worker is online its report wins.
+ *
+ * A CI runner cannot answer at all: its disk is empty when it starts, holds only
+ * what its own stage pulled, and is deleted minutes later. So the cloud path
+ * writes catalog_artifacts instead, and with no worker online that index is what
+ * is left to ask.
+ *
+ * Both, rather than one, because the cloud pipeline is built but not switched
+ * on. Dropping the heartbeat now would leave every button but Acquire dead on
+ * the machine actually running the pipeline.
  */
-export function sourceReady(runner: WorkerRow | null, source: string): boolean {
-  if (!runner) return false
-  if (runner.sources == null) return true
-  return runner.sources.includes(source)
+export function availableArtifacts(runner: WorkerRow | null, index: ArtifactRow[]): ArtifactRow[] {
+  // `sources == null` is a worker that predates the column and cannot tell us
+  // anything. Falling through to the index is the safe reading: it may be empty,
+  // which offers only Acquire -- recoverable by pressing it -- where trusting an
+  // empty answer from the worker would claim files exist that do not.
+  if (!runner || runner.sources == null) return index
+
+  const rows: ArtifactRow[] = runner.sources.map((source) => ({
+    key: 'subset',
+    source,
+    remote_key: '',
+    bytes: 0,
+    updated_at: runner.last_seen_at,
+  }))
+
+  for (const key of ['staged', 'scored'] as const) {
+    const source = runner.stages?.[key]
+    if (source) {
+      rows.push({ key, source, remote_key: '', bytes: 0, updated_at: runner.last_seen_at })
+    }
+  }
+  return rows
+}
+
+/**
+ * Whether a market subset exists for this source.
+ *
+ * Read off the bucket index rather than off a worker's heartbeat, and the
+ * difference matters: the heartbeat described one machine's disk, and a CI
+ * runner's disk is empty when it starts and gone when it finishes. There is no
+ * "the worker reports nothing, assume it can do anything" fallback any more --
+ * an absent row means the file is genuinely not there, which on a fresh bucket
+ * correctly leaves Acquire as the only live button.
+ */
+export function sourceReady(artifacts: ArtifactRow[], source: string): boolean {
+  return artifacts.some((a) => a.key === 'subset' && a.source === source)
 }
 
 /**
  * Whether this step can actually run right now.
  *
- * The four buttons are drawn as a sequence and were enabled regardless, so with
+ * The buttons are drawn as a sequence and were once enabled regardless, so with
  * an empty out/ Apply was lit and would have failed on a missing file. Teaching
  * an order in the layout and not enforcing it in the control is worse than not
  * drawing it: it looks like a guarantee.
- *
- * A worker reporting nothing is treated as able to run anything, which is what
- * it was before the column existed. Guessing the other way would kill every
- * button past Normalize on a runner that is working.
  */
-export function stepReady(
-  runner: WorkerRow | null,
-  kind: RunKind,
-  source: string,
-): boolean {
-  if (!runner) return false
-  if (!sourceReady(runner, source)) return false
-  if (runner.stages == null) return true
+export function stepReady(artifacts: ArtifactRow[], kind: RunKind, source: string): boolean {
+  // acquire is what MAKES a source ready, so it is the one step that cannot be
+  // gated on readiness. Running it through sourceReady would leave it disabled
+  // on precisely the empty bucket it exists for, saying "openfoodfacts has not
+  // been acquired" on the button whose job is to acquire it.
+  if (kind === 'acquire') return true
 
-  // normalize reads the acquired subset, which sourceReady already checked.
-  if (kind === 'normalize') return true
-  if (kind === 'score') return runner.stages.staged === source
-  return runner.stages.scored === source
+  if (!sourceReady(artifacts, source)) return false
+
+  // normalize and the delta refresh both read the subset, which sourceReady
+  // has just checked.
+  if (kind === 'acquire-delta' || kind === 'normalize') return true
+  if (kind === 'score') return holder(artifacts, 'staged') === source
+  return holder(artifacts, 'scored') === source
 }
 
 /** Why a step is not available, in the words of what to do about it. */
 export function stepBlockedReason(
-  runner: WorkerRow | null,
+  artifacts: ArtifactRow[],
   kind: RunKind,
   source: string,
 ): string {
-  if (!runner) return 'No runner'
-  if (!sourceReady(runner, source)) return `${source} has not been acquired`
-  if (runner.stages == null) return ''
-  if (kind === 'score' && runner.stages.staged !== source) {
-    return runner.stages.staged
-      ? `out/ holds ${runner.stages.staged}, not ${source}. Normalize first.`
-      : 'Nothing normalized yet. Run Normalize first.'
+  if (kind === 'acquire') return ''
+  if (!sourceReady(artifacts, source)) return `${source} has not been acquired`
+
+  // Whose file it is, not whether one exists. out/ is a single slot shared by
+  // all three sources, so re-scoring against another source's staged products
+  // would stamp them wrong at load time.
+  if (kind === 'score') {
+    const staged = holder(artifacts, 'staged')
+    if (staged !== source) {
+      return staged
+        ? `out/ holds ${staged}, not ${source}. Normalize first.`
+        : 'Nothing normalized yet. Run Normalize first.'
+    }
   }
-  if ((kind === 'load' || kind === 'load-apply') && runner.stages.scored !== source) {
-    return runner.stages.scored
-      ? `out/ holds ${runner.stages.scored}, not ${source}. Re-score first.`
-      : 'Nothing scored yet. Run Re-score first.'
+  if (kind === 'load' || kind === 'load-apply') {
+    const scored = holder(artifacts, 'scored')
+    if (scored !== source) {
+      return scored
+        ? `out/ holds ${scored}, not ${source}. Re-score first.`
+        : 'Nothing scored yet. Run Re-score first.'
+    }
   }
   return ''
 }
@@ -253,4 +351,11 @@ export async function fetchWorkers(signal: AbortSignal): Promise<WorkerRow[]> {
   const { data, error } = await client().rpc('list_workers').abortSignal(signal)
   if (error) queryError('list_workers', error)
   return (data ?? []) as WorkerRow[]
+}
+
+/** What the pipeline has produced and kept, which is what the buttons run off. */
+export async function fetchArtifacts(signal: AbortSignal): Promise<ArtifactRow[]> {
+  const { data, error } = await client().rpc('list_artifacts').abortSignal(signal)
+  if (error) queryError('list_artifacts', error)
+  return (data ?? []) as ArtifactRow[]
 }

@@ -8,91 +8,104 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 // `crumb` feeds the breadcrumb trail in TopBar. A detail view appends the last
 // segment itself through useLeafCrumb(), so the trail can say "Households / The
 // Smiths" rather than "Households / a uuid".
+//
+// `icon` is the same glyph the sidebar draws beside that section, and PageHeader
+// reads it from here rather than taking it as a prop. That is what keeps the
+// mark on a page and the mark in the rail from drifting apart: they are one
+// string, in one table, and a detail route deliberately carries its parent's --
+// a household's page is still a Households page.
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'overview',
     component: () => import('../views/OverviewView.vue'),
-    meta: { crumb: 'Overview' },
+    meta: { crumb: 'Overview', icon: 'layout-grid' },
   },
   {
     path: '/users',
     name: 'users',
     component: () => import('../views/UsersView.vue'),
-    meta: { crumb: 'Users' },
+    meta: { crumb: 'Users', icon: 'users-round' },
   },
   {
     path: '/users/:userId',
     name: 'user-detail',
     component: () => import('../views/UserDetailView.vue'),
-    meta: { crumb: 'Users' },
+    meta: { crumb: 'Users', icon: 'users-round' },
   },
   {
     path: '/households',
     name: 'households',
     component: () => import('../views/HouseholdsView.vue'),
-    meta: { crumb: 'Households' },
+    meta: { crumb: 'Households', icon: 'house' },
   },
   {
     path: '/households/:householdId',
     name: 'household-detail',
     component: () => import('../views/HouseholdDetailView.vue'),
-    meta: { crumb: 'Households' },
+    meta: { crumb: 'Households', icon: 'house' },
   },
   {
     path: '/products',
     name: 'products',
     component: () => import('../views/ProductsView.vue'),
-    meta: { crumb: 'Products' },
+    meta: { crumb: 'Products', icon: 'package-search' },
   },
   {
     path: '/products/:productId',
     name: 'product-detail',
     component: () => import('../views/ProductDetailView.vue'),
-    meta: { crumb: 'Products' },
+    meta: { crumb: 'Products', icon: 'package-search' },
   },
   {
     path: '/pipeline',
     name: 'pipeline',
     component: () => import('../views/PipelineView.vue'),
-    meta: { crumb: 'Pipeline' },
+    meta: { crumb: 'Pipeline', icon: 'workflow' },
   },
   {
     path: '/review',
     name: 'review',
     component: () => import('../views/ReviewView.vue'),
-    meta: { crumb: 'Review' },
+    meta: { crumb: 'Review', icon: 'check' },
   },
   {
     path: '/search',
     name: 'search',
     component: () => import('../views/SearchView.vue'),
-    meta: { crumb: 'Search' },
+    meta: { crumb: 'Search', icon: 'search' },
   },
   {
     path: '/health',
     name: 'health',
     component: () => import('../views/HealthView.vue'),
-    meta: { crumb: 'Health' },
+    meta: { crumb: 'Health', icon: 'activity' },
   },
   {
     path: '/access',
     name: 'access',
     component: () => import('../views/AccessView.vue'),
-    meta: { crumb: 'Access' },
+    meta: { crumb: 'Access', icon: 'key-round' },
   },
   {
+    path: '/bans',
+    name: 'bans',
+    component: () => import('../views/BansView.vue'),
+    meta: { crumb: 'Bans', icon: 'ban' },
+  },
+  // This page was /trash while it listed only withdrawn households. The name
+  // stopped being true once banned accounts joined them, and a redirect costs
+  // one line against a bookmark that would otherwise land on Not found.
+  {
     path: '/trash',
-    name: 'trash',
-    component: () => import('../views/TrashView.vue'),
-    meta: { crumb: 'Trash' },
+    redirect: '/bans',
   },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('../views/NotFoundView.vue'),
-    meta: { crumb: 'Not found' },
+    meta: { crumb: 'Not found', icon: 'triangle-alert' },
   },
 ]
 

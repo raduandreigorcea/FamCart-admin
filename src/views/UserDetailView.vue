@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
+import AppIcon from '../components/AppIcon.vue'
+import UserChip from '../components/UserChip.vue'
+import UserAvatar from '../components/UserAvatar.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatTile from '../components/StatTile.vue'
@@ -12,7 +15,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
 import { banUser, fetchUserDetail, unbanUser } from '../lib/data/users'
-import { formatCount, formatDateTime, formatRelative, humanizeKind, initialOf } from '../lib/format'
+import { formatCount, formatDateTime, formatRelative, humanizeKind } from '../lib/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,6 +38,7 @@ const profile = computed(() => detail.data.value?.profile ?? null)
 // ownership is a membership row, so removing them would strip a household of
 // its admin.
 const banned = computed(() => Boolean(profile.value?.banned_at))
+const ban = computed(() => detail.data.value?.ban ?? null)
 const confirmingBan = ref(false)
 const banReason = ref('')
 const banBusy = ref(false)
@@ -70,6 +74,21 @@ const topProducts = computed(() =>
 )
 
 const errorInfo = computed(() => describeError(detail.error.value))
+
+// Memberships, and how many of them point at a household an admin withdrew.
+//
+// The panel counts every membership because it lists every membership. The
+// "Households" tile above counts only the live ones, and this note is what
+// reconciles the two for whoever notices they disagree.
+const memberships = computed(() => detail.data.value?.households ?? [])
+const withdrawnCount = computed(() => memberships.value.filter((h) => h.deleted_at).length)
+
+const membershipNote = computed(() => {
+  const total = memberships.value.length
+  const noun = total === 1 ? 'membership' : 'memberships'
+  if (!withdrawnCount.value) return `${total} ${noun}`
+  return `${total} ${noun}, ${withdrawnCount.value} withdrawn`
+})
 </script>
 
 <template>
@@ -104,15 +123,59 @@ const errorInfo = computed(() => describeError(detail.error.value))
         <template #tools>
           <StatusPill v-if="detail.data.value?.is_admin" tone="accent" label="Dashboard admin" />
           <StatusPill v-if="banned" tone="bad" label="Suspended" />
-          <button type="button" class="danger" @click="confirmingBan = true">
+          <!-- Danger only when it is one. Suspending refuses somebody the app;
+               lifting gives it back, and dressing the two the same asks a
+               reader to hesitate over the wrong one. -->
+          <button
+            type="button"
+            class="u-btn"
+            :class="{ 'u-btn--danger': !banned }"
+            @click="confirmingBan = true"
+          >
             {{ banned ? 'Lift suspension' : 'Suspend' }}
           </button>
         </template>
       </PageHeader>
 
+      <!-- Why the app refuses this account, above everything it says about
+           what the account has done. A page that shows a "Suspended" pill and
+           then eleven ordinary panels leaves the only question that state
+           raises unanswered, and the answer lives in an audit trail nobody is
+           going to open a SQL editor to read. -->
+      <section v-if="banned" class="ban" role="status">
+        <AppIcon class="ban__glyph" name="ban" :size="16" />
+        <div class="ban__copy">
+          <p class="ban__lead">
+            FamCart has refused this account since
+            <time :title="formatDateTime(profile.banned_at as string)">
+              {{ formatRelative(profile.banned_at as string) }}</time>.
+          </p>
+
+          <p v-if="ban?.reason" class="ban__reason">{{ ban.reason }}</p>
+          <p v-else-if="ban" class="ban__reason ban__reason--none">No reason given.</p>
+          <p v-else class="ban__reason ban__reason--none">
+            No audit row records this ban, so nothing here can say why it was given.
+          </p>
+
+          <p v-if="ban?.by" class="ban__by">
+            Given by
+            <UserChip
+              :id="ban.by"
+              :name="ban.by_name"
+              :src="ban.by_image_url"
+              :size="18"
+            />
+          </p>
+        </div>
+      </section>
+
       <div class="identity">
-        <img v-if="profile.image_url" class="identity__avatar" :src="profile.image_url" alt="" />
-        <span v-else class="identity__initial" aria-hidden="true">{{ initialOf(profile.display_name) }}</span>
+        <UserAvatar
+          :id="profile.user_id"
+          :src="profile.image_url"
+          :name="profile.display_name"
+          :size="56"
+        />
         <dl class="identity__facts u-facts">
           <div>
             <dt>Clerk id</dt>
@@ -164,26 +227,43 @@ const errorInfo = computed(() => describeError(detail.error.value))
 
       <div class="grid">
         <div class="span-6">
-          <PanelCard title="Households" :note="`${detail.data.value?.households.length ?? 0} membership(s)`" fill flush>
+          <PanelCard title="Households" :note="membershipNote" fill flush>
             <StateBlock
-              v-if="!detail.data.value?.households.length"
+              v-if="!memberships.length"
               state="empty"
               title="In no household"
               message="This account has signed in but has not created or joined a household."
               compact
             />
             <ul v-else class="hh">
-              <li v-for="hh in detail.data.value.households" :key="hh.id" class="hh__row">
+              <li v-for="hh in memberships" :key="hh.id" class="hh__row">
                 <RouterLink :to="`/households/${hh.id}`" class="hh__link">
                   <span class="hh__emoji" aria-hidden="true">{{ hh.emoji || '🏠' }}</span>
                   <span class="hh__name u-truncate">{{ hh.name }}</span>
+                  <!-- The Bans section's own glyph, so a withdrawn household
+                       carries the mark of the page that can put it back. It
+                       goes AFTER the name rather than in front of it: leading
+                       the row with a second mark would indent the withdrawn
+                       names out of line with every other name in the list.
+                       The row stays a link, because looking at the household is
+                       how an operator decides whether to restore it. -->
+                  <AppIcon
+                    v-if="hh.deleted_at"
+                    class="hh__withdrawn"
+                    name="ban"
+                    :size="14"
+                    label="Withdrawn"
+                    :title="`Withdrawn ${formatRelative(hh.deleted_at)}`"
+                  />
                 </RouterLink>
                 <StatusPill
                   :tone="hh.is_owner ? 'accent' : hh.role === 'member' ? 'idle' : 'good'"
                   :label="hh.is_owner ? 'Owner' : hh.role === 'member' ? 'Member' : 'Moderator'"
                   :dot="false"
                 />
-                <span class="hh__meta u-num">{{ formatCount(hh.members) }} members</span>
+                <span class="hh__meta u-num">
+                  {{ formatCount(hh.members) }} member{{ hh.members === 1 ? '' : 's' }}
+                </span>
                 <span class="hh__meta u-num">{{ formatCount(hh.items_open) }} open</span>
                 <time class="hh__meta" :title="formatDateTime(hh.joined_at)">{{ formatRelative(hh.joined_at) }}</time>
               </li>
@@ -269,20 +349,6 @@ const errorInfo = computed(() => describeError(detail.error.value))
 </template>
 
 <style scoped>
-.danger {
-  background: none;
-  border: var(--border-width-thin) solid var(--danger-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--text-xs);
-  color: var(--danger-text);
-  cursor: pointer;
-}
-
-.danger:hover {
-  background: var(--danger-bg);
-}
-
 .reason {
   width: 100%;
   height: 34px;
@@ -301,6 +367,77 @@ const errorInfo = computed(() => describeError(detail.error.value))
   box-shadow: var(--focus-ring-primary);
 }
 
+/* Shaped like TruncationNotice, and deliberately: both say "read this before
+   you read anything below it". Danger rather than warning, because this is not
+   a caveat about the figures, it is the state of the account. */
+.ban {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--danger-bg);
+  border: var(--border-width-thin) solid var(--danger-border);
+  border-radius: var(--radius-md);
+}
+
+.ban__glyph {
+  color: var(--danger-text);
+  flex: none;
+  margin-top: 1px;
+}
+
+.ban__copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1;
+}
+
+.ban__lead {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  color: var(--danger-text);
+}
+
+/* The reason, set as the words somebody actually typed rather than as prose the
+   dashboard wrote. Quoted and italic so it reads as a quotation and cannot be
+   mistaken for the interface's own voice -- it is the only text on this page
+   that came from a person. */
+.ban__reason {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  font-style: italic;
+  /* A reason may be long, and it is the point of the panel, so it wraps rather
+     than truncating the way the Bans table has to. */
+  overflow-wrap: anywhere;
+}
+
+.ban__reason::before { content: '\201C'; }
+.ban__reason::after { content: '\201D'; }
+
+/* No reason, or no record of one. Not a quotation, so no quote marks and no
+   italic: this is the dashboard speaking. */
+.ban__reason--none {
+  font-style: normal;
+  color: var(--text-secondary);
+}
+
+.ban__reason--none::before,
+.ban__reason--none::after { content: none; }
+
+.ban__by {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
 .identity {
   display: flex;
   align-items: flex-start;
@@ -310,27 +447,6 @@ const errorInfo = computed(() => describeError(detail.error.value))
   border-radius: var(--radius-lg);
   padding: var(--space-4);
   box-shadow: var(--elevation-soft);
-}
-
-.identity__avatar,
-.identity__initial {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-pill);
-  flex: none;
-}
-
-.identity__avatar {
-  object-fit: cover;
-}
-
-.identity__initial {
-  display: grid;
-  place-items: center;
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
-  font-size: var(--text-xl);
-  font-weight: var(--weight-bold);
 }
 
 .identity__facts {
@@ -393,6 +509,10 @@ const errorInfo = computed(() => describeError(detail.error.value))
 
 .hh__emoji {
   flex: none;
+}
+
+.hh__withdrawn {
+  color: var(--danger-text);
 }
 
 .hh__meta {

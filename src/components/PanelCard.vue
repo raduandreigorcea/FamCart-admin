@@ -49,6 +49,11 @@ defineProps({
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Deliberately NOT `overflow: hidden`. It would round the tinted head and foot
+     against this edge in one declaration, and it would also clip the chart
+     tooltip in LineChart, which is absolutely positioned and routinely reaches
+     past the panel it is drawn in. The head and foot round themselves instead,
+     one radius shorter to sit inside this border. */
   box-shadow: var(--elevation-soft);
 }
 
@@ -56,14 +61,23 @@ defineProps({
   height: 100%;
 }
 
+/* The head is a shade off the body rather than level with it.
+   A border alone was doing the whole job of saying where the title stopped and
+   the content started, and --border-light is nearly invisible on white -- so at
+   a glance a panel was one undifferentiated white rectangle with some bold text
+   at the top of it. The tint is the same --bg-surface-alt the table headers
+   already use, which is the point: a panel's head and a table's head are the
+   same kind of thing and now look it. */
 .panel__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border-bottom: var(--border-width-thin) solid var(--border-light);
-  min-height: 44px;
+  background: var(--bg-surface-alt);
+  border-bottom: var(--border-width-thin) solid var(--border-main);
+  border-radius: calc(var(--radius-lg) - var(--border-width-thin)) calc(var(--radius-lg) - var(--border-width-thin)) 0 0;
+  min-height: 48px;
 }
 
 .panel__heading {
@@ -93,7 +107,7 @@ defineProps({
 }
 
 .panel__body {
-  padding: var(--space-4);
+  padding: var(--space-5) var(--space-4);
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -104,8 +118,10 @@ defineProps({
 }
 
 .panel__foot {
-  padding: var(--space-2) var(--space-4);
-  border-top: var(--border-width-thin) solid var(--border-light);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface-alt);
+  border-top: var(--border-width-thin) solid var(--border-main);
+  border-radius: 0 0 calc(var(--radius-lg) - var(--border-width-thin)) calc(var(--radius-lg) - var(--border-width-thin));
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }

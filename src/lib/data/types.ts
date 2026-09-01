@@ -107,6 +107,7 @@ export interface AdminHouseholdRow {
   invite_code: string
   created_by: string
   owner_name: string | null
+  owner_image_url: string | null
   created_at: string
   members: number
   moderators: number
@@ -125,6 +126,7 @@ export interface AdminEventRow {
   kind: string
   actor: string | null
   actor_name: string | null
+  actor_image_url: string | null
   household_id: string | null
   household_name: string | null
   detail: Record<string, unknown>
@@ -147,6 +149,7 @@ export interface RecentActivityRow {
   occurred_at: string
   actor: string | null
   actor_name: string | null
+  actor_image_url: string | null
   household_id: string | null
   household_name: string | null
   subject: string | null
@@ -220,6 +223,7 @@ export interface LocalProductRow {
   household_name: string | null
   contributed_by: string | null
   contributor_name: string | null
+  contributor_image_url: string | null
   base_weight: number
   add_count: number
   popularity: number

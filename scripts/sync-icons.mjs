@@ -74,7 +74,8 @@ const ICONS = [
   'copy',
   'check',
   'x',
-  'trash-2',          // Trash, and the delete action on a household
+  'trash-2',          // the delete action on a household, and withdrawn ones
+  'ban',              // Bans
   'circle',           // an unmet quality band
   'ellipsis',
 

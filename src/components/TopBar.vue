@@ -5,7 +5,7 @@ import { useUser } from '@clerk/vue'
 import AppIcon from './AppIcon.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import { applyResolvedTheme, loadThemeMode, saveThemeMode, type ThemeMode } from '../vendor/theme'
-import { initialOf } from '../lib/format'
+import UserAvatar from './UserAvatar.vue'
 import { leafCrumb } from '../lib/breadcrumb'
 import { useSignOut } from '../lib/useSignOut'
 
@@ -18,14 +18,36 @@ import { useSignOut } from '../lib/useSignOut'
 // once -- the sidebar, two pages and the data layer itself -- and threading it
 // through props would mean four copies of one fact drifting apart.
 
+defineProps({
+  /** Wide screens: whether the rail is currently showing icons only. */
+  navCollapsed: { type: Boolean, default: false },
+})
+
 const emit = defineEmits<{
   (e: 'search'): void
   (e: 'toggle-nav'): void
+  (e: 'toggle-collapse'): void
 }>()
 
 const route = useRoute()
 const leaf = leafCrumb()
 const { user } = useUser()
+
+/**
+ * Where a crumb goes when you click it: the route's own path, with any
+ * parameterised tail cut off. `/households/:householdId` points at
+ * `/households`, which is the list the detail page came from.
+ *
+ * The parameterised routes used to resolve to '' here, so on a detail page the
+ * "Households" crumb rendered as inert text -- the one control on the screen
+ * that looks exactly like the way back and was not it. The catch-all route is
+ * `/:pathMatch(.*)*`, whose tail starts at index 0, so it still yields '' and
+ * still renders as text: Not found has no list to go back to.
+ */
+function listPathOf(path: string): string {
+  const tail = path.indexOf('/:')
+  return tail === -1 ? path : path.slice(0, tail)
+}
 
 // Breadcrumbs from the matched route records rather than from the URL, so a
 // detail page can say "Households / The Smiths" and not "households / a uuid".
@@ -34,7 +56,7 @@ const crumbs = computed(() => {
     .filter((record) => record.meta?.crumb)
     .map((record) => ({
       label: String(record.meta.crumb),
-      to: record.path.includes(':') ? '' : record.path,
+      to: listPathOf(record.path),
     }))
   if (leaf.value) trail.push({ label: leaf.value, to: '' })
   return trail
@@ -102,6 +124,20 @@ async function requestSignOut() {
 
 <template>
   <header class="topbar">
+    <!-- One rail, two controls, one per breakpoint: wide screens collapse it to
+         icons, narrow screens slide it over the page. They sit in the same slot
+         because they answer the same question, and only ever one is on screen. -->
+    <button
+      type="button"
+      class="topbar__rail"
+      :title="navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+      :aria-expanded="!navCollapsed"
+      @click="emit('toggle-collapse')"
+    >
+      <AppIcon name="panel-left" :size="17" />
+      <span class="u-sr">{{ navCollapsed ? 'Expand sidebar' : 'Collapse sidebar' }}</span>
+    </button>
+
     <button type="button" class="topbar__hamburger" title="Sections" @click="emit('toggle-nav')">
       <AppIcon name="menu" :size="18" />
       <span class="u-sr">Toggle sections</span>
@@ -110,7 +146,7 @@ async function requestSignOut() {
     <nav class="crumbs" aria-label="Breadcrumb">
       <template v-for="(crumb, index) in crumbs" :key="`${crumb.label}-${index}`">
         <span v-if="index > 0" class="crumbs__sep" aria-hidden="true">/</span>
-        <RouterLink v-if="crumb.to && index < crumbs.length - 1" :to="crumb.to" class="crumbs__link">
+        <RouterLink v-if="crumb.to && crumb.to !== route.path" :to="crumb.to" class="crumbs__link">
           {{ crumb.label }}
         </RouterLink>
         <span v-else class="crumbs__current" aria-current="page">{{ crumb.label }}</span>
@@ -142,8 +178,9 @@ async function requestSignOut() {
         :aria-expanded="accountOpen"
         @click="accountOpen = !accountOpen"
       >
-        <img v-if="user?.imageUrl" class="account__avatar" :src="user.imageUrl" alt="" />
-        <span v-else class="account__initial" aria-hidden="true">{{ initialOf(user?.fullName) }}</span>
+        <!-- Clerk's own user rather than a profiles row, so the id it hashes
+             for a fallback tint is the same Clerk id every other chip uses. -->
+        <UserAvatar :id="user?.id" :src="user?.imageUrl" :name="user?.fullName" :size="26" />
       </button>
 
       <div v-if="accountOpen" class="account__menu" @click.stop>
@@ -172,10 +209,37 @@ async function requestSignOut() {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-4) 0 var(--space-3);
+  padding: 0 var(--space-4) 0 var(--space-2);
   background: var(--admin-chrome);
   border-bottom: var(--border-width-thin) solid var(--admin-chrome-edge);
   user-select: none;
+}
+
+/* The rail toggle. Wide screens only -- below 900px the rail has no column to
+   collapse, so collapsing it would do nothing and the hamburger takes over. */
+.topbar__rail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--admin-control);
+  height: var(--admin-control);
+  flex: none;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.topbar__rail:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+  .topbar__rail {
+    display: none;
+  }
 }
 
 .topbar__spacer {
@@ -191,13 +255,19 @@ async function requestSignOut() {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: var(--admin-control);
+    height: var(--admin-control);
     border: none;
     background: none;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: var(--text-lg);
     color: var(--text-secondary);
+  }
+
+  .topbar__hamburger:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 }
 
@@ -208,6 +278,7 @@ async function requestSignOut() {
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  margin-left: var(--space-1);
   font-size: var(--text-sm);
 }
 
@@ -240,9 +311,9 @@ async function requestSignOut() {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: 30px;
+  height: var(--admin-control);
   padding: 0 var(--space-2) 0 var(--space-3);
-  background: var(--bg-main);
+  background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-md);
   color: var(--text-disabled);
@@ -284,8 +355,8 @@ async function requestSignOut() {
 /* ── icon button ─────────────────────────────────────────────────────────── */
 
 .topbar__icon {
-  width: 30px;
-  height: 30px;
+  width: var(--admin-control);
+  height: var(--admin-control);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -311,6 +382,7 @@ async function requestSignOut() {
 .account__button {
   width: 30px;
   height: 30px;
+  margin-left: var(--space-1);
   border-radius: var(--radius-pill);
   border: var(--border-width-thin) solid var(--border-main);
   background: var(--color-primary-bg);
@@ -319,19 +391,6 @@ async function requestSignOut() {
   overflow: hidden;
   display: grid;
   place-items: center;
-}
-
-.account__avatar {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.account__initial {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  color: var(--color-primary-text);
 }
 
 .account__scrim {

@@ -22,6 +22,7 @@ export interface HouseholdDetail {
     invite_code: string
     created_by: string
     owner_name: string | null
+    owner_image_url: string | null
     max_items_per_member: number
     created_at: string
     members: number
@@ -32,6 +33,8 @@ export interface HouseholdDetail {
     checkouts: number
     products_added: number
     last_active: string
+    /** Set means an admin withdrew it. It still opens; see admin_household_facts. */
+    deleted_at: string | null
   }
   members: {
     user_id: string
@@ -53,6 +56,7 @@ export interface HouseholdDetail {
     checked_at: string | null
     added_by: string
     added_by_name: string | null
+    added_by_image_url: string | null
     created_at: string
   }[]
   top_products: {
@@ -70,12 +74,15 @@ export interface HouseholdDetail {
     add_count: number
     created_at: string
     contributed_by: string | null
+    contributed_by_name: string | null
+    contributed_by_image_url: string | null
   }[]
   recent_checkouts: {
     checkout_id: string
     purchased_at: string
     purchased_by: string
     purchased_by_name: string | null
+    purchased_by_image_url: string | null
     items: number
     quantity: number
   }[]
@@ -126,9 +133,9 @@ export async function fetchHouseholdDetail(
 //
 // The RPCs behind these set households.deleted_at and everything inside the
 // household disappears through active_household_ids() in the database. Nothing
-// is removed, which is what makes the Trash view honest rather than decorative.
+// is removed, which is what makes the Bans view honest rather than decorative.
 
-/** One row of the Trash view. */
+/** One row of the Bans view's withdrawn-households table. */
 export interface DeletedHouseholdRow {
   id: string
   name: string
