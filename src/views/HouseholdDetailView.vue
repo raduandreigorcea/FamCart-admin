@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
+import UserChip from '../components/UserChip.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatTile from '../components/StatTile.vue'
@@ -13,8 +14,13 @@ import SegmentedControl from '../components/SegmentedControl.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
-import { deleteHousehold, fetchHouseholdDetail, type HouseholdDetail } from '../lib/data/households'
-import { formatCount, formatDateTime, formatRelative, initialOf, shortUserId } from '../lib/format'
+import {
+  deleteHousehold,
+  fetchHouseholdDetail,
+  restoreHousehold,
+  type HouseholdDetail,
+} from '../lib/data/households'
+import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,30 +37,50 @@ useLeafCrumb(() =>
 
 const household = computed(() => detail.data.value?.household ?? null)
 
-// ─── deleting ────────────────────────────────────────────────────────────────
+// ─── withdrawing it, and putting it back ─────────────────────────────────────
 //
 // Soft: the RPC sets deleted_at and the database hides everything inside the
-// household through active_household_ids(). It reappears in Trash, and nothing
+// household through active_household_ids(). It reappears under Bans, and nothing
 // is destroyed.
-const confirmingDelete = ref(false)
-const deleting = ref(false)
-const deleteError = ref('')
+//
+// This page opens a withdrawn household rather than refusing it, which is the
+// whole point of a reversible delete: the decision to restore is made by looking
+// at what is inside, and until admin_household_facts() carried deleted_at
+// instead of filtering on it, every route here -- a member's profile, the Bans
+// row offering the restore -- landed on "No such household".
+//
+// So the page has two states and one button, and the button is the way out of
+// whichever state it is in.
+const withdrawn = computed(() => Boolean(household.value?.deleted_at))
 
-async function confirmDelete() {
-  if (deleting.value) return
-  deleting.value = true
-  deleteError.value = ''
+const confirming = ref(false)
+const working = ref(false)
+const actionError = ref('')
+
+async function confirmReversal() {
+  if (working.value) return
+  working.value = true
+  actionError.value = ''
   try {
-    await deleteHousehold(householdId.value, new AbortController().signal)
-    confirmingDelete.value = false
-    // Leaving is not politeness. This household is no longer readable, so
-    // staying here would render the page's own "no such household" state a
-    // moment later, which reads as the delete having gone wrong.
-    void router.push('/households')
+    const signal = new AbortController().signal
+    if (withdrawn.value) {
+      await restoreHousehold(householdId.value, signal)
+    } else {
+      await deleteHousehold(householdId.value, signal)
+    }
+    confirming.value = false
+    // Stay, and read the row back.
+    //
+    // The delete used to push to /households, because the page could not render
+    // what it had just done and would have shown its own "no such household"
+    // state -- which reads as the delete having failed. It can render it now,
+    // so staying is the honest ending: the same page, marked Withdrawn, with
+    // the way back on it.
+    await detail.refetch()
   } catch (caught) {
-    deleteError.value = caught instanceof Error ? caught.message : String(caught)
+    actionError.value = caught instanceof Error ? caught.message : String(caught)
   } finally {
-    deleting.value = false
+    working.value = false
   }
 }
 const errorInfo = computed(() => describeError(detail.error.value))
@@ -114,7 +140,20 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
         @refresh="detail.refetch"
       >
         <template #tools>
-          <button type="button" class="danger" @click="confirmingDelete = true">Delete</button>
+          <StatusPill
+            v-if="withdrawn"
+            tone="bad"
+            label="Withdrawn"
+            :title="`Withdrawn ${formatDateTime(household.deleted_at as string)}`"
+          />
+          <button
+            type="button"
+            class="u-btn"
+            :class="{ 'u-btn--danger': !withdrawn }"
+            @click="confirming = true"
+          >
+            {{ withdrawn ? 'Restore' : 'Delete' }}
+          </button>
         </template>
       </PageHeader>
 
@@ -123,9 +162,12 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
           <div>
             <dt>Owner</dt>
             <dd>
-              <RouterLink :to="`/users/${encodeURIComponent(household.created_by)}`" class="identity__link">
-                {{ household.owner_name || shortUserId(household.created_by) }}
-              </RouterLink>
+              <UserChip
+                :id="household.created_by"
+                :name="household.owner_name"
+                :src="household.owner_image_url"
+                :size="20"
+              />
             </dd>
           </div>
           <div>
@@ -165,11 +207,12 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
           <PanelCard title="Members" :note="`${detail.data.value?.members.length ?? 0} on the roster`" fill flush>
             <ul class="rows">
               <li v-for="member in detail.data.value?.members ?? []" :key="member.user_id" class="rows__row">
-                <RouterLink :to="`/users/${encodeURIComponent(member.user_id)}`" class="rows__who">
-                  <img v-if="member.image_url" class="rows__avatar" :src="member.image_url" alt="" loading="lazy" />
-                  <span v-else class="rows__initial" aria-hidden="true">{{ initialOf(member.display_name) }}</span>
-                  <span class="u-truncate">{{ member.display_name || shortUserId(member.user_id) }}</span>
-                </RouterLink>
+                <UserChip
+                  class="rows__who"
+                  :id="member.user_id"
+                  :name="member.display_name"
+                  :src="member.image_url"
+                />
                 <StatusPill
                   :tone="member.is_owner ? 'accent' : member.role === 'member' ? 'idle' : 'good'"
                   :label="member.is_owner ? 'Owner' : member.role === 'member' ? 'Member' : 'Moderator'"
@@ -235,7 +278,13 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
                 </span>
                 <span class="rows__qty u-num">×{{ item.quantity }}</span>
                 <StatusPill :tone="item.checked ? 'good' : 'idle'" :label="item.checked ? 'Checked' : 'Open'" :dot="false" />
-                <span class="rows__meta u-truncate">{{ item.added_by_name || shortUserId(item.added_by) }}</span>
+                <UserChip
+                  class="rows__meta"
+                  :id="item.added_by"
+                  :name="item.added_by_name"
+                  :src="item.added_by_image_url"
+                  :size="18"
+                />
                 <time class="rows__meta" :title="formatDateTime(item.created_at)">
                   {{ formatRelative(item.created_at) }}
                 </time>
@@ -262,7 +311,17 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
                 <button type="button" class="rows__open" @click="openCheckout = checkout">
                   <span class="rows__item">
                     {{ formatCount(checkout.items) }} item{{ checkout.items === 1 ? '' : 's' }}
-                    <span class="rows__maker">{{ checkout.purchased_by_name || shortUserId(checkout.purchased_by) }}</span>
+                    <!-- Unlinked, and it has to be: the row is a <button>, and a
+                         link nested inside one is not something the browser can
+                         resolve. The drawer this opens carries the linked chip. -->
+                    <UserChip
+                      class="rows__maker"
+                      :id="checkout.purchased_by"
+                      :name="checkout.purchased_by_name"
+                      :src="checkout.purchased_by_image_url"
+                      :size="18"
+                      :link="false"
+                    />
                   </span>
                   <time class="rows__meta" :title="formatDateTime(checkout.purchased_at)">
                     {{ formatRelative(checkout.purchased_at) }}
@@ -287,7 +346,17 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
               <span v-if="product.maker" class="rows__maker">{{ product.maker }}</span>
             </span>
             <span v-if="product.barcode" class="rows__meta u-mono">{{ product.barcode }}</span>
-            <span class="rows__meta u-num">{{ formatCount(product.add_count) }} adds</span>
+            <UserChip
+              v-if="product.contributed_by"
+              class="rows__meta"
+              :id="product.contributed_by"
+              :name="product.contributed_by_name"
+              :src="product.contributed_by_image_url"
+              :size="18"
+            />
+            <span class="rows__meta u-num">
+              {{ formatCount(product.add_count) }} add{{ product.add_count === 1 ? '' : 's' }}
+            </span>
             <time class="rows__meta" :title="formatDateTime(product.created_at)">
               {{ formatRelative(product.created_at) }}
             </time>
@@ -308,7 +377,14 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
         <dl v-if="openCheckout" class="drawer-facts u-facts">
           <div>
             <dt>Bought by</dt>
-            <dd>{{ openCheckout.purchased_by_name || shortUserId(openCheckout.purchased_by) }}</dd>
+            <dd>
+              <UserChip
+                :id="openCheckout.purchased_by"
+                :name="openCheckout.purchased_by_name"
+                :src="openCheckout.purchased_by_image_url"
+                :size="20"
+              />
+            </dd>
           </div>
           <div>
             <dt>Distinct items</dt>
@@ -332,33 +408,28 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
     </template>
 
     <ConfirmDialog
-      :open="confirmingDelete"
-      :title="`Delete ${household?.name ?? 'this household'}?`"
-      message="Its members lose access to it and everything inside it. Nothing is destroyed — it moves to Trash and can be restored."
-      confirm-label="Delete"
-      tone="danger"
-      :busy="deleting"
-      :error="deleteError"
-      @confirm="confirmDelete"
-      @cancel="confirmingDelete = false"
+      :open="confirming"
+      :title="
+        withdrawn
+          ? `Restore ${household?.name ?? 'this household'}?`
+          : `Delete ${household?.name ?? 'this household'}?`
+      "
+      :message="
+        withdrawn
+          ? 'Its members get it back exactly as they left it. Nothing was destroyed, so nothing has to be rebuilt.'
+          : 'Its members lose access to it and everything inside it. Nothing is destroyed — it moves to Bans and can be restored.'
+      "
+      :confirm-label="withdrawn ? 'Restore' : 'Delete'"
+      :tone="withdrawn ? 'primary' : 'danger'"
+      :busy="working"
+      :error="actionError"
+      @confirm="confirmReversal"
+      @cancel="confirming = false"
     />
   </div>
 </template>
 
 <style scoped>
-.danger {
-  background: none;
-  border: var(--border-width-thin) solid var(--danger-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--text-xs);
-  color: var(--danger-text);
-  cursor: pointer;
-}
-
-.danger:hover {
-  background: var(--danger-bg);
-}
 
 .identity {
   background: var(--bg-surface);
@@ -379,16 +450,6 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
   margin: 0;
   font-size: var(--text-sm);
   color: var(--text-primary);
-}
-
-.identity__link {
-  color: var(--color-primary);
-  text-decoration: none;
-  font-weight: var(--weight-medium);
-}
-
-.identity__link:hover {
-  text-decoration: underline;
 }
 
 .rows {
@@ -433,41 +494,10 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
   background: var(--bg-hover);
 }
 
+/* Only what the chip cannot know: how much of the row it may take. */
 .rows__who {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   flex: 1;
-  min-width: 0;
-  text-decoration: none;
-  color: var(--text-primary);
   font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-}
-
-.rows__who:hover {
-  color: var(--color-primary);
-}
-
-.rows__avatar,
-.rows__initial {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-pill);
-  flex: none;
-}
-
-.rows__avatar {
-  object-fit: cover;
-}
-
-.rows__initial {
-  display: grid;
-  place-items: center;
-  background: var(--color-primary-bg);
-  color: var(--color-primary-text);
-  font-size: 10px;
-  font-weight: var(--weight-bold);
 }
 
 .rows__item {
@@ -488,6 +518,14 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
 .rows__maker {
   font-size: var(--text-2xs);
   color: var(--text-disabled);
+}
+
+/* The row aligns its texts on a shared baseline, which is right for a name at
+   --text-sm beside a maker at --text-2xs. A chip has no baseline worth sharing
+   -- it would offer up the bottom edge of its avatar -- so it centres instead,
+   which is how a face beside a line of text should sit anyway. */
+.rows__item > .chip {
+  align-self: center;
 }
 
 .rows__qty {

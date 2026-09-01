@@ -12,6 +12,7 @@ const fetchReviewDecisions = vi.fn()
 const recordDecision = vi.fn().mockResolvedValue(undefined)
 const clearDecision = vi.fn().mockResolvedValue(undefined)
 const approveAbove = vi.fn().mockResolvedValue(3)
+const rejectBelow = vi.fn().mockResolvedValue(7)
 
 vi.mock('../src/lib/data/review', async () => {
   const actual = await vi.importActual<typeof import('../src/lib/data/review')>(
@@ -24,6 +25,7 @@ vi.mock('../src/lib/data/review', async () => {
     recordDecision,
     clearDecision,
     approveAbove,
+    rejectBelow,
   }
 })
 
@@ -38,14 +40,21 @@ const ReviewView = (await import('../src/views/ReviewView.vue')).default as unkn
 
 const stubs = {
   PageHeader: { template: '<div><slot name="tools" /></div>' },
-  PanelCard: { template: '<div><slot /></div>' },
+  // The footer slot is rendered because the pager lives in it now, and a stub
+  // that dropped it would hide the pager from every test on this screen.
+  PanelCard: { template: '<div><slot /><slot name="footer" /></div>' },
   // wouldRequire included: the real StateBlock renders it as the footnote, and
   // it is where the fix for a refusal is spelled out.
   StateBlock: {
     props: ['title', 'message', 'wouldRequire'],
     template: '<div class="state">{{ title }} {{ message }} {{ wouldRequire }}</div>',
   },
-  ConfirmDialog: { props: ['open', 'title'], template: '<div v-if="open" class="dialog">{{ title }}</div>' },
+  ConfirmDialog: {
+    props: ['open', 'title'],
+    emits: ['confirm', 'cancel'],
+    template: `<div v-if="open" class="dialog">{{ title }}
+      <button class="dialog-confirm" @click="$emit('confirm')" /></div>`,
+  },
   SegmentedControl: true,
   StatusPill: { props: ['label'], template: '<span>{{ label }}</span>' },
   SideDrawer: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
@@ -89,6 +98,7 @@ beforeEach(() => {
   recordDecision.mockClear()
   clearDecision.mockClear()
   approveAbove.mockClear()
+  rejectBelow.mockClear()
 })
 
 describe('ReviewView', () => {
@@ -151,6 +161,54 @@ describe('ReviewView', () => {
     await flush()
 
     expect(wrapper.find('[data-test="scans"]').text()).toBe('0')
+  })
+
+  // The band is mostly floor. Sweeping it is what leaves a set small enough to
+  // rule on one row at a time, and it is the arm 005 never shipped.
+  describe('the bulk thresholds', () => {
+    it('confirms before rejecting, and says which way the threshold points', async () => {
+      const wrapper = mount(ReviewView, { global: { stubs } })
+      await flush()
+
+      await wrapper.find('[data-test="bulk-reject"]').trigger('click')
+
+      expect(wrapper.find('.dialog').text()).toMatch(/scoring 25 or below/i)
+      expect(rejectBelow).not.toHaveBeenCalled()
+    })
+
+    it('rejects below the score under the filters on screen', async () => {
+      const wrapper = mount(ReviewView, { global: { stubs } })
+      await flush()
+
+      await wrapper.find('[data-test="bulk-reject"]').trigger('click')
+      await wrapper.find('.dialog-confirm').trigger('click')
+      await flush()
+
+      expect(rejectBelow).toHaveBeenCalledWith(25, {
+        runId: null,
+        reason: null,
+        query: '',
+      })
+      expect(approveAbove).not.toHaveBeenCalled()
+      expect(wrapper.text()).toMatch(/Rejected 7 products/)
+    })
+
+    // Two buttons, one dialog. The failure this guards against is the reject
+    // button opening a dialog that then approves, which is the worst possible
+    // outcome of sharing the handler.
+    it('still approves above the score from the other button', async () => {
+      const wrapper = mount(ReviewView, { global: { stubs } })
+      await flush()
+
+      await wrapper.find('[data-test="bulk-approve"]').trigger('click')
+      expect(wrapper.find('.dialog').text()).toMatch(/scoring 55 or above/i)
+
+      await wrapper.find('.dialog-confirm').trigger('click')
+      await flush()
+
+      expect(approveAbove).toHaveBeenCalledWith(55, expect.anything())
+      expect(rejectBelow).not.toHaveBeenCalled()
+    })
   })
 
   it('explains a refusal rather than showing a failed table', async () => {

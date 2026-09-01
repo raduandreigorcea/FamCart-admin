@@ -136,10 +136,25 @@ export function useQuery<T>(
 /**
  * Turn whatever Supabase threw into a sentence worth showing.
  *
- * The one that matters is 42501, which is what admin_guard() raises and what
- * PostgREST returns as 403. Everything else is passed through, because an
+ * Two get paraphrased and everything else is passed through, because an
  * internal tool's operator is better served by the real message than by a
- * friendly paraphrase of it.
+ * friendly one.
+ *
+ * 42501 is what admin_guard() raises and what PostgREST returns as 403.
+ *
+ * PGRST205 (and 42P01 underneath it) is the newer one, and it is here because
+ * of what it now means on the catalog project. That database was reset to bare
+ * `catalog_admins`, and the repo that owned its schema -- the importer, which
+ * carried supabase-catalog/ and the worker that claimed queued runs -- was
+ * deleted. So every catalog-backed panel asks for a table that no longer
+ * exists, and the raw PostgREST string ("Could not find the table
+ * 'public.catalog_run_requests' in the schema cache") reads like a broken
+ * dashboard rather than an absent pipeline. It is not broken; there is nothing
+ * on the other end yet.
+ *
+ * This stays useful when the pipeline is rebuilt: the same panels come back on
+ * their own the moment the new repo pushes its migrations, and until then they
+ * say the true thing.
  */
 export function describeError(error: Error | null): { title: string; detail: string; forbidden: boolean } {
   if (!error) return { title: 'Something went wrong', detail: '', forbidden: false }
@@ -154,6 +169,21 @@ export function describeError(error: Error | null): { title: string; detail: str
         'This account is not in public.admin_users, so the database refused the request. ' +
         'Ask an existing admin to grant access, or seed the first row with the service role.',
       forbidden: true,
+    }
+  }
+
+  // PGRST205 is PostgREST's schema-cache miss; 42P01 is Postgres' own
+  // undefined_table, which arrives instead when the reference is inside an RPC
+  // body rather than the request path. Both mean the same thing to an operator.
+  if (raw.code === 'PGRST205' || raw.code === '42P01') {
+    return {
+      title: 'Not in the database yet',
+      detail:
+        'This panel reads a table the catalog project does not have. The catalog schema and ' +
+        'the pipeline that wrote it were removed, and nothing has replaced them yet, so there ' +
+        'is nothing here to show. The panel starts working again on its own once the schema ' +
+        `is created. (${error.message})`,
+      forbidden: false,
     }
   }
 

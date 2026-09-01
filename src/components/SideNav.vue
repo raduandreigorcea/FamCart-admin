@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 
 // The sidebar, and the section order is an argument rather than an alphabet.
@@ -24,6 +24,26 @@ interface NavItem {
   icon: string
   /** Why this section exists, shown as a tooltip and when collapsed. */
   title: string
+}
+
+const route = useRoute()
+
+/**
+ * Whether a section owns the page you are on.
+ *
+ * Not vue-router's `router-link-exact-active`, which was what this used, and
+ * which is exact in the way that matters here: opening a household from the list
+ * unlit Households and left the whole rail dark, so a detail page looked like it
+ * belonged to no section at all. A detail page belongs to its list -- the same
+ * claim router/index.ts makes when it gives every detail route its parent's
+ * `icon` -- so the match is by prefix.
+ *
+ * Overview is the exception and has to stay exact, because its path is `/` and
+ * every other path in the tool starts with it.
+ */
+function isActive(to: string): boolean {
+  if (to === '/') return route.path === '/'
+  return route.path === to || route.path.startsWith(`${to}/`)
 }
 
 const groups: { heading: string; items: NavItem[] }[] = [
@@ -54,7 +74,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/health', label: 'Health', icon: 'activity', title: 'Reachability, database condition and the audit trail' },
       { to: '/access', label: 'Access', icon: 'key-round', title: 'Who can use this dashboard' },
-      { to: '/trash', label: 'Trash', icon: 'trash-2', title: 'Deleted households, and how to put them back' },
+      { to: '/bans', label: 'Bans', icon: 'ban', title: 'Accounts the app refuses and households an admin withdrew' },
     ],
   },
 ]
@@ -69,6 +89,8 @@ const groups: { heading: string; items: NavItem[] }[] = [
         :key="item.to"
         :to="item.to"
         class="nav__item"
+        :class="{ 'nav__item--on': isActive(item.to) }"
+        :aria-current="isActive(item.to) ? 'page' : undefined"
         :title="collapsed ? item.label : item.title"
       >
         <AppIcon class="nav__glyph" :name="item.icon" :size="17" />
@@ -98,10 +120,12 @@ const groups: { heading: string; items: NavItem[] }[] = [
   grid-area: nav;
   background: var(--admin-chrome);
   border-right: var(--border-width-thin) solid var(--admin-chrome-edge);
-  padding: var(--space-3) var(--space-2) var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  /* One clear step more than the gap between rows inside a group, so the four
+     groups read as four groups without needing a rule between them. */
+  gap: var(--space-5);
   overflow-y: auto;
   user-select: none;
 }
@@ -150,20 +174,21 @@ const groups: { heading: string; items: NavItem[] }[] = [
 .nav__group {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .nav__heading {
-  margin: 0 0 var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-2) var(--space-3);
 }
 
 .nav__item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-3);
-  height: 34px;
-  border-radius: var(--radius-sm);
+  height: var(--admin-nav-row);
+  border-radius: var(--radius-md);
   text-decoration: none;
   color: var(--text-secondary);
   font-size: var(--text-base);
@@ -183,17 +208,50 @@ const groups: { heading: string; items: NavItem[] }[] = [
 }
 
 /* The active rule is a left bar rather than a filled pill: at this row height a
-   filled block reads as a button and the sidebar starts looking like a toolbar. */
-.nav__item.router-link-exact-active {
-  background: var(--color-primary-bg);
+   filled block reads as a button and the sidebar starts looking like a toolbar.
+
+   The rail is a tinted surface now rather than white, so --color-primary-bg --
+   a pale green barely a shade off the chrome behind it -- no longer says which
+   row is live on its own. The bar does, which means the bar has to be drawn
+   properly.
+
+   Its own element rather than `box-shadow: inset`. An inset shadow follows the
+   row's border-radius, so on a 10px-rounded row it curved away at both ends and
+   rendered as a crescent rather than a bar. This is a straight 20px bar centred
+   on the row, rounded only on the edge that is not against the rail. */
+.nav__item--on {
+  background: var(--admin-accent-wash);
   color: var(--color-primary-text);
   font-weight: var(--weight-semibold);
-  box-shadow: inset 2px 0 0 var(--color-primary);
 }
 
+.nav__item--on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 20px;
+  transform: translateY(-50%);
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  background: var(--color-primary);
+}
+
+/* The glyph carries the brand green only where a section is live or under the
+   pointer. A rail of twelve green icons is a rail with no active state. */
 .nav__glyph {
   width: 18px;
   flex: none;
+  color: var(--text-disabled);
+  transition: color var(--transition-fast) var(--ease-standard);
+}
+
+.nav__item:hover .nav__glyph {
+  color: var(--text-secondary);
+}
+
+.nav__item--on .nav__glyph {
+  color: var(--color-primary);
 }
 
 .nav__label {
@@ -204,8 +262,8 @@ const groups: { heading: string; items: NavItem[] }[] = [
 
 .nav__target {
   margin-top: auto;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
   border: var(--border-width-thin) solid var(--border-main);
   background: var(--bg-main);
   display: flex;

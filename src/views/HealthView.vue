@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import UserChip from '../components/UserChip.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatTile from '../components/StatTile.vue'
@@ -27,7 +28,6 @@ import { appTarget, catalogTarget, clerkIssuer } from '../lib/supabase'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange, sinceIso } from '../lib/timeRange'
 import type { AdminEventRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
-import { useDensity, type Density } from '../lib/useDensity'
 import {
   formatBytes,
   formatCount,
@@ -42,7 +42,6 @@ import {
 // because the browser talks to PostgREST directly and Sentry only sees the
 // browser.
 
-const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const rangeKey = ref<string>(DEFAULT_RANGE)
 const range = computed(() => resolveRange(rangeKey.value))
@@ -118,6 +117,12 @@ const limitColumns: Column<RateLimitRowWithId>[] = [
 ]
 
 const tableRows = computed(() => health.data.value?.tables ?? [])
+
+// The tile says the size; the only thing worth adding is what it is spread
+// over, which is the table list further down this page.
+const databaseSizeHint = computed(() =>
+  health.data.value ? `Across ${formatCount(tableRows.value.length)} tables` : '',
+)
 const eventRows = computed(() => events.data.value?.rows ?? [])
 const limitRows = computed<RateLimitRowWithId[]>(() =>
   (limits.data.value ?? []).map((row) => ({
@@ -168,12 +173,6 @@ const reachabilityHint = computed(() => {
       @refresh="page.refresh"
     >
       <template #tools>
-        <SegmentedControl
-          :model-value="density"
-          :segments="densitySegments"
-          label="Rows"
-          @update:model-value="setDensity($event as Density)"
-        />
         <SegmentedControl v-model="rangeKey" :segments="rangeSegments" aria-label="Time range" />
       </template>
     </PageHeader>
@@ -191,7 +190,8 @@ const reachabilityHint = computed(() => {
         <StatTile
           label="Database size"
           :value="health.data.value?.database_size ?? null"
-          :hint="formatBytes(health.data.value?.database_size ?? null)"
+          format="bytes"
+          :hint="databaseSizeHint"
         />
       </div>
       <div class="span-3">
@@ -316,7 +316,6 @@ const reachabilityHint = computed(() => {
       flush
     >
       <DataTable
-        :dense="dense"
         :columns="tableColumns"
         :rows="tableRows"
         row-key="table_name"
@@ -363,7 +362,6 @@ const reachabilityHint = computed(() => {
       </template>
 
       <DataTable
-        :dense="dense"
         :columns="eventColumns"
         :rows="eventRows"
         row-key="id"
@@ -379,9 +377,13 @@ const reachabilityHint = computed(() => {
           />
         </template>
         <template #cell-actor_name="{ row }">
-          <RouterLink v-if="row.actor" :to="`/users/${encodeURIComponent(String(row.actor))}`" class="link u-truncate">
-            {{ row.actor_name || String(row.actor) }}
-          </RouterLink>
+          <UserChip
+            v-if="row.actor"
+            :id="String(row.actor)"
+            :name="row.actor_name ? String(row.actor_name) : null"
+            :src="row.actor_image_url ? String(row.actor_image_url) : null"
+            :size="20"
+          />
           <span v-else class="u-muted">unauthenticated</span>
         </template>
         <template #cell-household_name="{ row }">
@@ -420,7 +422,6 @@ const reachabilityHint = computed(() => {
           fill
         >
           <DataTable
-            :dense="dense"
             :columns="limitColumns"
             :rows="limitRows"
             row-key="id"
@@ -432,12 +433,18 @@ const reachabilityHint = computed(() => {
             <template #cell-kind="{ row }">
               <StatusPill tone="idle" :label="humanizeKind(String(row.kind))" :dot="false" />
             </template>
+            <!-- rate_limit_hit() also runs on paths with no session, where the
+                 actor is a throttling key and not an account at all. Those keep
+                 the copyable raw value: there is no profile to link to and no
+                 face to show, and dressing one up as a person would be a lie. -->
             <template #cell-actor_name="{ row }">
-              <RouterLink
+              <UserChip
                 v-if="row.actor_name"
-                :to="`/users/${encodeURIComponent(String(row.actor))}`"
-                class="link u-truncate"
-              >{{ row.actor_name }}</RouterLink>
+                :id="String(row.actor)"
+                :name="String(row.actor_name)"
+                :src="row.actor_image_url ? String(row.actor_image_url) : null"
+                :size="20"
+              />
               <CopyValue v-else :value="String(row.actor)" label="actor" />
             </template>
             <template #cell-window_start="{ row }">

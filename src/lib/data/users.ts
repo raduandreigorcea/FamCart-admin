@@ -27,6 +27,22 @@ export interface UserDetail {
     last_active: string
   }
   is_admin: boolean
+  /**
+   * Why the app refuses this account, read out of the audit trail.
+   *
+   * Null when the account is not banned, and ALSO null when it is banned but no
+   * event explains it -- a flag set straight against the table, or an audit row
+   * that aged out. `profile.banned_at` is the flag; this is the account of it,
+   * and the two are read separately on purpose so the page can tell "banned,
+   * and here is why" apart from "banned, and nothing records why".
+   */
+  ban: {
+    reason: string | null
+    by: string | null
+    by_name: string | null
+    by_image_url: string | null
+    at: string
+  } | null
   households: {
     id: string
     name: string
@@ -36,6 +52,14 @@ export interface UserDetail {
     joined_at: string
     members: number
     items_open: number
+    /**
+     * Set means an admin withdrew this household. The row stays in this list
+     * while the profile's `households` count leaves it out, and the two
+     * disagree on purpose: counting a household nobody can open sends whoever
+     * reads the number to a not-found page, and dropping the row would take
+     * away the only route to it from the person it belonged to.
+     */
+    deleted_at: string | null
   }[]
   top_products: {
     name: string
@@ -114,6 +138,7 @@ export interface AdminRow {
   note: string | null
   granted_by: string | null
   granted_by_name: string | null
+  granted_by_image_url: string | null
   granted_at: string
   is_self: boolean
 }
@@ -169,4 +194,38 @@ export async function unbanUser(userId: string, signal: AbortSignal): Promise<vo
     .rpc('admin_unban_user', { p_user_id: userId })
     .abortSignal(signal)
   if (error) queryError('admin_unban_user', error)
+}
+
+/** One row of the Bans view's people table. */
+export interface BannedUserRow {
+  user_id: string
+  display_name: string
+  image_url: string | null
+  banned_at: string
+  /** From admin_user_facts, so it is the number the Users list shows for them. */
+  households: number
+  /**
+   * Why, and who by -- both read out of the audit trail rather than off the
+   * profile, because that is the only place admin_ban_user records them.
+   *
+   * Null is ordinary and must not render as an error: a ban may be given with
+   * no reason at all. The view says "No reason given", not "unknown".
+   */
+  reason: string | null
+  banned_by: string | null
+  /**
+   * The banning admin, resolved against profiles. Null where the id in the
+   * audit row belongs to nobody with a profile -- the bootstrap admin seeded by
+   * hand, most likely -- in which case the view falls back to the id.
+   */
+  banned_by_name: string | null
+  banned_by_image_url: string | null
+}
+
+export async function fetchBannedUsers(signal: AbortSignal): Promise<BannedUserRow[]> {
+  const { data, error } = await getAppSupabase()
+    .rpc('admin_banned_users')
+    .abortSignal(signal)
+  if (error) queryError('admin_banned_users', error)
+  return (data ?? []) as BannedUserRow[]
 }

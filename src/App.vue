@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import { RouterView, useRoute, useRouter } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth, useUser, SignIn } from '@clerk/vue'
 import SideNav from './components/SideNav.vue'
 import TopBar from './components/TopBar.vue'
@@ -8,7 +8,7 @@ import CommandPalette from './components/CommandPalette.vue'
 import StateBlock from './components/StateBlock.vue'
 import ErrorBoundary from './components/ErrorBoundary.vue'
 import ProjectSwitcher from './components/ProjectSwitcher.vue'
-import AppIcon from './components/AppIcon.vue'
+import BrandMark from './components/BrandMark.vue'
 import { activeProject, appTarget, useSupabaseAuthBridge } from './lib/supabase'
 import { useSignOut } from './lib/useSignOut'
 import { useAdminCheck } from './lib/useAdminCheck'
@@ -54,8 +54,14 @@ const router = useRouter()
 // Two different things, and conflating them is what made the narrow layout
 // unusable. `collapsed` is the wide-screen rail shrinking to icons and keeping
 // its grid column. `open` is the narrow-screen overlay, where the rail has no
-// column at all and slides over the content. The hamburger drives the second;
-// the brand button drives the first.
+// column at all and slides over the content.
+//
+// Both are driven from the topbar now. `collapsed` used to be driven by the
+// brand cell, which meant the one place the product could put its mark was
+// occupied by a control -- and a control wearing a `panel-left` glyph, so the
+// dashboard's logo was a picture of a sidebar. The two rail controls sit
+// together at the left of the topbar instead, one per breakpoint, and the brand
+// cell goes back to being the brand.
 const navCollapsed = ref(false)
 const navOpen = ref(false)
 const paletteOpen = ref(false)
@@ -136,7 +142,10 @@ watch(activeProject, () => {
 <template>
   <!-- Booting: Clerk has not resolved yet. -->
   <div v-if="!ready" class="boot">
-    <div class="boot__mark">FamCart Admin</div>
+    <div class="boot__lockup">
+      <BrandMark :size="52" />
+      <div class="boot__name">FamCart Admin</div>
+    </div>
     <StateBlock state="loading" :lines="2" />
   </div>
 
@@ -145,6 +154,7 @@ watch(activeProject, () => {
        do not apply here. -->
   <div v-else-if="!isSignedIn" class="gate">
     <div class="gate__intro">
+      <BrandMark :size="48" />
       <h1 class="gate__title">FamCart Admin</h1>
       <p class="gate__copy">
         Sign in with the account that holds admin access. This dashboard reads
@@ -158,6 +168,7 @@ watch(activeProject, () => {
   <!-- Signed in but the database says no. -->
   <div v-else-if="adminState === 'no'" class="gate">
     <div class="gate__intro">
+      <BrandMark :size="48" />
       <h1 class="gate__title">Not authorised</h1>
       <p class="gate__copy">
         {{ user?.fullName || 'This account' }} is signed in, but is not in
@@ -188,6 +199,7 @@ on conflict (user_id) do nothing;</pre>
   <!-- Signed in, but the check itself failed. -->
   <div v-else-if="adminState === 'error'" class="gate">
     <div class="gate__intro">
+      <BrandMark :size="48" />
       <h1 class="gate__title">Could not reach the database</h1>
       <p class="gate__copy">
         The admin check against <strong class="u-mono">{{ target.label }}</strong> failed. This is a
@@ -210,27 +222,31 @@ on conflict (user_id) do nothing;</pre>
   </div>
 
   <div v-else-if="adminState === 'checking'" class="boot">
-    <div class="boot__mark">FamCart Admin</div>
+    <div class="boot__lockup">
+      <BrandMark :size="52" />
+      <div class="boot__name">FamCart Admin</div>
+    </div>
     <StateBlock state="loading" :lines="2" />
   </div>
 
   <!-- The tool. -->
   <div v-else class="shell" :class="{ 'shell--collapsed': navCollapsed }">
+    <!-- The mark, and a link to Overview rather than a control. Clicking a
+         product's logo goes home; that is the one thing every operator already
+         knows about it without being told. -->
     <div class="brand">
-      <button
-        type="button"
-        class="brand__toggle"
-        :title="navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-        @click="navCollapsed = !navCollapsed"
-      >
-        <AppIcon class="brand__mark" name="panel-left" :size="17" />
+      <RouterLink to="/" class="brand__home" title="Overview">
+        <BrandMark :size="24" />
         <span v-if="!navCollapsed" class="brand__name">FamCart <span class="brand__sub">Admin</span></span>
-      </button>
+        <span v-else class="u-sr">FamCart Admin</span>
+      </RouterLink>
     </div>
 
     <TopBar
+      :nav-collapsed="navCollapsed"
       @search="paletteOpen = true"
       @toggle-nav="navOpen = !navOpen"
+      @toggle-collapse="navCollapsed = !navCollapsed"
     />
 
     <SideNav
@@ -263,13 +279,23 @@ on conflict (user_id) do nothing;</pre>
 <style scoped>
 .boot {
   display: grid;
-  place-content: center;
+  place-items: center;
+  align-content: center;
   gap: var(--space-3);
   height: 100dvh;
   text-align: center;
 }
 
-.boot__mark {
+/* The mark and the wordmark are one lockup, so they sit closer to each other
+   than either sits to the loading block below them. */
+.boot__lockup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.boot__name {
   font-size: var(--text-lg);
   font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
@@ -399,9 +425,15 @@ on conflict (user_id) do nothing;</pre>
   grid-area: brand;
   background: var(--admin-chrome);
   border-right: var(--border-width-thin) solid var(--admin-chrome-edge);
-  border-bottom: var(--border-width-thin) solid var(--admin-chrome-edge);
+  /* No bottom border. The brand cell and the rail below it are one surface;
+     a line across the top of the sidebar cut the mark off from the sections it
+     belongs to and made the rail look like two stacked panels. The topbar keeps
+     its own bottom border, so the horizontal line still runs the width of the
+     content -- it just no longer runs through the sidebar. */
   display: flex;
   align-items: center;
+  /* Matches the rail's horizontal padding below, so the mark sits on the same
+     left edge as every section glyph. */
   padding: 0 var(--space-2);
 }
 
@@ -411,32 +443,29 @@ on conflict (user_id) do nothing;</pre>
   }
 }
 
-.brand__toggle {
+.brand__home {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: 34px;
+  height: var(--admin-nav-row);
   width: 100%;
   padding: 0 var(--space-2);
-  background: none;
-  border: none;
   border-radius: var(--radius-sm);
-  cursor: pointer;
+  text-decoration: none;
   color: var(--text-primary);
 }
 
-.brand__toggle:hover {
+.brand__home:hover {
   background: var(--bg-hover);
 }
 
-.brand__mark {
-  color: var(--color-primary);
-  font-size: var(--text-md);
-  flex: none;
+.shell--collapsed .brand__home {
+  justify-content: center;
+  padding: 0;
 }
 
 .brand__name {
-  font-size: var(--text-base);
+  font-size: var(--text-md);
   font-weight: var(--weight-extrabold);
   letter-spacing: -0.02em;
   white-space: nowrap;

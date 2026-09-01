@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import UserChip from '../components/UserChip.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import DataTable from '../components/DataTable.vue'
@@ -8,16 +9,13 @@ import TablePager from '../components/TablePager.vue'
 import FilterBar from '../components/FilterBar.vue'
 import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
-import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { useTableState } from '../lib/useTableState'
-import { useDensity, type Density } from '../lib/useDensity'
 import { fetchHouseholds, isHouseholdSort } from '../lib/data/households'
 import type { AdminHouseholdRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
-const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const router = useRouter()
 
@@ -31,10 +29,13 @@ const households = useQuery((signal) => fetchHouseholds(params.value, signal), {
 })
 
 const columns: Column<AdminHouseholdRow>[] = [
-  { key: 'name', label: 'Household', sortable: true, width: '24%' },
+  { key: 'name', label: 'Household', sortable: true, width: '23%' },
   { key: 'owner_name', label: 'Owner', width: '16%' },
   { key: 'invite_code', label: 'Invite', width: '11%', hideBelow: 1400 },
-  { key: 'members', label: 'Members', numeric: true, sortable: true, width: '8%' },
+  // 9, not 8: "Members" with its sort caret needs a hair over 8% and the header
+  // was overflowing its own column by a pixel. The name column gave it up --
+  // that one truncates gracefully and this one cannot.
+  { key: 'members', label: 'Members', numeric: true, sortable: true, width: '9%' },
   { key: 'items_open', label: 'Open', numeric: true, sortable: true, width: '7%', title: 'Unchecked items right now' },
   { key: 'items_total', label: 'Items', numeric: true, width: '7%', hideBelow: 1100, title: 'Items ever added' },
   { key: 'purchases', label: 'Bought', numeric: true, sortable: true, width: '8%' },
@@ -68,16 +69,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
       :fetched-at="households.fetchedAt.value"
       :busy="households.fetching.value"
       @refresh="households.refetch"
-    >
-      <template #tools>
-        <SegmentedControl
-          :model-value="density"
-          :segments="densitySegments"
-          label="Rows"
-          @update:model-value="setDensity($event as Density)"
-        />
-      </template>
-    </PageHeader>
+    />
 
     <PanelCard flush>
       <div class="toolbar">
@@ -103,7 +95,6 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         :dir="dir"
         :loading="households.loading.value"
         :error="error"
-        :dense="dense"
         clickable
         empty-title="No households match"
         empty-message="Clear the search, or check which database the topbar says you are reading."
@@ -117,8 +108,16 @@ function activityTone(lastActive: string): 'good' | 'idle' {
           </span>
         </template>
 
+        <!-- Not linked: the row itself opens the household, which is where
+             somebody scanning this column is going. -->
         <template #cell-owner_name="{ row }">
-          <span class="u-truncate">{{ row.owner_name || '--' }}</span>
+          <UserChip
+            :id="String(row.created_by)"
+            :name="row.owner_name ? String(row.owner_name) : null"
+            :src="row.owner_image_url ? String(row.owner_image_url) : null"
+            :size="20"
+            :link="false"
+          />
         </template>
 
         <template #cell-invite_code="{ row }">

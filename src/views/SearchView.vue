@@ -24,7 +24,6 @@ import { catalogConfigured, refreshCatalogShape } from '../lib/data/products'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange } from '../lib/timeRange'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatPercent, formatRelative, formatShare } from '../lib/format'
-import { useDensity, type Density } from '../lib/useDensity'
 
 // Search Analytics, built around an honest admission.
 //
@@ -34,7 +33,6 @@ import { useDensity, type Density } from '../lib/useDensity'
 // contributed-products table, which is literally a list of searches that came
 // back empty and mattered enough for someone to fix by hand.
 
-const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const rangeKey = ref<string>(DEFAULT_RANGE)
 const range = computed(() => resolveRange(rangeKey.value))
@@ -115,12 +113,6 @@ function refreshAll() {
       @refresh="refreshAll"
     >
       <template #tools>
-        <SegmentedControl
-          :model-value="density"
-          :segments="densitySegments"
-          label="Rows"
-          @update:model-value="setDensity($event as Density)"
-        />
         <SegmentedControl v-model="rangeKey" :segments="rangeSegments" aria-label="Time range" />
       </template>
     </PageHeader>
@@ -233,7 +225,6 @@ function refreshAll() {
       flush
     >
       <DataTable
-        :dense="dense"
         :columns="missColumns"
         :rows="missRows"
         row-key="id"

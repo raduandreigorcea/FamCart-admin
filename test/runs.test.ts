@@ -1,15 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import {
+  UNCLAIMED_SECONDS,
   WORKER_STALE_SECONDS,
+  availableArtifacts,
   isActive,
   isStalled,
+  isUnclaimed,
   runnerOnline,
   sourceReady,
   stepBlockedReason,
   stepReady,
+  type ArtifactRow,
+  type RunKind,
   type RunRequest,
   type WorkerRow,
 } from '../src/lib/data/runs'
+
+/** Every queueable kind, in pipeline order. */
+const KINDS: RunKind[] = ['acquire', 'acquire-delta', 'normalize', 'score', 'load', 'load-apply']
+
+const NOW = new Date('2026-08-25T12:00:00.000Z').getTime()
 
 const worker = (seconds: number, over: Partial<WorkerRow> = {}): WorkerRow => ({
   id: 'w1',
@@ -120,73 +130,177 @@ describe('isStalled', () => {
   })
 })
 
-// Pressing Normalize for a source nobody has acquired failed in under a second
-// with "no market subset". The error was right; the button should not have been
-// offered. Only the worker can see which subsets exist, so it reports them.
+
+// ── What the buttons run off ─────────────────────────────────────────────────
+//
+// This used to be the worker's heartbeat: `sources` was a readdir of its .cache/
+// and `stages` was the contents of its out/. A runner is a CI job now -- empty
+// disk on the way in, deleted on the way out -- so the question moved to the
+// bucket, and catalog_artifacts is the index of it.
+//
+// The old "a worker that reports nothing can do anything" fallback is gone with
+// it, deliberately. That existed because an older worker predating the column
+// was indistinguishable from one with an empty disk. A bucket index has no such
+// ambiguity: an absent row means the file is absent, which on a fresh bucket
+// correctly leaves Acquire as the only live button.
+
+const artifact = (key: string, source: string, over: Partial<ArtifactRow> = {}): ArtifactRow => ({
+  key,
+  source,
+  remote_key: key === 'subset' ? `subsets/${source}-markets-subset.jsonl` : `out/${key}.jsonl`,
+  bytes: 1024,
+  updated_at: '2026-08-25T00:00:00.000Z',
+  ...over,
+})
+
+/** A bucket that has been all the way through the pipeline for one source. */
+const complete = (source = 'openfoodfacts'): ArtifactRow[] => [
+  artifact('subset', source),
+  artifact('staged', source),
+  artifact('scored', source),
+]
+
 describe('sourceReady', () => {
-  it('is false with no runner at all', () => {
-    expect(sourceReady(null, 'openfoodfacts')).toBe(false)
+  it('is false for an empty bucket', () => {
+    expect(sourceReady([], 'openfoodfacts')).toBe(false)
   })
 
-  it('is true for a source the runner has acquired', () => {
-    expect(sourceReady(worker(2), 'openfoodfacts')).toBe(true)
+  it('is true for a source with a subset stored', () => {
+    expect(sourceReady(complete(), 'openfoodfacts')).toBe(true)
   })
 
-  it('is false for a source the runner has not acquired', () => {
-    expect(sourceReady(worker(2), 'openproductsfacts')).toBe(false)
+  it('is false for a source nothing has been acquired for', () => {
+    expect(sourceReady(complete(), 'openproductsfacts')).toBe(false)
   })
 
-  it('is false when the runner has acquired nothing', () => {
-    expect(sourceReady(worker(2, { sources: [] }), 'openfoodfacts')).toBe(false)
-  })
-
-  // An older worker that never reports the column must not read as a machine
-  // with nothing acquired, or every button goes dead on a runner that works.
-  it('allows everything when the runner reports nothing at all', () => {
-    expect(sourceReady(worker(2, { sources: null }), 'openproductsfacts')).toBe(true)
+  // Subsets are per source and out/ is one shared slot, so a staged.jsonl for
+  // another source says nothing about whether this one was acquired.
+  it('does not count another source out/ file as an acquisition', () => {
+    expect(sourceReady([artifact('staged', 'openbeautyfacts')], 'openbeautyfacts')).toBe(false)
   })
 })
 
-// The four buttons are drawn as a sequence and were enabled regardless, so with
-// an empty out/ Apply was lit and would have failed on a missing scored.jsonl.
 describe('stepReady', () => {
-  it('offers nothing at all with no runner', () => {
-    expect(stepReady(null, 'normalize', 'openfoodfacts')).toBe(false)
+  it('offers only acquire against a completely empty bucket', () => {
+    const live = KINDS.filter((k) => stepReady([], k, 'openfoodfacts'))
+    expect(live).toEqual(['acquire'])
   })
 
-  it('offers normalize for an acquired source with an empty out/', () => {
-    const w = worker(2, { stages: {} })
-    expect(stepReady(w, 'normalize', 'openfoodfacts')).toBe(true)
+  // acquire is what MAKES a source ready, so gating it on readiness would leave
+  // it disabled on exactly the empty bucket it exists for.
+  it('offers acquire for a source with nothing stored', () => {
+    expect(stepReady(complete(), 'acquire', 'openproductsfacts')).toBe(true)
+    expect(stepBlockedReason(complete(), 'acquire', 'openproductsfacts')).toBe('')
+  })
+
+  it('offers normalize and the delta refresh once a subset exists', () => {
+    const only = [artifact('subset', 'openfoodfacts')]
+    expect(stepReady(only, 'normalize', 'openfoodfacts')).toBe(true)
+    expect(stepReady(only, 'acquire-delta', 'openfoodfacts')).toBe(true)
+  })
+
+  // The delta refresh folds changes INTO an existing subset, so unlike acquire
+  // it genuinely needs one.
+  it('refuses the delta refresh for a source that was never acquired', () => {
+    expect(stepReady([], 'acquire-delta', 'openproductsfacts')).toBe(false)
+    expect(stepBlockedReason([], 'acquire-delta', 'openproductsfacts')).toMatch(/not been acquired/)
   })
 
   it('refuses score until something has been normalized', () => {
-    const w = worker(2, { stages: {} })
-    expect(stepReady(w, 'score', 'openfoodfacts')).toBe(false)
-    expect(stepBlockedReason(w, 'score', 'openfoodfacts')).toMatch(/Normalize first/)
+    const only = [artifact('subset', 'openfoodfacts')]
+    expect(stepReady(only, 'score', 'openfoodfacts')).toBe(false)
+    expect(stepBlockedReason(only, 'score', 'openfoodfacts')).toMatch(/Normalize first/)
   })
 
   it('refuses apply until something has been scored', () => {
-    const w = worker(2, { stages: { staged: 'openfoodfacts' } })
-    expect(stepReady(w, 'load-apply', 'openfoodfacts')).toBe(false)
-    expect(stepBlockedReason(w, 'load-apply', 'openfoodfacts')).toMatch(/Re-score first/)
+    const rows = [artifact('subset', 'openfoodfacts'), artifact('staged', 'openfoodfacts')]
+    expect(stepReady(rows, 'load-apply', 'openfoodfacts')).toBe(false)
+    expect(stepBlockedReason(rows, 'load-apply', 'openfoodfacts')).toMatch(/Re-score first/)
   })
 
   // out/ is shared, so whose file it is matters as much as whether one exists.
+  // Re-scoring against another source's staged products would stamp them wrong
+  // at load time.
   it('refuses score when out/ belongs to another source', () => {
-    const w = worker(2, { stages: { staged: 'openbeautyfacts' } })
-    expect(stepReady(w, 'score', 'openfoodfacts')).toBe(false)
-    expect(stepBlockedReason(w, 'score', 'openfoodfacts')).toMatch(/holds openbeautyfacts/)
+    const rows = [artifact('subset', 'openfoodfacts'), artifact('staged', 'openbeautyfacts')]
+    expect(stepReady(rows, 'score', 'openfoodfacts')).toBe(false)
+    expect(stepBlockedReason(rows, 'score', 'openfoodfacts')).toMatch(/holds openbeautyfacts/)
   })
 
-  it('allows the whole sequence once both files are this source', () => {
-    const w = worker(2)
-    expect(['normalize', 'score', 'load', 'load-apply'].every((k) =>
-      stepReady(w, k as never, 'openfoodfacts'))).toBe(true)
+  it('allows the whole sequence once every file is this source', () => {
+    expect(KINDS.every((k) => stepReady(complete(), k, 'openfoodfacts'))).toBe(true)
+  })
+})
+
+// The replacement for the "No runner" badge. There is no process whose absence
+// means anything now -- a runner exists for one stage and is deleted after -- so
+// the observable failure is a request nothing ever claimed.
+describe('isUnclaimed', () => {
+  const at = (secondsAgo: number) =>
+    request({ status: 'queued', requested_at: new Date(NOW - secondsAgo * 1000).toISOString() })
+
+  it('is patient while a runner is still being allocated', () => {
+    expect(isUnclaimed(at(30), NOW)).toBe(false)
   })
 
-  // A worker predating the column must not read as an empty out/.
-  it('allows everything when the runner reports no stages at all', () => {
-    const w = worker(2, { stages: null })
-    expect(stepReady(w, 'load-apply', 'openfoodfacts')).toBe(true)
+  // Dispatch, runner allocation, checkout and npm ci are two or three minutes
+  // before a stage starts. Below that this is just waiting.
+  it('is quiet just inside the window', () => {
+    expect(isUnclaimed(at(UNCLAIMED_SECONDS - 1), NOW)).toBe(false)
+  })
+
+  it('complains once nothing has claimed it for long enough', () => {
+    expect(isUnclaimed(at(UNCLAIMED_SECONDS + 60), NOW)).toBe(true)
+  })
+
+  // A running request has been claimed by definition; if its runner then dies,
+  // that is isStalled's job and it says something different.
+  it('says nothing about a request that was picked up', () => {
+    expect(isUnclaimed(request({ status: 'running' }), NOW)).toBe(false)
+    expect(isUnclaimed(request({ status: 'done' }), NOW)).toBe(false)
+  })
+})
+
+// Which of the two answers to "what exists" wins.
+//
+// A worker on a real machine is reading its own disk and is the more accurate
+// of the two, so while one is online it answers. A CI runner cannot be asked --
+// empty disk in, deleted out -- so with no worker the index it wrote is what is
+// left. Both, rather than one, because the cloud pipeline is built and not yet
+// switched on.
+describe('availableArtifacts', () => {
+  const index = complete('openbeautyfacts')
+
+  it('uses the index when no worker is online', () => {
+    expect(availableArtifacts(null, index)).toBe(index)
+  })
+
+  it('prefers a live worker, which is looking at the actual disk', () => {
+    const rows = availableArtifacts(worker(2), index)
+    expect(sourceReady(rows, 'openfoodfacts')).toBe(true)
+    // The index said openbeautyfacts; the worker did not, so it does not win.
+    expect(stepReady(rows, 'score', 'openbeautyfacts')).toBe(false)
+  })
+
+  it('turns the heartbeat into the same shape the index has', () => {
+    const rows = availableArtifacts(worker(2), [])
+    expect(rows.filter((r) => r.key === 'subset').map((r) => r.source)).toEqual([
+      'openfoodfacts',
+      'openbeautyfacts',
+    ])
+    expect(stepReady(rows, 'load-apply', 'openfoodfacts')).toBe(true)
+  })
+
+  it('reports an empty out/ as an empty out/, not as unknown', () => {
+    const rows = availableArtifacts(worker(2, { stages: {} }), [])
+    expect(stepReady(rows, 'normalize', 'openfoodfacts')).toBe(true)
+    expect(stepReady(rows, 'score', 'openfoodfacts')).toBe(false)
+  })
+
+  // A worker predating the column cannot tell us anything, so the index answers.
+  // It may be empty, which offers only Acquire -- recoverable by pressing it,
+  // where trusting the silence would claim files exist that do not.
+  it('falls back to the index for a worker that reports nothing', () => {
+    expect(availableArtifacts(worker(2, { sources: null }), index)).toBe(index)
   })
 })

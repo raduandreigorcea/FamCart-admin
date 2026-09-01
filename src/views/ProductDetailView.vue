@@ -260,7 +260,9 @@ const errorInfo = computed(() => describeError(product.error.value))
             <RouterLink v-if="row.household_id" :to="`/households/${row.household_id}`" class="link">
               {{ row.household_name || 'Household' }}
             </RouterLink>
-            <span class="twins__meta u-num">{{ formatCount(row.add_count) }} adds</span>
+            <span class="twins__meta u-num">
+              {{ formatCount(row.add_count) }} add{{ row.add_count === 1 ? '' : 's' }}
+            </span>
             <time class="twins__meta" :title="formatDateTime(row.created_at)">
               {{ formatRelative(row.created_at) }}
             </time>
@@ -337,7 +339,6 @@ const errorInfo = computed(() => describeError(product.error.value))
 
 .bands__icon {
   color: var(--text-disabled);
-  font-size: 10px;
 }
 
 .bands__icon--met {

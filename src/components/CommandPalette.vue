@@ -5,6 +5,7 @@ import AppIcon from './AppIcon.vue'
 import { fetchUsers } from '../lib/data/users'
 import { fetchHouseholds } from '../lib/data/households'
 import { catalogConfigured, fetchCatalogProducts } from '../lib/data/products'
+import UserAvatar from './UserAvatar.vue'
 import { shortUserId } from '../lib/format'
 import { useModal } from '../lib/useModal'
 
@@ -33,6 +34,13 @@ interface Hit {
   title: string
   subtitle: string
   to: string
+  /**
+   * The account this hit is about, where it is about one. Households and
+   * catalog rows leave both null and the row renders without a face, which is
+   * right: neither of them is a person.
+   */
+  userId?: string
+  imageUrl?: string | null
 }
 
 const hits = ref<Hit[]>([])
@@ -82,6 +90,8 @@ async function run(term: string) {
         title: row.display_name,
         subtitle: `${shortUserId(row.user_id)} · ${row.households} household${row.households === 1 ? '' : 's'}`,
         to: `/users/${encodeURIComponent(row.user_id)}`,
+        userId: row.user_id,
+        imageUrl: row.image_url,
       })),
     ),
     fetchHouseholds({ query: trimmed, limit: 5 }, signal).then((page) =>
@@ -212,10 +222,21 @@ function choose(hit?: Hit) {
             :key="hit.id"
             type="button"
             class="palette__hit"
-            :class="{ 'palette__hit--active': flat[activeIndex]?.id === hit.id }"
+            :class="{
+              'palette__hit--active': flat[activeIndex]?.id === hit.id,
+              'palette__hit--person': Boolean(hit.userId),
+            }"
             @click="choose(hit)"
             @mouseenter="activeIndex = flat.findIndex((h) => h.id === hit.id)"
           >
+            <UserAvatar
+              v-if="hit.userId"
+              class="palette__hit-face"
+              :id="hit.userId"
+              :src="hit.imageUrl"
+              :name="hit.title"
+              :size="26"
+            />
             <span class="palette__hit-title u-truncate">{{ hit.title }}</span>
             <span class="palette__hit-sub u-truncate">{{ hit.subtitle }}</span>
           </button>
@@ -334,6 +355,7 @@ function choose(hit?: Hit) {
   align-items: flex-start;
   gap: 1px;
   width: 100%;
+  min-width: 0;
   text-align: left;
   padding: var(--space-2) var(--space-3);
   border: none;
@@ -344,6 +366,27 @@ function choose(hit?: Hit) {
 
 .palette__hit--active {
   background: var(--color-primary-bg);
+}
+
+/* A person's hit carries their face, which means two rows of text beside one
+   square rather than a stack. Only a person's: households and catalog rows have
+   no face, and giving them the same empty column would indent their titles past
+   nothing. */
+.palette__hit--person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: 1px;
+}
+
+.palette__hit-face {
+  grid-row: 1 / span 2;
+}
+
+.palette__hit--person .palette__hit-title,
+.palette__hit--person .palette__hit-sub {
+  grid-column: 2;
 }
 
 .palette__hit-title {

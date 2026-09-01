@@ -14,7 +14,6 @@ import CopyValue from '../components/CopyValue.vue'
 import StageLadder from '../components/StageLadder.vue'
 import RunControl from '../components/RunControl.vue'
 import TruncationNotice from '../components/TruncationNotice.vue'
-import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import {
   fetchPipeline,
@@ -26,7 +25,6 @@ import { catalogConfigured, refreshCatalogShape } from '../lib/data/products'
 import { unavailable } from '../lib/data/types'
 import type { Column, Series } from '../lib/uiTypes'
 import { formatCount, formatDate, formatDateTime, formatRelative, formatShare } from '../lib/format'
-import { useDensity, type Density } from '../lib/useDensity'
 
 // The Product Pipeline.
 //
@@ -42,7 +40,6 @@ import { useDensity, type Density } from '../lib/useDensity'
 //
 // See src/lib/data/pipeline.ts for the full account of why.
 
-const { dense, density, setDensity, segments: densitySegments } = useDensity()
 
 const configured = catalogConfigured()
 
@@ -165,16 +162,7 @@ function statusLabel(status: string, ageDays: number | null): string {
       :fetched-at="pipeline.fetchedAt.value"
       :busy="pipeline.fetching.value"
       @refresh="refresh"
-    >
-      <template #tools>
-        <SegmentedControl
-          :model-value="density"
-          :segments="densitySegments"
-          label="Rows"
-          @update:model-value="setDensity($event as Density)"
-        />
-      </template>
-    </PageHeader>
+    />
 
     <TruncationNotice :truncated="snapshot?.truncated ?? false" subject="This ingestion history" />
 
@@ -251,7 +239,6 @@ function statusLabel(status: string, ageDays: number | null): string {
         flush
       >
         <DataTable
-          :dense="dense"
           :columns="runColumns"
           :rows="runRows"
           row-key="id"

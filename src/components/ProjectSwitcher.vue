@@ -260,6 +260,14 @@ function apply(project: AppProject) {
   font: inherit;
 }
 
+/* The two projects are a choice between two databases, not a list of related
+   commands, so they are set apart rather than stacked flush. Sitting edge to
+   edge they read as one block and the hover highlight ran from one straight
+   into the other. */
+.menu__item + .menu__item {
+  margin-top: var(--space-2);
+}
+
 .menu__item:hover:not(:disabled) {
   background: var(--bg-hover);
 }

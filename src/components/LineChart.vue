@@ -192,11 +192,17 @@ const tooltip = computed(() => {
         <!-- x axis values -->
         <g class="chart__axis">
           <template v-for="(label, index) in labels" :key="`x-${index}`">
+            <!-- The end labels anchor to their own edge rather than to their
+                 centre. Centred, half of the last date hung past the right of
+                 the viewBox and was clipped mid-word ("27 Auc"), because the
+                 last point sits exactly on the plot's right edge. -->
             <text
               v-if="index % labelStride === 0 || index === labels.length - 1"
               :x="x(index)"
               :y="height - 8"
-              text-anchor="middle"
+              :text-anchor="
+                index === 0 ? 'start' : index === labels.length - 1 ? 'end' : 'middle'
+              "
             >{{ label }}</text>
           </template>
         </g>

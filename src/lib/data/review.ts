@@ -235,3 +235,31 @@ export async function approveAbove(
   if (error) queryError('approve_review_above', error)
   return Number(data ?? 0)
 }
+
+/**
+ * Reject everything at or below a score, under the filters currently on screen.
+ *
+ * The mirror image of approveAbove, and the more used of the two: a 12,000-row
+ * band is mostly floor, and sweeping the floor out of the way is what makes the
+ * rest worth reading a row at a time.
+ *
+ * A record with no score is swept by neither. `score <= max` is null for an
+ * unscored row exactly as `score >= min` is, and an unscored record in the
+ * review band is the case a human most needs to see.
+ *
+ * Returns how many verdicts were written.
+ */
+export async function rejectBelow(
+  maxScore: number,
+  filters: ReviewFilters,
+): Promise<number> {
+  const { p_run, p_reason, p_query } = reviewRpcArgs(filters, {})
+  const { data, error } = await client().rpc('reject_review_below', {
+    p_max_score: maxScore,
+    p_run,
+    p_reason,
+    p_query,
+  })
+  if (error) queryError('reject_review_below', error)
+  return Number(data ?? 0)
+}

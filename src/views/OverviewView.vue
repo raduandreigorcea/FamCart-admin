@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import UserChip from '../components/UserChip.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatTile from '../components/StatTile.vue'
@@ -255,9 +256,16 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
                 <StatusPill :tone="toneOf(row.kind)" :label="humanizeKind(row.kind)" />
                 <div class="feed__body">
                   <span class="feed__what u-truncate">{{ describeRow(row) }}</span>
-                  <span class="feed__who u-truncate">
-                    {{ row.actor_name || 'Unknown' }}
-                    <template v-if="row.household_name"> · {{ row.household_name }}</template>
+                  <span class="feed__who">
+                    <UserChip
+                      :id="row.actor"
+                      :name="row.actor_name"
+                      :src="row.actor_image_url"
+                      :size="16"
+                    />
+                    <span v-if="row.household_name" class="feed__where u-truncate">
+                      · {{ row.household_name }}
+                    </span>
                   </span>
                 </div>
                 <time class="feed__when" :title="formatDateTime(row.occurred_at)">
@@ -370,9 +378,25 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
   color: var(--text-primary);
 }
 
+/* A flex row, not a run of text with a chip dropped into it.
+ *
+ * UserChip is inline-flex and its first child is an image, so a browser asked
+ * for its baseline synthesises one from that image's bottom edge -- which sat
+ * the name nearly four pixels above the household name printed right next to
+ * it, at the same size. Making both of them flex items centres them on each
+ * other instead, and at one font size that is the same thing as sharing a
+ * baseline. Any line that puts a chip beside loose text needs this. */
 .feed__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
   font-size: var(--text-2xs);
   color: var(--text-disabled);
+}
+
+.feed__where {
+  min-width: 0;
 }
 
 .feed__when {
