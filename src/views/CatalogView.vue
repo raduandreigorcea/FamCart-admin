@@ -5,7 +5,6 @@ import PanelCard from '../components/PanelCard.vue'
 import DataTable from '../components/DataTable.vue'
 import TablePager from '../components/TablePager.vue'
 import FilterBar from '../components/FilterBar.vue'
-import SegmentedControl from '../components/SegmentedControl.vue'
 import StateBlock from '../components/StateBlock.vue'
 import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
@@ -22,7 +21,6 @@ import {
   deleteCatalogProduct,
   activeFilterCount,
   type CatalogProductRow,
-  type CatalogProductType,
   type CatalogDraft,
   type CatalogFilters,
 } from '../lib/data/catalog'
@@ -48,17 +46,11 @@ const offset = ref(0)
 // the request, counted for the button, drawn as chips and cleared as a unit, so
 // splitting it apart would mean writing all four of those out longhand.
 //
-// TYPE IS IN HERE TOO, and it is the one with two ways in. It kept the segmented
-// control above the table -- generic against commercial is the distinction
-// somebody changes most and it is worth a click rather than two -- and it is
-// also in the drawer, because a panel labelled Filters that is missing one is
-// worse than a filter offered twice. Both bind to this key, so there is one
-// value and no synchronising.
-//
-// It rests at null rather than absent, unlike every other key. The segmented
-// control has a visible resting position ("All") where the others simply are not
-// there, and null is what that position means.
-const filters = ref<CatalogFilters>({ type: null })
+// TYPE IS ONE OF THEM. It used to be a segmented control above the table with no
+// chip, no place in the count and no response to Clear all, so "2 filters" could
+// sit over a table narrowed by three things. It is a select in the drawer beside
+// Market and Category now, and it is not special in any way here.
+const filters = ref<CatalogFilters>({})
 const filtersOpen = ref(false)
 
 // Any filter change returns to the first page: page 4 of a search is not page 4
@@ -84,10 +76,6 @@ const products = useQuery(
 
 const activeCount = computed(() => activeFilterCount(filters.value))
 
-function setType(value: CatalogProductType | null) {
-  filters.value = { ...filters.value, type: value }
-}
-
 // ─── the chips ───────────────────────────────────────────────────────────────
 // What is set, said in words, outside the drawer that set it.
 //
@@ -112,8 +100,6 @@ const chips = computed<{ key: keyof CatalogFilters; label: string }[]>(() => {
   const f = filters.value
   const out: { key: keyof CatalogFilters; label: string }[] = []
 
-  // First, because it is the one already visible above the table: its chip is
-  // what makes "3 filters" add up when one of them was set somewhere else.
   if (f.type) out.push({ key: 'type', label: f.type === 'generic' ? 'Generic' : 'Commercial' })
   if (f.market) out.push({ key: 'market', label: `Market: ${MARKET_NAMES[f.market] ?? f.market}` })
   if (f.tier) out.push({ key: 'tier', label: `Record: tier ${f.tier}` })
@@ -148,10 +134,8 @@ function clearFilter(key: keyof CatalogFilters) {
   filters.value = next
 }
 
-// Back to the resting state rather than to an empty object, for the same reason
-// `type` starts at null: the segmented control has to show All, and All is null.
 function clearFilters() {
-  filters.value = { type: null }
+  filters.value = {}
 }
 
 const rows = computed(() => products.data.value?.rows ?? [])
@@ -337,29 +321,6 @@ const removalMessage = computed(() => {
     />
 
     <PanelCard v-else flush>
-      <template #actions>
-        <!-- Bound to filters.type, the same key the drawer's copy writes. Two
-             affordances, one value. -->
-        <SegmentedControl
-          :model-value="filters.type ?? 'all'"
-          :segments="[
-            { value: 'all', label: 'All' },
-            {
-              value: 'generic',
-              label: 'Generic',
-              title: 'A shopping concept: Milk, Bananas. No brand and no barcode, and none of that makes it low quality.',
-            },
-            {
-              value: 'commercial',
-              label: 'Commercial',
-              title: 'A product off a shelf: Nutella 350g. Identified by brand and barcode.',
-            },
-          ]"
-          aria-label="Which products"
-          @update:model-value="setType($event === 'all' ? null : ($event as CatalogProductType))"
-        />
-      </template>
-
       <div class="u-toolbar">
         <FilterBar
           v-model="query"

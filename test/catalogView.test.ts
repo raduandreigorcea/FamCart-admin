@@ -54,16 +54,12 @@ const stubs = {
     props: ['open', 'modelValue'],
     emits: ['update:modelValue', 'close'],
     template: `<div v-if="open" class="drawer">
+      <button class="drawer__generic" @click="$emit('update:modelValue', { ...modelValue, type: 'generic' })">g</button>
+      <button class="drawer__anytype" @click="$emit('update:modelValue', { ...modelValue, type: null })">any</button>
       <button class="drawer__ro" @click="$emit('update:modelValue', { ...modelValue, market: 'RO' })">ro</button>
       <button class="drawer__nobarcode" @click="$emit('update:modelValue', { ...modelValue, hasBarcode: false })">nb</button>
       <button class="drawer__close" @click="$emit('close')">x</button>
     </div>`,
-  },
-  SegmentedControl: {
-    props: ['modelValue', 'segments'],
-    emits: ['update:modelValue'],
-    template: `<span><button v-for="s in segments" :key="s.value" class="seg__item"
-      :data-value="s.value" @click="$emit('update:modelValue', s.value)">{{ s.label }}</button></span>`,
   },
   TablePager: {
     props: ['total', 'offset', 'limit'],
@@ -154,18 +150,21 @@ describe('CatalogView', () => {
 
   it('asks for everything on arrival', async () => {
     await mounted()
-    expect(lastArgs().type).toBeNull()
+    // No filter is a key that is not there. fetchCatalogProducts turns each of
+    // them into an explicit null for the RPC; catalogAdmin.test.ts pins that.
+    expect(lastArgs().type).toBeUndefined()
     expect(lastArgs().offset).toBe(0)
   })
 
-  it('sends the chosen type to the RPC, and null for All', async () => {
+  it('sends the chosen type to the RPC, and drops it again for Any', async () => {
     const wrapper = await mounted()
 
-    await wrapper.find('.seg__item[data-value="commercial"]').trigger('click')
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__generic').trigger('click')
     await flush()
-    expect(lastArgs().type).toBe('commercial')
+    expect(lastArgs().type).toBe('generic')
 
-    await wrapper.find('.seg__item[data-value="all"]').trigger('click')
+    await wrapper.find('.drawer__anytype').trigger('click')
     await flush()
     expect(lastArgs().type).toBeNull()
   })
@@ -177,7 +176,8 @@ describe('CatalogView', () => {
     await flush()
     expect(lastArgs().offset).toBe(25)
 
-    await wrapper.find('.seg__item[data-value="generic"]').trigger('click')
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__generic').trigger('click')
     await flush()
     expect(lastArgs().offset).toBe(0)
   })
@@ -231,14 +231,14 @@ describe('CatalogView', () => {
     expect(lastArgs().hasBarcode).toBe(false)
   })
 
-  // Type predates the drawer and had been outside it: no chip, not counted, and
-  // untouched by Clear all, so "2 filters" could sit above a table narrowed by
-  // three things. It is one key in the same object now, written by the toolbar
-  // control and by the drawer's copy of it.
+  // Type predates the drawer and used to sit outside it as a segmented control:
+  // no chip, not in the count, and untouched by Clear all, so "2 filters" could
+  // sit above a table narrowed by three things. It is an ordinary key now.
   it('counts and names the type filter alongside the rest', async () => {
     const wrapper = await mounted()
 
-    await wrapper.find('.seg__item[data-value="generic"]').trigger('click')
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__generic').trigger('click')
     await flush()
 
     expect(lastArgs().type).toBe('generic')
@@ -246,19 +246,18 @@ describe('CatalogView', () => {
     expect(wrapper.findAll('.chips__item').map((c) => c.text())[0]).toContain('Generic')
   })
 
-  it('puts the type back to All when everything is cleared', async () => {
+  it('drops the type along with the rest when everything is cleared', async () => {
     const wrapper = await mounted()
 
-    await wrapper.find('.seg__item[data-value="commercial"]').trigger('click')
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__generic').trigger('click')
     await flush()
-    expect(lastArgs().type).toBe('commercial')
+    expect(lastArgs().type).toBe('generic')
 
     await wrapper.find('.chips__clear').trigger('click')
     await flush()
 
-    // Null rather than absent: All is a visible resting position on a control
-    // that is always on screen, and null is what that position means.
-    expect(lastArgs().type).toBeNull()
+    expect(lastArgs().type).toBeUndefined()
     expect(wrapper.findAll('.chips__item')).toHaveLength(0)
   })
 
