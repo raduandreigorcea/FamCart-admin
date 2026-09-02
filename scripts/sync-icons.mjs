@@ -78,6 +78,7 @@ const ICONS = [
   'ban',              // Bans
   'circle',           // an unmet quality band
   'ellipsis',
+  'list-filter',      // the catalog's filter drawer
 
   // status
   'triangle-alert',

@@ -2,6 +2,9 @@
 import { computed, ref, watch, type PropType } from 'vue'
 import { useModal } from '../lib/useModal'
 import type { CatalogProductRow, CatalogProductType } from '../lib/data/catalog'
+// The closed vocabularies, shared with the filter drawer -- see catalogVocab.ts
+// for why one more copy of the check constraints is the right trade.
+import { LANGS, MARKETS, CATEGORIES, UNITS, TIERS } from '../lib/catalogVocab'
 
 // Adding and correcting a reference product.
 //
@@ -30,24 +33,6 @@ import type { CatalogProductRow, CatalogProductType } from '../lib/data/catalog'
 // claims, and clearing is distinguishable from leaving alone, so the dangerous
 // version of the edit is impossible rather than merely undocumented.
 
-const LANGS = ['en', 'de', 'es', 'ro', 'fr', 'it']
-
-// The eleven the check constraint accepts, which are the eleven src/lib/region.ts
-// can emit. A code outside this list matches no product at all and looks exactly
-// like a ranking bug.
-const MARKETS = ['RO', 'MD', 'DE', 'AT', 'CH', 'ES', 'FR', 'BE', 'IT', 'GB', 'IE']
-
-// The seventeen the check constraint accepts. A free-text box here meant any
-// typo became a constraint violation naming a table.
-const CATEGORIES = [
-  'produce', 'dairy', 'bakery', 'meat', 'fish', 'pantry', 'frozen',
-  'snacks', 'drinks', 'alcohol', 'baby', 'household', 'personal-care',
-  'health', 'pet', 'home', 'other',
-]
-
-const UNITS = ['g', 'kg', 'ml', 'l', 'cl', 'piece']
-
-const TIERS = ['A', 'B', 'C']
 
 const props = defineProps({
   open: { type: Boolean, default: false },
