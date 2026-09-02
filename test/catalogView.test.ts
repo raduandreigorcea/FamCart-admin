@@ -231,6 +231,37 @@ describe('CatalogView', () => {
     expect(lastArgs().hasBarcode).toBe(false)
   })
 
+  // Type predates the drawer and had been outside it: no chip, not counted, and
+  // untouched by Clear all, so "2 filters" could sit above a table narrowed by
+  // three things. It is one key in the same object now, written by the toolbar
+  // control and by the drawer's copy of it.
+  it('counts and names the type filter alongside the rest', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.seg__item[data-value="generic"]').trigger('click')
+    await flush()
+
+    expect(lastArgs().type).toBe('generic')
+    expect(wrapper.find('.filters-btn__count').text()).toBe('1')
+    expect(wrapper.findAll('.chips__item').map((c) => c.text())[0]).toContain('Generic')
+  })
+
+  it('puts the type back to All when everything is cleared', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.seg__item[data-value="commercial"]').trigger('click')
+    await flush()
+    expect(lastArgs().type).toBe('commercial')
+
+    await wrapper.find('.chips__clear').trigger('click')
+    await flush()
+
+    // Null rather than absent: All is a visible resting position on a control
+    // that is always on screen, and null is what that position means.
+    expect(lastArgs().type).toBeNull()
+    expect(wrapper.findAll('.chips__item')).toHaveLength(0)
+  })
+
   it('clears every filter at once', async () => {
     const wrapper = await mounted()
 

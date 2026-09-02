@@ -3,7 +3,7 @@ import type { PropType } from 'vue'
 import SideDrawer from './SideDrawer.vue'
 import SelectField from './SelectField.vue'
 import SegmentedControl from './SegmentedControl.vue'
-import type { CatalogFilters } from '../lib/data/catalog'
+import type { CatalogFilters, CatalogProductType } from '../lib/data/catalog'
 import {
   MARKETS, MARKET_NAMES, CATEGORIES, LANGS, LANG_NAMES, SOURCES, TIERS, sourceLabel,
 } from '../lib/catalogVocab'
@@ -11,7 +11,7 @@ import {
 // Every way to narrow the reference catalog, in a drawer rather than in the
 // filter row.
 //
-// WHY A DRAWER. Eleven controls do not fit on one line, and the versions that
+// WHY A DRAWER. Twelve controls do not fit on one line, and the versions that
 // try are worse than either extreme: wrapped onto three rows they push the table
 // below the fold on the page whose whole job is the table, and split between
 // "some inline, the rest behind a button" they make finding one control a
@@ -96,6 +96,23 @@ const FLAGS: { key: keyof CatalogFilters; label: string; title: string }[] = [
   },
 ]
 
+// The same three segments the toolbar shows, with the same titles: the whole
+// point of a generic is that a missing brand and a missing barcode are not
+// missing anything, and nothing else on this page says so.
+const TYPES = [
+  { value: 'all', label: 'All' },
+  {
+    value: 'generic',
+    label: 'Generic',
+    title: 'A shopping concept: Milk, Bananas. No brand and no barcode, and none of that makes it low quality.',
+  },
+  {
+    value: 'commercial',
+    label: 'Commercial',
+    title: 'A product off a shelf: Nutella 350g. Identified by brand and barcode.',
+  },
+]
+
 // ─── the value selects ───────────────────────────────────────────────────────
 // Each list is a check constraint in the catalog project restated in
 // TypeScript; catalogVocab.ts holds all of them and says why.
@@ -154,6 +171,16 @@ const EARNED_OPTIONS = [
     <div class="cfd">
       <section class="cfd__group">
         <h3 class="u-caption cfd__legend">What it is</h3>
+        <!-- Also above the table, and deliberately. It is the distinction
+             changed most often, so it keeps its one-click control there; it is
+             here as well because a panel labelled Filters that is missing one is
+             worse than a filter offered twice. Both write filters.type. -->
+        <SegmentedControl
+          label="Type"
+          :segments="TYPES"
+          :model-value="modelValue.type ?? 'all'"
+          @update:model-value="set('type', $event === 'all' ? null : ($event as CatalogProductType))"
+        />
         <SelectField
           label="Market"
           :model-value="modelValue.market ?? null"

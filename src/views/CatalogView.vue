@@ -42,17 +42,23 @@ const configured = catalogConfigured()
 const LIMIT = 25
 
 const query = ref('')
-const type = ref<CatalogProductType | null>(null)
 const offset = ref(0)
 
-// Everything the drawer sets, in one object rather than eleven refs. It is what
-// gets spread into the request, cleared as a unit and counted for the button, so
-// splitting it apart would mean writing all three of those out longhand.
+// Every filter in one object rather than a ref each. It is what gets spread into
+// the request, counted for the button, drawn as chips and cleared as a unit, so
+// splitting it apart would mean writing all four of those out longhand.
 //
-// `type` stays a ref of its own because it is not in the drawer: it is the
-// segmented control above the table, where it was already, and it is the one
-// distinction worth a click rather than two.
-const filters = ref<CatalogFilters>({})
+// TYPE IS IN HERE TOO, and it is the one with two ways in. It kept the segmented
+// control above the table -- generic against commercial is the distinction
+// somebody changes most and it is worth a click rather than two -- and it is
+// also in the drawer, because a panel labelled Filters that is missing one is
+// worse than a filter offered twice. Both bind to this key, so there is one
+// value and no synchronising.
+//
+// It rests at null rather than absent, unlike every other key. The segmented
+// control has a visible resting position ("All") where the others simply are not
+// there, and null is what that position means.
+const filters = ref<CatalogFilters>({ type: null })
 const filtersOpen = ref(false)
 
 // Any filter change returns to the first page: page 4 of a search is not page 4
@@ -63,20 +69,24 @@ const filtersOpen = ref(false)
 // `filters` is deep-watched because the drawer replaces the object, and the
 // pager has to reset for a narrowing exactly as it does for a search -- filter
 // to eleven rows while sitting on page 4 and every one of them is off the end.
-watch([query, type, filters], () => {
+watch([query, filters], () => {
   offset.value = 0
 }, { deep: true })
 
 const products = useQuery(
   (signal) =>
     fetchCatalogProducts(
-      { ...filters.value, query: query.value, type: type.value, limit: LIMIT, offset: offset.value },
+      { ...filters.value, query: query.value, limit: LIMIT, offset: offset.value },
       signal,
     ),
-  { watch: [query, type, filters, offset], enabled: () => configured },
+  { watch: [query, filters, offset], enabled: () => configured },
 )
 
 const activeCount = computed(() => activeFilterCount(filters.value))
+
+function setType(value: CatalogProductType | null) {
+  filters.value = { ...filters.value, type: value }
+}
 
 // ─── the chips ───────────────────────────────────────────────────────────────
 // What is set, said in words, outside the drawer that set it.
@@ -102,6 +112,9 @@ const chips = computed<{ key: keyof CatalogFilters; label: string }[]>(() => {
   const f = filters.value
   const out: { key: keyof CatalogFilters; label: string }[] = []
 
+  // First, because it is the one already visible above the table: its chip is
+  // what makes "3 filters" add up when one of them was set somewhere else.
+  if (f.type) out.push({ key: 'type', label: f.type === 'generic' ? 'Generic' : 'Commercial' })
   if (f.market) out.push({ key: 'market', label: `Market: ${MARKET_NAMES[f.market] ?? f.market}` })
   if (f.tier) out.push({ key: 'tier', label: `Record: tier ${f.tier}` })
   if (f.category) out.push({ key: 'category', label: `Category: ${f.category}` })
@@ -135,8 +148,10 @@ function clearFilter(key: keyof CatalogFilters) {
   filters.value = next
 }
 
+// Back to the resting state rather than to an empty object, for the same reason
+// `type` starts at null: the segmented control has to show All, and All is null.
 function clearFilters() {
-  filters.value = {}
+  filters.value = { type: null }
 }
 
 const rows = computed(() => products.data.value?.rows ?? [])
@@ -323,8 +338,10 @@ const removalMessage = computed(() => {
 
     <PanelCard v-else flush>
       <template #actions>
+        <!-- Bound to filters.type, the same key the drawer's copy writes. Two
+             affordances, one value. -->
         <SegmentedControl
-          :model-value="type ?? 'all'"
+          :model-value="filters.type ?? 'all'"
           :segments="[
             { value: 'all', label: 'All' },
             {
@@ -339,7 +356,7 @@ const removalMessage = computed(() => {
             },
           ]"
           aria-label="Which products"
-          @update:model-value="type = $event === 'all' ? null : ($event as CatalogProductType)"
+          @update:model-value="setType($event === 'all' ? null : ($event as CatalogProductType))"
         />
       </template>
 
