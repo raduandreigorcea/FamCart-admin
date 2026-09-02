@@ -15,8 +15,10 @@ import {
 // try are worse than either extreme: wrapped onto three rows they push the table
 // below the fold on the page whose whole job is the table, and split between
 // "some inline, the rest behind a button" they make finding one control a
-// question of remembering which half it was in. So all of them are here, and the
-// filter row keeps a button, a count, and the chips for whatever is set.
+// question of remembering which half it was in. So all of them are here -- the
+// product type included, which used to be a segmented control above the table
+// answering to nothing else on the page -- and the filter row keeps a button, a
+// count, and the chips for whatever is set.
 //
 // WHY IT APPLIES LIVE. There is no Apply button and no local draft. A draft
 // would need Cancel to mean "put back what was there", which is a second copy of
@@ -96,26 +98,19 @@ const FLAGS: { key: keyof CatalogFilters; label: string; title: string }[] = [
   },
 ]
 
-// The same three segments the toolbar shows, with the same titles: the whole
-// point of a generic is that a missing brand and a missing barcode are not
-// missing anything, and nothing else on this page says so.
-const TYPES = [
-  { value: 'all', label: 'All' },
-  {
-    value: 'generic',
-    label: 'Generic',
-    title: 'A shopping concept: Milk, Bananas. No brand and no barcode, and none of that makes it low quality.',
-  },
-  {
-    value: 'commercial',
-    label: 'Commercial',
-    title: 'A product off a shelf: Nutella 350g. Identified by brand and barcode.',
-  },
-]
-
 // ─── the value selects ───────────────────────────────────────────────────────
 // Each list is a check constraint in the catalog project restated in
 // TypeScript; catalogVocab.ts holds all of them and says why.
+// A generic is a shopping concept -- Milk, Bananas -- with no brand and no
+// barcode, none of which makes it incomplete; a commercial product is one off a
+// shelf, identified by both. The distinction is why the tri-states below cannot
+// be read as quality on their own, which is what the hint under them says.
+const typeOptions = [
+  { value: null, label: 'Any type' },
+  { value: 'generic', label: 'Generic' },
+  { value: 'commercial', label: 'Commercial' },
+]
+
 const marketOptions = [
   { value: null, label: 'Any market' },
   ...MARKETS.map((code) => ({ value: code, label: `${MARKET_NAMES[code] ?? code} (${code})` })),
@@ -171,15 +166,11 @@ const EARNED_OPTIONS = [
     <div class="cfd">
       <section class="cfd__group">
         <h3 class="u-caption cfd__legend">What it is</h3>
-        <!-- Also above the table, and deliberately. It is the distinction
-             changed most often, so it keeps its one-click control there; it is
-             here as well because a panel labelled Filters that is missing one is
-             worse than a filter offered twice. Both write filters.type. -->
-        <SegmentedControl
+        <SelectField
           label="Type"
-          :segments="TYPES"
-          :model-value="modelValue.type ?? 'all'"
-          @update:model-value="set('type', $event === 'all' ? null : ($event as CatalogProductType))"
+          :model-value="modelValue.type ?? null"
+          :options="typeOptions"
+          @update:model-value="set('type', $event as CatalogProductType | null)"
         />
         <SelectField
           label="Market"
