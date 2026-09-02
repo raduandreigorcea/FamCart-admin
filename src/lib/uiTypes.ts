@@ -53,6 +53,21 @@ export interface Column<T = Record<string, unknown>> {
   /** Sortable by this key, which must match a sort the RPC accepts. */
   sortable?: boolean
   width?: string
+  /**
+   * The narrowest this column may become, in px, before the table stops
+   * shrinking and its panel scrolls instead.
+   *
+   * `width` is a percentage, which is the right unit for a column of text: it
+   * shares the room out and every column gets thinner together. It is the wrong
+   * unit for a cell whose content has a fixed size -- a pair of buttons is 145px
+   * whatever the window is doing -- and under `table-layout: fixed` such a cell
+   * cannot grow to fit, so it spills and gets clipped by the panel edge.
+   *
+   * Declare it only where the content genuinely has a pixel floor. DataTable
+   * turns the strictest one into the table's min-width; everything else falls
+   * back to MIN_CELL there.
+   */
+  minPx?: number
   /** Dropped below this viewport width, for columns that are context. */
   hideBelow?: 1100 | 1400
   align?: 'left' | 'right' | 'center'

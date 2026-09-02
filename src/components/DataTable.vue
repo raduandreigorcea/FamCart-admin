@@ -112,6 +112,64 @@ function columnClasses(column: Column<T>): string[] {
   ].filter(Boolean)
 }
 
+// ─── the floor under the table ───────────────────────────────────────────────
+//
+// `.table-scroll` promises a sideways scroll for a table too wide for its panel,
+// and until this existed it could never happen: the table is `width: 100%` with
+// no lower bound, so it always fitted exactly and there was nothing to scroll.
+// What the wrapper actually bought was the opposite -- every column shrinking in
+// proportion, without end. Past the last breakpoint an eight column table in a
+// 700px panel gave a product name 175px and broke it mid-word.
+//
+// COMPUTED RATHER THAN A CONSTANT, because one number cannot serve nine tables.
+// A floor sized for Health's eleven columns would make Access scroll at widths
+// where its five are comfortable, and a floor sized for Access would not stop
+// Health crushing. So each table gets its own, from its own columns.
+//
+// THREE OF THEM, because the column SET changes at each breakpoint that hides
+// one, and a floor computed for eight columns is wrong for the five that survive
+// below 1100. The percentages are renormalised over whichever columns are still
+// showing, exactly as the browser renormalises them.
+//
+// The rule: no column may fall below its own minimum, so the table may not fall
+// below the largest width any of them implies.
+
+/**
+ * What a column with nothing particular to say still needs: a short value and
+ * its padding. Deliberately small. Columns here are narrow on purpose -- the
+ * catalog's Record column is one letter in a 7% badge -- and a generous default
+ * would compute a floor those tables never asked for. Anything with a real
+ * pixel need declares `minPx`.
+ */
+const MIN_CELL = 64
+
+function pctOf(column: Column<T>): number {
+  const match = /^([\d.]+)%$/.exec(column.width ?? '')
+  return match ? Number(match[1]) : 0
+}
+
+function floorFor(visible: Column<T>[]): number {
+  const total = visible.reduce((sum, c) => sum + pctOf(c), 0)
+  if (total <= 0) return 0
+
+  return Math.ceil(
+    Math.max(
+      ...visible.map((c) => {
+        const share = pctOf(c) / total
+        return share > 0 ? (c.minPx ?? MIN_CELL) / share : 0
+      }),
+    ),
+  )
+}
+
+// Below 1400 the hide-below-1400 columns are gone; below 1100 BOTH media queries
+// are in force, so the 1100 set is the columns that hide at neither.
+const floors = computed(() => ({
+  '--table-floor': `${floorFor(props.columns)}px`,
+  '--table-floor-1400': `${floorFor(props.columns.filter((c) => c.hideBelow !== 1400))}px`,
+  '--table-floor-1100': `${floorFor(props.columns.filter((c) => !c.hideBelow))}px`,
+}))
+
 function cellValue(row: T, key: string): unknown {
   return (row as Record<string, unknown>)[key]
 }
@@ -120,7 +178,7 @@ function cellValue(row: T, key: string): unknown {
 <template>
   <div class="table-wrap">
     <div class="table-scroll">
-      <table class="table">
+      <table class="table" :style="floors">
         <thead>
           <tr>
             <th
@@ -237,6 +295,21 @@ function cellValue(row: T, key: string): unknown {
 .table-scroll {
   overflow-x: auto;
   min-width: 0;
+}
+
+/* The floor, computed per table in the script above and delivered as three
+   custom properties. It only binds when a panel is narrower than it, so a table
+   with room to spare never scrolls. */
+.table {
+  min-width: var(--table-floor, 0);
+}
+
+@media (max-width: 1400px) {
+  .table { min-width: var(--table-floor-1400, 0); }
+}
+
+@media (max-width: 1100px) {
+  .table { min-width: var(--table-floor-1100, 0); }
 }
 
 .table {

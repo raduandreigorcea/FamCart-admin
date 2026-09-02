@@ -78,7 +78,8 @@ const columns: Column<LocalProductRow>[] = [
   // Every other column gave up a point or two to pay for this one; the widths
   // are asserted to total 100% in test/designSystem.ts, which is how the first
   // draft of this row was caught at 112.
-  { key: 'actions', label: '', width: '12%', align: 'right' },
+  // The same Edit and Remove pair as the catalog, and the same 145px.
+  { key: 'actions', label: '', width: '12%', align: 'right', minPx: 150 },
 ]
 
 // ─── writing ─────────────────────────────────────────────────────────────────
