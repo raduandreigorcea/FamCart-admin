@@ -165,18 +165,29 @@ watch(activeProject, () => {
     <div class="gate__intro">
       <BrandMark :size="48" />
       <h1 class="gate__title">Not authorised</h1>
+      <!-- WHAT THIS SCREEN DELIBERATELY NO LONGER SAYS.
+           It used to name public.admin_users and print a ready-to-run insert
+           seeding this very account as an admin, with the reader's own Clerk id
+           already filled in.
+
+           That was not an escalation anybody could perform -- admin_users has
+           RLS and a signed-in account cannot insert into it, which the pgTAP
+           suite asserts. But the audience was wrong. This dashboard
+           authenticates against the SAME Clerk instance as the consumer app, so
+           the people who reach this screen are not colleagues awaiting a grant;
+           they are every FamCart user who found the URL. Handing all of them the
+           table name and the exact statement to run is free reconnaissance for
+           the day somebody does get hold of a service-role key.
+
+           The bootstrap it explained is not lost: it lives in the app repo's
+           008_admin.sql, next to the table it seeds, which is where the person
+           who can actually run it will be. -->
       <p class="gate__copy">
-        {{ user?.fullName || 'This account' }} is signed in, but is not in
-        <strong class="u-mono">public.admin_users</strong> on
-        <strong class="u-mono">{{ target.label }}</strong>, so the database refuses every admin query.
+        {{ user?.fullName || 'This account' }} is signed in, but does not have admin access here.
       </p>
       <p class="gate__copy">
-        An existing admin can grant access from the Access page. If there is no admin yet, seed the
-        first row with the service role:
+        An existing admin can grant it from the Access page.
       </p>
-      <pre class="gate__code">insert into public.admin_users (user_id, note)
-values ('{{ user?.id }}', 'owner')
-on conflict (user_id) do nothing;</pre>
 
       <div class="gate__actions">
         <ProjectSwitcher />
