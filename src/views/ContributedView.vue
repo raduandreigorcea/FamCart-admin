@@ -290,7 +290,7 @@ const SEGMENTS = [
                loses it. -->
           <span class="u-row-actions">
             <button type="button" class="u-btn" title="Edit" @click="edit(row)">
-              <AppIcon class="u-btn__icon" name="square-pen" :size="14" />
+              <span class="u-btn__icon"><AppIcon name="square-pen" :size="14" /></span>
               <span class="u-btn__label">Edit</span>
             </button>
             <button
@@ -299,7 +299,7 @@ const SEGMENTS = [
               title="Remove"
               @click="removing = row"
             >
-              <AppIcon class="u-btn__icon" name="trash-2" :size="14" />
+              <span class="u-btn__icon"><AppIcon name="trash-2" :size="14" /></span>
               <span class="u-btn__label">Remove</span>
             </button>
           </span>

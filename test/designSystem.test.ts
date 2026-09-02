@@ -273,6 +273,21 @@ describe('a row action that has lost its label', () => {
     expect(narrow.indexOf('.u-row-actions .u-btn__label')).toBeGreaterThan(-1)
   })
 
+  // The rule above is necessary and was not sufficient. Put the class on AppIcon
+  // itself and `.u-row-actions .u-btn__icon` scores (0,2,0) against the
+  // component's own scoped `.icon[data-v-...]`, which scores the same -- so the
+  // winner is whichever Vite injected last, and it was the scoped one. The icon
+  // stayed beside the label, the pair went back to 199px, and `Remove` was
+  // clipped with nothing in the CSS looking wrong. A wrapper we own has no rule
+  // competing for it.
+  it('puts the collapsing class on an element of ours, not on AppIcon', () => {
+    for (const path of views) {
+      const source = readFileSync(path, 'utf8')
+      expect(source).toMatch(/<span class="u-btn__icon"><AppIcon/)
+      expect(source).not.toMatch(/<AppIcon[^>]*class="[^"]*u-btn__icon/)
+    }
+  })
+
   // The tooltip is how everyone else gets the word back.
   it('gives every action button a title', () => {
     for (const path of views) {
@@ -283,5 +298,30 @@ describe('a row action that has lost its label', () => {
       expect(buttons.length).toBeGreaterThan(0)
       for (const button of buttons) expect(button).toMatch(/title="/)
     }
+  })
+})
+
+describe('a cell that must not break mid-token', () => {
+  const catalog = readFileSync('src/views/CatalogView.vue', 'utf8')
+  const admin = readFileSync('src/styles/admin.css', 'utf8')
+
+  // `.table td` sets `overflow-wrap: anywhere` so a barcode or a Clerk id breaks
+  // inside its own column instead of painting across the next one. The side
+  // effect is that it also drops the automatic minimum size of every flex item
+  // in the cell to ONE CHARACTER -- so the market pills stopped shrinking at
+  // their own width and stacked R over O instead.
+  it('puts the market pills back to breaking on words', () => {
+    const rule = catalog.slice(catalog.indexOf('.mk__code,'))
+    const body = rule.slice(0, rule.indexOf('}'))
+    expect(body).toMatch(/overflow-wrap:\s*normal/)
+    expect(body).toMatch(/white-space:\s*nowrap/)
+  })
+
+  // An inline box cannot be clipped, so u-truncate on an <a> does nothing at all
+  // and the text runs into the next column. Both links wearing it are in table
+  // cells; the two dozen spans are already blocks or flex items.
+  it('makes u-truncate work on a link', () => {
+    const rule = admin.slice(admin.indexOf('a.u-truncate {'))
+    expect(rule.slice(0, rule.indexOf('}'))).toMatch(/display:\s*block/)
   })
 })

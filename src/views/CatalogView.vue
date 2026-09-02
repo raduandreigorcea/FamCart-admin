@@ -160,13 +160,20 @@ const error = computed(() => (products.error.value ? describeError(products.erro
 // and the wrapper picked up a few pixels of scroll. The three per cent comes off
 // Product, which had the most to spare.
 const columns: Column<CatalogProductRow>[] = [
-  { key: 'canonical_name', label: 'Product', width: '24%' },
+  { key: 'canonical_name', label: 'Product', width: '22%' },
   { key: 'product_type', label: 'Type', width: '9%' },
   { key: 'quality_tier', label: 'Record', width: '7%', hideBelow: 1400 },
-  { key: 'markets', label: 'Markets', width: '13%', hideBelow: 1100 },
+  // Three pills and a +N measure 142px with the cell's padding and no longer
+  // shrink (see .mk__code). Below 1400 there is not that much to give it without
+  // taking it off Product, so it leaves at 1400 rather than at 1100 -- which is
+  // also where it was rendering one letter per line.
+  { key: 'markets', label: 'Markets', width: '14%', hideBelow: 1400, minPx: 142 },
   { key: 'sources', label: 'Source', width: '12%' },
   { key: 'popularity', label: 'Popularity', numeric: true, width: '12%' },
-  { key: 'created_at', label: 'Added', width: '8%', hideBelow: 1100 },
+  // 9%, because at 8 the column is 63px inside its padding and "4 days ago"
+  // needs 66 -- so it wrapped to two lines in the 1400 to 1450 band and nowhere
+  // else, which is the most confusing kind of layout bug to be told about.
+  { key: 'created_at', label: 'Added', width: '9%', hideBelow: 1100 },
   // 15%, and a floor of 80.
   //
   // The floor is the ICON pair (72px plus the cell's own padding), because below
@@ -484,7 +491,7 @@ const removalMessage = computed(() => {
                loses it. -->
           <span class="u-row-actions">
             <button type="button" class="u-btn" title="Edit" @click="edit(row)">
-              <AppIcon class="u-btn__icon" name="square-pen" :size="14" />
+              <span class="u-btn__icon"><AppIcon name="square-pen" :size="14" /></span>
               <span class="u-btn__label">Edit</span>
             </button>
             <button
@@ -493,7 +500,7 @@ const removalMessage = computed(() => {
               title="Remove"
               @click="removing = row"
             >
-              <AppIcon class="u-btn__icon" name="trash-2" :size="14" />
+              <span class="u-btn__icon"><AppIcon name="trash-2" :size="14" /></span>
               <span class="u-btn__label">Remove</span>
             </button>
           </span>
@@ -690,8 +697,19 @@ const removalMessage = computed(() => {
   flex-wrap: nowrap;
 }
 
+/* A market code is two letters and must stay two letters on one line.
+ *
+ * `.table td` sets `overflow-wrap: anywhere`, which exists for the barcodes and
+ * Clerk ids that would otherwise paint across the next column -- and it also
+ * changes the automatic minimum size of every flex item inside the cell to ONE
+ * CHARACTER. So when the column got tight these pills did not stop shrinking at
+ * their own width; they shrank to a letter and stacked R over O. Saying `normal`
+ * here puts their minimum back to the whole token, and the column's minPx is
+ * what keeps the room for them. */
 .mk__code,
 .mk__more {
+  overflow-wrap: normal;
+  white-space: nowrap;
   padding: 0 var(--space-1-5);
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
