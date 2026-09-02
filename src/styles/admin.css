@@ -333,6 +333,15 @@ body {
   white-space: nowrap;
 }
 
+/* An inline box cannot be clipped, so `overflow: hidden` on one does nothing and
+   the text simply runs on into the next column. Every span that wears
+   .u-truncate is already a block or a flex item; the two links are not, and a
+   household called ".Radu si Cristina <3" was painting 17px past its cell.
+   Qualified by the element so the two dozen spans are left exactly as they are. */
+a.u-truncate {
+  display: block;
+}
+
 /* A visually hidden label, for the cases where an icon carries an action and a
  * screen reader needs the word. */
 .u-sr {
@@ -376,7 +385,16 @@ body {
   justify-content: flex-end;
 }
 
-/* Wide enough for words, so the words are what shows. */
+/* Wide enough for words, so the words are what shows.
+ *
+ * The icon is wrapped in a span of ours rather than being AppIcon itself, and
+ * that is not decoration. AppIcon's scoped `.icon[data-v-...]` sets
+ * `display: inline-flex` and scores (0,2,0); `.u-row-actions .u-btn__icon` on
+ * the component scores exactly the same, so which one won came down to the order
+ * Vite happened to inject them -- and it was the scoped rule. The icon stayed
+ * visible next to the label, the pair went back to 199px, and `Remove` was
+ * clipped again with nothing in the CSS looking wrong. A wrapper we own has no
+ * rule competing for it. */
 .u-row-actions .u-btn__icon {
   display: none;
 }
@@ -384,6 +402,7 @@ body {
 @media (max-width: 1400px) {
   .u-row-actions .u-btn__icon {
     display: inline-flex;
+    align-items: center;
   }
 
   /* Same rules as .u-sr. Written out rather than composed, because the class is
