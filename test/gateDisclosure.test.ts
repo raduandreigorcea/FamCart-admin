@@ -59,4 +59,16 @@ describe('what the gate tells a non-admin', () => {
   it('still says how to actually get access', () => {
     expect(markup).toMatch(/Access page/)
   })
+
+  // The other gate a non-admin can reach. It rendered the raw admin-check
+  // failure, and a PostgREST error names the function it could not resolve and
+  // often the schema around it. Same audience, same argument.
+  it('does not render the raw admin-check failure', () => {
+    expect(withoutComments).not.toMatch(/\{\{\s*adminError\s*\}\}/)
+  })
+
+  it('sends that failure somewhere it can still be read', () => {
+    const check = readFileSync('src/lib/useAdminCheck.ts', 'utf8')
+    expect(check).toMatch(/console\.error/)
+  })
 })
