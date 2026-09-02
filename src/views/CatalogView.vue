@@ -160,15 +160,25 @@ const error = computed(() => (products.error.value ? describeError(products.erro
 // and the wrapper picked up a few pixels of scroll. The three per cent comes off
 // Product, which had the most to spare.
 const columns: Column<CatalogProductRow>[] = [
-  { key: 'canonical_name', label: 'Product', width: '25%' },
+  { key: 'canonical_name', label: 'Product', width: '24%' },
   { key: 'product_type', label: 'Type', width: '9%' },
   { key: 'quality_tier', label: 'Record', width: '7%', hideBelow: 1400 },
   { key: 'markets', label: 'Markets', width: '13%', hideBelow: 1100 },
   { key: 'sources', label: 'Source', width: '12%' },
   { key: 'popularity', label: 'Popularity', numeric: true, width: '12%' },
   { key: 'created_at', label: 'Added', width: '8%', hideBelow: 1100 },
-  // Edit and Remove measure 145px together and do not shrink. See Column.minPx.
-  { key: 'actions', label: '', width: '14%', align: 'right', minPx: 150 },
+  // 15%, and a floor of 80.
+  //
+  // The floor is the ICON pair (72px plus the cell's own padding), because below
+  // 1400 the labels are hidden and that is the only state a narrow table has to
+  // hold. Sizing it for the labels instead is what made this table wider than
+  // its panel between 1100 and 1260.
+  //
+  // The 15% is for the other state. Labelled, the pair needs 155px with padding,
+  // and 14% of the narrowest panel that ever shows labels (1099px at a 1401px
+  // window) is 154 -- one pixel short, which is how `Remove` gets clipped again.
+  // The point came off Product, which had the most to spare.
+  { key: 'actions', label: '', width: '15%', align: 'right', minPx: 80 },
 ]
 
 // ─── how popularity is drawn ─────────────────────────────────────────────────
@@ -469,10 +479,22 @@ const removalMessage = computed(() => {
           </span>
         </template>
         <template #cell-actions="{ row }">
-          <span class="row-actions">
-            <button type="button" class="u-btn" @click="edit(row)">Edit</button>
-            <button type="button" class="u-btn u-btn--danger" @click="removing = row">
-              Remove
+          <!-- The labels are hidden rather than dropped below 1400: see
+               .u-row-actions. `title` says the same word on hover, so nobody
+               loses it. -->
+          <span class="u-row-actions">
+            <button type="button" class="u-btn" title="Edit" @click="edit(row)">
+              <AppIcon class="u-btn__icon" name="square-pen" :size="14" />
+              <span class="u-btn__label">Edit</span>
+            </button>
+            <button
+              type="button"
+              class="u-btn u-btn--danger"
+              title="Remove"
+              @click="removing = row"
+            >
+              <AppIcon class="u-btn__icon" name="trash-2" :size="14" />
+              <span class="u-btn__label">Remove</span>
             </button>
           </span>
         </template>
@@ -593,13 +615,6 @@ const removalMessage = computed(() => {
 .chips__clear:hover {
   color: var(--text-primary);
   text-decoration: underline;
-}
-
-.row-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  justify-content: flex-end;
 }
 
 /* ─── the product cell ───────────────────────────────────────────────────────

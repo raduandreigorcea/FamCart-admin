@@ -152,8 +152,8 @@ describe('the floor under the table', () => {
   ]
 
   it('is driven by the column that would get thinnest', () => {
-    // 10% is the tightest share, and MIN_CELL is 64: 64 / 0.10 = 640.
-    expect(floors(wide).full).toBe(640)
+    // 10% is the tightest share, and MIN_CELL is 48: 48 / 0.10 = 480.
+    expect(floors(wide).full).toBe(480)
   })
 
   // The whole reason there are three. Below each breakpoint the column SET is
@@ -165,7 +165,7 @@ describe('the floor under the table', () => {
     expect(f.b1400).toBeLessThan(f.full)
     expect(f.b1100).toBeLessThan(f.b1400)
     // Only `name` is left below 1100, so nothing is thinner than the whole table.
-    expect(f.b1100).toBe(64)
+    expect(f.b1100).toBe(48)
   })
 
   // A percentage is the wrong unit for a cell whose content has a fixed size:

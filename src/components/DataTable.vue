@@ -136,12 +136,18 @@ function columnClasses(column: Column<T>): string[] {
 
 /**
  * What a column with nothing particular to say still needs: a short value and
- * its padding. Deliberately small. Columns here are narrow on purpose -- the
- * catalog's Record column is one letter in a 7% badge -- and a generous default
- * would compute a floor those tables never asked for. Anything with a real
- * pixel need declares `minPx`.
+ * its padding. `.table td` carries `0 var(--space-3)`, so 24px of that is gone
+ * before any content, leaving room for roughly three characters at --text-sm.
+ *
+ * Deliberately mean. Columns here are narrow ON PURPOSE -- the catalog's Record
+ * column is one letter in a 7% badge, Contributed's Adds is a count -- and a
+ * generous default computes a floor those tables never asked for and makes them
+ * scroll for it. 64 was the first guess and Contributed's 6% Adds column turned
+ * it into a 747px floor in a 739px panel, to hold a two digit number.
+ *
+ * Anything whose content is genuinely wider says so with `minPx`.
  */
-const MIN_CELL = 64
+const MIN_CELL = 48
 
 function pctOf(column: Column<T>): number {
   const match = /^([\d.]+)%$/.exec(column.width ?? '')
