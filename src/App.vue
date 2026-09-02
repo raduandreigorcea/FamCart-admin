@@ -156,11 +156,6 @@ watch(activeProject, () => {
     <div class="gate__intro">
       <BrandMark :size="48" />
       <h1 class="gate__title">FamCart Admin</h1>
-      <p class="gate__copy">
-        Sign in with the account that holds admin access. This dashboard reads
-        <strong class="u-mono">{{ target.label }}</strong> and is read-only apart from granting
-        and revoking access.
-      </p>
     </div>
     <SignIn />
   </div>
