@@ -25,6 +25,10 @@ vi.mock('../src/lib/data/catalog', () => ({
   updateCatalogProduct,
   deleteCatalogProduct,
   catalogConfigured,
+  // Real rather than stubbed: it is three lines of counting and the Filters
+  // button's badge is drawn from it, so a stub would test the stub.
+  activeFilterCount: (f: Record<string, unknown>) =>
+    Object.values(f).filter((v) => v !== null && v !== undefined).length,
   CatalogNotConfigured: class extends Error {},
 }))
 
@@ -40,8 +44,20 @@ const stubs = {
   FilterBar: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: `<input class="filter" :value="modelValue"
-      @input="$emit('update:modelValue', $event.target.value)" />`,
+    template: `<div><input class="filter" :value="modelValue"
+      @input="$emit('update:modelValue', $event.target.value)" /><slot /></div>`,
+  },
+  AppIcon: { props: ['name'], template: '<i />' },
+  // The drawer is a set of selects over SideDrawer; what this view owes it is
+  // the object, so the stub exposes setting one filter and nothing else.
+  CatalogFilterDrawer: {
+    props: ['open', 'modelValue'],
+    emits: ['update:modelValue', 'close'],
+    template: `<div v-if="open" class="drawer">
+      <button class="drawer__ro" @click="$emit('update:modelValue', { ...modelValue, market: 'RO' })">ro</button>
+      <button class="drawer__nobarcode" @click="$emit('update:modelValue', { ...modelValue, hasBarcode: false })">nb</button>
+      <button class="drawer__close" @click="$emit('close')">x</button>
+    </div>`,
   },
   SegmentedControl: {
     props: ['modelValue', 'segments'],
@@ -99,6 +115,9 @@ function row(over: Record<string, unknown> = {}) {
     category: null,
     markets: ['RO', 'DE'],
     quality_tier: 'B',
+    quantity: null,
+    quantity_unit: null,
+    image_url: null,
     base_weight: 3,
     add_count: 0,
     popularity: 3,
@@ -159,6 +178,86 @@ describe('CatalogView', () => {
     expect(lastArgs().offset).toBe(25)
 
     await wrapper.find('.seg__item[data-value="generic"]').trigger('click')
+    await flush()
+    expect(lastArgs().offset).toBe(0)
+  })
+
+  // ─── the filter drawer and its chips ───────────────────────────────────────
+
+  it('passes what the drawer sets straight through to the RPC', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__ro').trigger('click')
+    await flush()
+
+    expect(lastArgs().market).toBe('RO')
+  })
+
+  // false, not absent. The two are the same falsy value in JavaScript and
+  // opposite questions here, and "products with no barcode" is the half somebody
+  // actually comes to this page to find.
+  it('keeps a tri-state set to false rather than dropping it', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__nobarcode').trigger('click')
+    await flush()
+
+    expect(lastArgs().hasBarcode).toBe(false)
+    expect(wrapper.find('.filters-btn__count').text()).toBe('1')
+  })
+
+  // The drawer is shut most of the time, and a filtered table looks exactly like
+  // a thin catalog. Without the chips the page would be narrowed with nothing on
+  // screen saying so.
+  it('names every active filter outside the drawer, and removes one on click', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__ro').trigger('click')
+    await wrapper.find('.drawer__nobarcode').trigger('click')
+    await flush()
+
+    // Substring, not equality: each chip also carries an icon and the screen
+    // reader's "Remove filter".
+    const labels = wrapper.findAll('.chips__item').map((c) => c.text())
+    expect(labels.some((l) => l.includes('Market: Romania'))).toBe(true)
+    expect(labels.some((l) => l.includes('No barcode'))).toBe(true)
+
+    await wrapper.findAll('.chips__item')[0].trigger('click')
+    await flush()
+    expect(lastArgs().market).toBeUndefined()
+    expect(lastArgs().hasBarcode).toBe(false)
+  })
+
+  it('clears every filter at once', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__ro').trigger('click')
+    await wrapper.find('.drawer__nobarcode').trigger('click')
+    await flush()
+
+    await wrapper.find('.chips__clear').trigger('click')
+    await flush()
+
+    expect(wrapper.findAll('.chips__item')).toHaveLength(0)
+    expect(lastArgs().market).toBeUndefined()
+    expect(lastArgs().hasBarcode).toBeUndefined()
+  })
+
+  // Filter to eleven rows while sitting on page four and every one of them is
+  // off the end. Same rule the type control and the search box already follow.
+  it('returns to the first page when a drawer filter changes', async () => {
+    const wrapper = await mounted()
+
+    await wrapper.find('.pager__next').trigger('click')
+    await flush()
+    expect(lastArgs().offset).toBe(25)
+
+    await wrapper.find('.filters-btn').trigger('click')
+    await wrapper.find('.drawer__ro').trigger('click')
     await flush()
     expect(lastArgs().offset).toBe(0)
   })

@@ -11,6 +11,8 @@ import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CatalogFormDialog from '../components/CatalogFormDialog.vue'
+import CatalogFilterDrawer from '../components/CatalogFilterDrawer.vue'
+import AppIcon from '../components/AppIcon.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import {
   catalogConfigured,
@@ -18,10 +20,13 @@ import {
   createCatalogProduct,
   updateCatalogProduct,
   deleteCatalogProduct,
+  activeFilterCount,
   type CatalogProductRow,
   type CatalogProductType,
   type CatalogDraft,
+  type CatalogFilters,
 } from '../lib/data/catalog'
+import { MARKET_NAMES, LANG_NAMES, sourceLabel } from '../lib/catalogVocab'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 import type { Column } from '../lib/uiTypes'
 
@@ -40,22 +45,99 @@ const query = ref('')
 const type = ref<CatalogProductType | null>(null)
 const offset = ref(0)
 
+// Everything the drawer sets, in one object rather than eleven refs. It is what
+// gets spread into the request, cleared as a unit and counted for the button, so
+// splitting it apart would mean writing all three of those out longhand.
+//
+// `type` stays a ref of its own because it is not in the drawer: it is the
+// segmented control above the table, where it was already, and it is the one
+// distinction worth a click rather than two.
+const filters = ref<CatalogFilters>({})
+const filtersOpen = ref(false)
+
 // Any filter change returns to the first page: page 4 of a search is not page 4
 // of the next one. Same rule as Contributed, and not useTableState for the same
 // reason -- catalog_admin_products orders by popularity then name inside the
 // function, so a sort control would report a change the server ignores.
-watch([query, type], () => {
+//
+// `filters` is deep-watched because the drawer replaces the object, and the
+// pager has to reset for a narrowing exactly as it does for a search -- filter
+// to eleven rows while sitting on page 4 and every one of them is off the end.
+watch([query, type, filters], () => {
   offset.value = 0
-})
+}, { deep: true })
 
 const products = useQuery(
   (signal) =>
     fetchCatalogProducts(
-      { query: query.value, type: type.value, limit: LIMIT, offset: offset.value },
+      { ...filters.value, query: query.value, type: type.value, limit: LIMIT, offset: offset.value },
       signal,
     ),
-  { watch: [query, type, offset], enabled: () => configured },
+  { watch: [query, type, filters, offset], enabled: () => configured },
 )
+
+const activeCount = computed(() => activeFilterCount(filters.value))
+
+// ─── the chips ───────────────────────────────────────────────────────────────
+// What is set, said in words, outside the drawer that set it.
+//
+// The drawer is the only place a filter can be CHOSEN and it is closed most of
+// the time, so without these the page would be narrowed with nothing on screen
+// saying so -- and a filtered table looks exactly like a thin catalog. The count
+// on the button says how many; these say which, and each one removes itself.
+const ADDED_LABELS: Record<number, string> = {
+  1: 'last 24 hours',
+  7: 'last 7 days',
+  30: 'last 30 days',
+  90: 'last 90 days',
+  365: 'last year',
+}
+
+/** A tri-state reads as a phrase, not as "hasBrand: false". */
+function has(label: string, value: boolean): string {
+  return value ? `Has ${label}` : `No ${label}`
+}
+
+const chips = computed<{ key: keyof CatalogFilters; label: string }[]>(() => {
+  const f = filters.value
+  const out: { key: keyof CatalogFilters; label: string }[] = []
+
+  if (f.market) out.push({ key: 'market', label: `Market: ${MARKET_NAMES[f.market] ?? f.market}` })
+  if (f.tier) out.push({ key: 'tier', label: `Record: tier ${f.tier}` })
+  if (f.category) out.push({ key: 'category', label: `Category: ${f.category}` })
+  if (f.source) out.push({ key: 'source', label: `Source: ${sourceLabel(f.source)}` })
+  if (f.lang) out.push({ key: 'lang', label: `Language: ${LANG_NAMES[f.lang] ?? f.lang}` })
+  if (f.hasBarcode != null) out.push({ key: 'hasBarcode', label: has('barcode', f.hasBarcode) })
+  if (f.hasBrand != null) out.push({ key: 'hasBrand', label: has('brand', f.hasBrand) })
+  if (f.hasMarket != null) out.push({ key: 'hasMarket', label: has('market', f.hasMarket) })
+  if (f.hasImage != null) out.push({ key: 'hasImage', label: has('image', f.hasImage) })
+  if (f.hasQuantity != null) out.push({ key: 'hasQuantity', label: has('size', f.hasQuantity) })
+  if (f.earned != null) {
+    out.push({ key: 'earned', label: f.earned ? 'Added by households' : 'Editorial weight only' })
+  }
+  if (f.addedWithinDays != null) {
+    out.push({
+      key: 'addedWithinDays',
+      label: `Added: ${ADDED_LABELS[f.addedWithinDays] ?? `last ${f.addedWithinDays} days`}`,
+    })
+  }
+
+  return out
+})
+
+// Deleted rather than set to null. Both read as "not asked" everywhere that
+// matters -- the request sends null either way and activeFilterCount ignores
+// both -- so this is only to keep the object saying what it means when it is
+// logged or compared.
+function clearFilter(key: keyof CatalogFilters) {
+  const next = { ...filters.value }
+  delete next[key]
+  filters.value = next
+}
+
+function clearFilters() {
+  filters.value = {}
+}
 
 const rows = computed(() => products.data.value?.rows ?? [])
 const total = computed(() => products.data.value?.total ?? 0)
@@ -100,29 +182,14 @@ function earned(row: CatalogProductRow): string {
   return `${row.add_count} earned`
 }
 
-// Provenance, shortened and toned. 'openfoodfacts' is thirteen lowercase
-// characters that push every other column around, and the distinction that
-// actually matters when reading down the column is not which upstream catalog it
-// was but WHETHER A PERSON PUT IT THERE: admin rows are the ones written from
-// this dashboard, curated ones come from the version-controlled seed, and the
-// rest arrived on their own.
-const SOURCE_LABELS: Record<string, string> = {
-  admin: 'Admin',
-  curated: 'Seed',
-  user: 'User',
-  openfoodfacts: 'OFF',
-  openproductsfacts: 'OPF',
-  openbeautyfacts: 'OBF',
-}
-
+// The shortened provenance labels moved to catalogVocab.ts when the filter
+// drawer needed the same six; the distinction they draw is unchanged, and it is
+// not which upstream catalog a row came from but WHETHER A PERSON PUT IT THERE.
+// The tone is a table concern and stays here.
 const SOURCE_TONES: Record<string, 'good' | 'accent' | 'idle'> = {
   admin: 'accent',
   curated: 'good',
   user: 'good',
-}
-
-function sourceLabel(name: string): string {
-  return SOURCE_LABELS[name] ?? name
 }
 
 function sourceTone(name: string): 'good' | 'accent' | 'idle' {
@@ -282,6 +349,18 @@ const removalMessage = computed(() => {
           placeholder="Search names and aliases, or paste a barcode"
           :busy="products.fetching.value"
         >
+          <button
+            type="button"
+            class="u-btn u-btn--ghost filters-btn"
+            :class="{ 'filters-btn--on': activeCount > 0 }"
+            :aria-expanded="filtersOpen"
+            @click="filtersOpen = true"
+          >
+            <AppIcon name="list-filter" :size="13" />
+            Filters
+            <span v-if="activeCount > 0" class="filters-btn__count u-num">{{ activeCount }}</span>
+          </button>
+
           <template #end>
             <!-- Withheld until it is known rather than shown as a zero, which
                  would read as "nothing matched" during the first fetch. See the
@@ -291,6 +370,24 @@ const removalMessage = computed(() => {
             </span>
           </template>
         </FilterBar>
+
+        <!-- What is narrowing the table, said outside the drawer that set it. A
+             filtered catalog and a thin one look identical otherwise. -->
+        <div v-if="chips.length" class="chips">
+          <button
+            v-for="chip in chips"
+            :key="chip.key"
+            type="button"
+            class="chips__item"
+            :title="`Remove this filter`"
+            @click="clearFilter(chip.key)"
+          >
+            {{ chip.label }}
+            <AppIcon name="x" :size="11" />
+            <span class="u-sr">Remove filter</span>
+          </button>
+          <button type="button" class="chips__clear" @click="clearFilters">Clear all</button>
+        </div>
       </div>
 
       <DataTable
@@ -406,6 +503,12 @@ const removalMessage = computed(() => {
       </template>
     </PanelCard>
 
+    <CatalogFilterDrawer
+      v-model="filters"
+      :open="filtersOpen"
+      @close="filtersOpen = false"
+    />
+
     <CatalogFormDialog
       :open="formOpen"
       :product="editing"
@@ -430,6 +533,82 @@ const removalMessage = computed(() => {
 </template>
 
 <style scoped>
+/* ─── the filter button and its chips ────────────────────────────────────────
+   The button carries a count rather than only a highlight, because "some
+   filters are on" is not the useful fact -- "three are on and here they are" is,
+   and the chips below say which. */
+.filters-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filters-btn--on {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.filters-btn__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* The whole chip removes its filter, rather than a small × inside it. There is
+   nothing else a chip could do, so a target the size of the label is right and
+   a 11px hit area beside it would be wrong. */
+.chips__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: var(--border-width-thin) solid var(--border-main);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-alt);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  transition: color var(--transition-fast) var(--ease-standard),
+    border-color var(--transition-fast) var(--ease-standard);
+}
+
+.chips__item:hover {
+  color: var(--danger-text);
+  border-color: var(--danger-border);
+}
+
+.chips__clear {
+  border: none;
+  background: none;
+  padding: 0 var(--space-1);
+  color: var(--text-disabled);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.chips__clear:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
 .row-actions {
   display: inline-flex;
   align-items: center;

@@ -50,6 +50,12 @@ export interface CatalogProductRow {
   category: string | null
   markets: string[]
   quality_tier: string
+  /**
+   * These three were declared here before 011 returned them, which was not a
+   * cosmetic gap: CatalogFormDialog fills its form from this row and submits
+   * every field, so while they arrived undefined, correcting a product's name
+   * cleared its size and its image.
+   */
   quantity: number | null
   quantity_unit: string | null
   image_url: string | null
@@ -65,17 +71,81 @@ export interface CatalogProductRow {
   total_count: number
 }
 
+/**
+ * Every way the browse RPC can be narrowed, mapping one-to-one onto 011's
+ * arguments.
+ *
+ * `null` MEANS "DO NOT ASK" throughout, including for the booleans, where it is
+ * the third state: true selects the rows that have the thing, false selects the
+ * rows that do not, and null selects both. A missing key and an explicit null
+ * are the same thing on purpose, so a caller can build this object field by
+ * field without having to know which filters it left out.
+ *
+ * `market` and `hasMarket` are separate questions and neither can be spelled as
+ * the other. A product's markets may be empty, which means nobody recorded where
+ * it is sold rather than that it is sold nowhere -- so filtering by RO hides
+ * every unplaced row, and finding those rows is what hasMarket is for.
+ */
+export interface CatalogFilters {
+  type?: CatalogProductType | null
+  market?: string | null
+  tier?: string | null
+  category?: string | null
+  source?: string | null
+  lang?: string | null
+  hasBarcode?: boolean | null
+  hasBrand?: boolean | null
+  hasImage?: boolean | null
+  hasQuantity?: boolean | null
+  hasMarket?: boolean | null
+  /** true: households have added it. false: editorial weight and nothing else. */
+  earned?: boolean | null
+  /**
+   * A window rather than an instant, and resolved to a timestamp at request
+   * time rather than when the filter was chosen. "Added in the last 7 days"
+   * means seven days before this question, not seven days before the click that
+   * asked it -- a dashboard left open overnight would otherwise quietly go on
+   * answering yesterday's question.
+   */
+  addedWithinDays?: number | null
+}
+
+/** Which filters are actually set, for the count on the Filters button. */
+export function activeFilterCount(filters: CatalogFilters): number {
+  return Object.values(filters).filter((v) => v !== null && v !== undefined).length
+}
+
 export async function fetchCatalogProducts(
-  params: PageParams & { type?: CatalogProductType | null },
+  params: PageParams & CatalogFilters,
   signal: AbortSignal,
 ): Promise<Page<CatalogProductRow>> {
   const limit = params.limit ?? 25
   const offset = params.offset ?? 0
 
+  // Every argument is named and every one is sent, including the nulls. The
+  // catalog is a separate repository and PostgREST resolves an RPC by the
+  // argument names in the body, so this object IS the contract -- there is
+  // nothing on either side that would notice a rename. catalogAdmin.test.ts
+  // pins the names for that reason.
   const { data, error } = await client()
     .rpc('catalog_admin_products', {
       p_query: params.query?.trim() || null,
       p_type: params.type ?? null,
+      p_market: params.market ?? null,
+      p_tier: params.tier ?? null,
+      p_category: params.category ?? null,
+      p_source: params.source ?? null,
+      p_lang: params.lang ?? null,
+      p_has_barcode: params.hasBarcode ?? null,
+      p_has_brand: params.hasBrand ?? null,
+      p_has_image: params.hasImage ?? null,
+      p_has_quantity: params.hasQuantity ?? null,
+      p_has_market: params.hasMarket ?? null,
+      p_earned: params.earned ?? null,
+      p_added_since:
+        params.addedWithinDays != null
+          ? new Date(Date.now() - params.addedWithinDays * 86_400_000).toISOString()
+          : null,
       p_limit: limit,
       p_offset: offset,
     })

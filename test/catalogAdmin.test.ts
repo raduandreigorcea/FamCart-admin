@@ -27,6 +27,7 @@ const {
   updateCatalogProduct,
   deleteCatalogProduct,
   catalogConfigured,
+  activeFilterCount,
   CatalogNotConfigured,
 } = await import('../src/lib/data/catalog')
 
@@ -48,21 +49,100 @@ describe('the catalog admin surface', () => {
 
   it('browses with every argument catalog_admin_products declares', async () => {
     resolving()
-    await fetchCatalogProducts({ query: 'lapte', type: 'generic', limit: 10, offset: 20 }, signal())
+    await fetchCatalogProducts(
+      {
+        query: 'lapte',
+        type: 'generic',
+        market: 'RO',
+        tier: 'A',
+        category: 'dairy',
+        source: 'curated',
+        lang: 'ro',
+        hasBarcode: false,
+        hasBrand: false,
+        hasImage: true,
+        hasQuantity: true,
+        hasMarket: true,
+        earned: true,
+        addedWithinDays: 7,
+        limit: 10,
+        offset: 20,
+      },
+      signal(),
+    )
 
+    // The whole argument list, spelled out. This is the cross-repository
+    // contract: PostgREST resolves an RPC by the argument NAMES in the body, the
+    // catalog is a separate repository, and nothing on either side would notice
+    // a rename until a filter silently stopped narrowing anything.
     expect(rpc).toHaveBeenCalledWith('catalog_admin_products', {
       p_query: 'lapte',
       p_type: 'generic',
+      p_market: 'RO',
+      p_tier: 'A',
+      p_category: 'dairy',
+      p_source: 'curated',
+      p_lang: 'ro',
+      p_has_barcode: false,
+      p_has_brand: false,
+      p_has_image: true,
+      p_has_quantity: true,
+      p_has_market: true,
+      p_earned: true,
+      p_added_since: expect.any(String),
       p_limit: 10,
       p_offset: 20,
     })
   })
 
-  it('sends null for a blank search and no type filter', async () => {
+  it('sends null for a blank search and every filter left out', async () => {
     resolving()
     await fetchCatalogProducts({ query: '   ' }, signal())
-    expect(args().p_query).toBeNull()
-    expect(args().p_type).toBeNull()
+
+    // Not merely the two that existed before 011. A filter argument that arrived
+    // as `undefined` would be dropped from the JSON body entirely, and PostgREST
+    // resolves the function by which names are present -- so one missing key
+    // stops the whole call finding its overload.
+    for (const key of [
+      'p_query', 'p_type', 'p_market', 'p_tier', 'p_category', 'p_source',
+      'p_lang', 'p_has_barcode', 'p_has_brand', 'p_has_image', 'p_has_quantity',
+      'p_has_market', 'p_earned', 'p_added_since',
+    ]) {
+      expect(args()).toHaveProperty(key)
+      expect(args()[key]).toBeNull()
+    }
+  })
+
+  // false is a filter and null is the absence of one. They are the same falsy
+  // value in JavaScript and opposite questions here: `false` asks for the rows
+  // WITHOUT a barcode, which is the more useful half -- it is how you find what
+  // discovery admitted before the gate required both a brand and a code.
+  it('keeps a false tri-state distinct from an unset one', async () => {
+    resolving()
+    await fetchCatalogProducts({ hasBarcode: false, hasBrand: true }, signal())
+
+    expect(args().p_has_barcode).toBe(false)
+    expect(args().p_has_brand).toBe(true)
+    expect(args().p_has_image).toBeNull()
+  })
+
+  // Resolved against the clock at request time, not at the click. A dashboard
+  // left open overnight would otherwise go on asking yesterday's question.
+  it('turns a day window into a timestamp when the request is made', async () => {
+    resolving()
+    const before = Date.now()
+    await fetchCatalogProducts({ addedWithinDays: 7 }, signal())
+
+    const sent = Date.parse(args().p_added_since as string)
+    expect(sent).toBeGreaterThanOrEqual(before - 7 * 86_400_000 - 1000)
+    expect(sent).toBeLessThanOrEqual(Date.now() - 7 * 86_400_000 + 1000)
+  })
+
+  it('counts only the filters that are set', async () => {
+    expect(activeFilterCount({})).toBe(0)
+    expect(activeFilterCount({ market: null, tier: null })).toBe(0)
+    // false counts: it is a filter, and the Filters button says how many.
+    expect(activeFilterCount({ market: 'RO', hasBrand: false })).toBe(2)
   })
 
   it('reads the total off the first row and reports zero for an empty page', async () => {
