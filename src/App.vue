@@ -68,7 +68,9 @@ const paletteOpen = ref(false)
 
 // The third gate, and the only one that matters. Guarded against a stale answer
 // landing last -- see useAdminCheck.ts for the switch sequence that caused it.
-const { state: adminState, error: adminError, check: checkAdmin } = useAdminCheck()
+// `error` is deliberately not taken: the detail is logged rather than
+// rendered, for the reason the error gate below gives.
+const { state: adminState, check: checkAdmin } = useAdminCheck()
 
 function onKeydown(event: KeyboardEvent) {
   const key = event.key.toLowerCase()
@@ -211,7 +213,13 @@ watch(activeProject, () => {
         The admin check against <strong class="u-mono">{{ target.label }}</strong> failed. This is a
         configuration or connectivity problem rather than a permissions one.
       </p>
-      <pre class="gate__code">{{ adminError }}</pre>
+      <!-- The failure itself is in the console, not here. A PostgREST error
+           names the function it could not resolve and frequently the schema
+           around it, and this screen is reachable by anybody with a FamCart
+           account -- the same reason the "Not authorised" gate stopped printing
+           the admin table. Whoever needs the detail is debugging and has
+           devtools; whoever must not have it does not. -->
+      <p class="gate__hint">The reason is in the browser console.</p>
       <button type="button" class="gate__retry" @click="checkAdmin">Try again</button>
 
       <div class="gate__actions">
@@ -342,19 +350,14 @@ watch(activeProject, () => {
   color: var(--text-secondary);
 }
 
-.gate__code {
+/* Replaces .gate__code, which drew the two blocks of monospace that used to sit
+   on these screens: the bootstrap SQL and the raw admin-check error. Both are
+   gone, so what is left is one quiet line pointing at where the detail actually
+   is. */
+.gate__hint {
   margin: 0;
-  width: 100%;
-  text-align: left;
-  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  background: var(--bg-surface);
-  border: var(--border-width-thin) solid var(--border-main);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  overflow-x: auto;
-  color: var(--text-primary);
-  line-height: var(--leading-snug);
+  color: var(--text-secondary);
 }
 
 /* The escape hatch. A screen that can refuse you must offer a way off it, and

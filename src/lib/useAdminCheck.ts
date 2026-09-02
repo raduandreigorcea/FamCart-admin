@@ -55,6 +55,28 @@ export function useAdminCheck(ask: () => Promise<boolean> = fetchIsAdmin): Admin
       // being unreachable or misconfigured, and reporting that as "not
       // authorised" points at the wrong problem entirely.
       state.value = 'error'
+
+      // The detail goes to the console and not to the screen.
+      //
+      // Whoever needs it is debugging a misconfiguration and has devtools open;
+      // whoever must not have it is any FamCart user who reached this dashboard,
+      // since it authenticates against the same Clerk instance as the app. A
+      // PostgREST failure carries the function it could not resolve and often
+      // the schema around it, which is the same reconnaissance the "Not
+      // authorised" gate stopped handing out.
+      //
+      // `error` still exists and is still set, because the retry logic and any
+      // future caller may want to distinguish failures. It is simply not
+      // rendered.
+      // The one console statement in src/, and narrowly disabled rather than
+      // loosening the rule. no-console is on because this tool's output is its
+      // screens; the exception is that this particular failure has nowhere else
+      // to go. It cannot be rendered (see above), there is no error reporter
+      // wired into this dashboard, and swallowing it entirely would leave a
+      // misconfiguration with no diagnosis at all -- which is worse than the
+      // disclosure being avoided.
+      // eslint-disable-next-line no-console
+      console.error('[admin] the admin check failed', caught)
       error.value = caught instanceof Error ? caught.message : String(caught)
     }
   }
