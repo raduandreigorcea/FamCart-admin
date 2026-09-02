@@ -152,15 +152,23 @@ const error = computed(() => (products.error.value ? describeError(products.erro
 // Aliases likewise. The count answered a question nobody was asking often enough
 // to spend 7% of the width on; it is in the name cell's title, where it is one
 // hover away from whoever wants it.
+//
+// The actions column is 14% and not the 11% it started at. Two buttons need
+// 142px between them and 11% was handing the cell 135 at a 1536px window and
+// less as it narrowed, so `Remove` was clipped by the panel edge on a full
+// desktop -- fixed layout will not let a cell grow, so the content simply spilled
+// and the wrapper picked up a few pixels of scroll. The three per cent comes off
+// Product, which had the most to spare.
 const columns: Column<CatalogProductRow>[] = [
-  { key: 'canonical_name', label: 'Product', width: '28%' },
+  { key: 'canonical_name', label: 'Product', width: '25%' },
   { key: 'product_type', label: 'Type', width: '9%' },
   { key: 'quality_tier', label: 'Record', width: '7%', hideBelow: 1400 },
   { key: 'markets', label: 'Markets', width: '13%', hideBelow: 1100 },
   { key: 'sources', label: 'Source', width: '12%' },
   { key: 'popularity', label: 'Popularity', numeric: true, width: '12%' },
   { key: 'created_at', label: 'Added', width: '8%', hideBelow: 1100 },
-  { key: 'actions', label: '', width: '11%', align: 'right' },
+  // Edit and Remove measure 145px together and do not shrink. See Column.minPx.
+  { key: 'actions', label: '', width: '14%', align: 'right', minPx: 150 },
 ]
 
 // ─── how popularity is drawn ─────────────────────────────────────────────────
