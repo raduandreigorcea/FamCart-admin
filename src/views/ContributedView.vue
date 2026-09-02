@@ -12,6 +12,7 @@ import CopyValue from '../components/CopyValue.vue'
 import UserChip from '../components/UserChip.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ProductFormDialog from '../components/ProductFormDialog.vue'
+import AppIcon from '../components/AppIcon.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import {
   fetchContributedProducts,
@@ -68,18 +69,21 @@ const error = computed(() => (products.error.value ? describeError(products.erro
 
 const columns: Column<LocalProductRow>[] = [
   { key: 'name', label: 'Product', width: '21%' },
-  { key: 'maker', label: 'Brand', width: '11%' },
+  { key: 'maker', label: 'Brand', width: '10%' },
   { key: 'barcode', label: 'Barcode / GTIN', width: '11%', hideBelow: 1100 },
   { key: 'scope', label: 'Scope', width: '9%' },
-  { key: 'household_name', label: 'Household', width: '11%' },
-  { key: 'contributor_name', label: 'Contributed by', width: '11%', hideBelow: 1400 },
+  { key: 'household_name', label: 'Household', width: '10%' },
+  { key: 'contributor_name', label: 'Contributed by', width: '10%', hideBelow: 1400 },
   { key: 'add_count', label: 'Adds', numeric: true, width: '6%' },
   { key: 'created_at', label: 'Added', width: '8%', hideBelow: 1100 },
   // Every other column gave up a point or two to pay for this one; the widths
   // are asserted to total 100% in test/designSystem.ts, which is how the first
   // draft of this row was caught at 112.
-  // The same Edit and Remove pair as the catalog, and the same 145px.
-  { key: 'actions', label: '', width: '12%', align: 'right', minPx: 150 },
+  // The same pair as the catalog and the same reasoning. 12% was too narrow for
+  // the labelled state before any of this -- 132px at a 1401px window against a
+  // 155px need -- so `Remove` was already being clipped there; the three points
+  // come off the columns that could best afford one each.
+  { key: 'actions', label: '', width: '15%', align: 'right', minPx: 80 },
 ]
 
 // ─── writing ─────────────────────────────────────────────────────────────────
@@ -281,10 +285,22 @@ const SEGMENTS = [
         <!-- Remove wears the danger class and Edit does not: correcting a name
              is reversible by correcting it again, and removing is not. -->
         <template #cell-actions="{ row }">
-          <span class="row-actions">
-            <button type="button" class="u-btn" @click="edit(row)">Edit</button>
-            <button type="button" class="u-btn u-btn--danger" @click="removing = row">
-              Remove
+          <!-- The labels are hidden rather than dropped below 1400: see
+               .u-row-actions. `title` says the same word on hover, so nobody
+               loses it. -->
+          <span class="u-row-actions">
+            <button type="button" class="u-btn" title="Edit" @click="edit(row)">
+              <AppIcon class="u-btn__icon" name="square-pen" :size="14" />
+              <span class="u-btn__label">Edit</span>
+            </button>
+            <button
+              type="button"
+              class="u-btn u-btn--danger"
+              title="Remove"
+              @click="removing = row"
+            >
+              <AppIcon class="u-btn__icon" name="trash-2" :size="14" />
+              <span class="u-btn__label">Remove</span>
             </button>
           </span>
         </template>
@@ -331,10 +347,3 @@ const SEGMENTS = [
   </div>
 </template>
 
-<style scoped>
-.row-actions {
-  display: inline-flex;
-  gap: var(--space-2);
-  justify-content: flex-end;
-}
-</style>

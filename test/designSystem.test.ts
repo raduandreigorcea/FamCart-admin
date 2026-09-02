@@ -233,3 +233,55 @@ describe('the filter row above a table', () => {
     expect(offenders).toEqual([])
   })
 })
+
+describe('a row action that has lost its label', () => {
+  const admin = readFileSync('src/styles/admin.css', 'utf8')
+  const views = ['src/views/CatalogView.vue', 'src/views/ContributedView.vue']
+
+  // Two labelled buttons are 145px that do not shrink, inside a column that is a
+  // percentage of a table that does -- which is what forced the catalog wider
+  // than its panel on a narrowing window. Hiding the labels below 1400 is what
+  // lets those tables never scroll sideways; if the rule goes, the floor in
+  // DataTable is sized for icons and the buttons start being clipped again.
+  it('hides the label below 1400 rather than shrinking the button', () => {
+    const at1400 = admin.slice(admin.indexOf('.u-row-actions'))
+    expect(at1400).toMatch(/@media \(max-width: 1400px\)/)
+    expect(at1400).toMatch(/\.u-row-actions \.u-btn__label \{/)
+  })
+
+  // Hidden, not removed. An icon-only control that drops its name is not smaller,
+  // it is broken: `clip` keeps "Remove" in the accessibility tree where
+  // `display: none` would take it out of it.
+  it('keeps the label readable to a screen reader', () => {
+    const rule = admin.slice(admin.indexOf('.u-row-actions .u-btn__label {'))
+    expect(rule).toMatch(/clip: rect\(0, 0, 0, 0\)/)
+    expect(rule.slice(0, rule.indexOf('}'))).not.toMatch(/display:\s*none/)
+  })
+
+  // The first version showed the icon ALONGSIDE the label above 1400, which made
+  // the labelled pair 175px where it had been 131 -- so `Remove` was clipped
+  // between roughly 1400 and 1550, which is the bug the icons were added to fix,
+  // moved rather than removed. Exactly one of the two shows at any width.
+  it('swaps the icon for the label rather than showing both', () => {
+    const from = admin.indexOf('.u-row-actions .u-btn__icon {')
+    expect(from).toBeGreaterThan(-1)
+    // The bare rule, outside any media query, hides it.
+    expect(admin.slice(from, admin.indexOf('}', from))).toMatch(/display:\s*none/)
+    // And the only place it comes back is the band where the label goes away.
+    const narrow = admin.slice(admin.indexOf('@media (max-width: 1400px)', from))
+    expect(narrow.indexOf('.u-row-actions .u-btn__icon')).toBeGreaterThan(-1)
+    expect(narrow.indexOf('.u-row-actions .u-btn__label')).toBeGreaterThan(-1)
+  })
+
+  // The tooltip is how everyone else gets the word back.
+  it('gives every action button a title', () => {
+    for (const path of views) {
+      const source = readFileSync(path, 'utf8')
+      const actions = source.slice(source.indexOf('<span class="u-row-actions">'))
+      const block = actions.slice(0, actions.indexOf('</span>\n        </template>'))
+      const buttons = block.match(/<button[\s\S]*?>/g) ?? []
+      expect(buttons.length).toBeGreaterThan(0)
+      for (const button of buttons) expect(button).toMatch(/title="/)
+    }
+  })
+})
