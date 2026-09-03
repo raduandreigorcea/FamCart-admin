@@ -51,7 +51,7 @@ export interface CatalogProductRow {
   markets: string[]
   quality_tier: string
   /**
-   * These three were declared here before 011 returned them, which was not a
+   * These three were declared here before the RPC returned them, which was not a
    * cosmetic gap: CatalogFormDialog fills its form from this row and submits
    * every field, so while they arrived undefined, correcting a product's name
    * cleared its size and its image.
@@ -72,7 +72,7 @@ export interface CatalogProductRow {
 }
 
 /**
- * Every way the browse RPC can be narrowed, mapping one-to-one onto 011's
+ * Every way the browse RPC can be narrowed, mapping one-to-one onto the RPC's
  * arguments.
  *
  * `null` MEANS "DO NOT ASK" throughout, including for the booleans, where it is

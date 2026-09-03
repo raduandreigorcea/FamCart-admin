@@ -99,7 +99,7 @@ describe('the catalog admin surface', () => {
     resolving()
     await fetchCatalogProducts({ query: '   ' }, signal())
 
-    // Not merely the two that existed before 011. A filter argument that arrived
+    // Not merely the two the RPC began with. A filter argument that arrived
     // as `undefined` would be dropped from the JSON body entirely, and PostgREST
     // resolves the function by which names are present -- so one missing key
     // stops the whole call finding its overload.

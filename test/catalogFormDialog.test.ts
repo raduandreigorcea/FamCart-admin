@@ -136,6 +136,30 @@ describe('CatalogFormDialog', () => {
     expect(submitted(wrapper)).toMatchObject({ name: 'Other', barcode: '4000000000038' })
   })
 
+  // A concept has no barcode, so the field is gone rather than disabled: there
+  // is nothing to type into it that the database would accept.
+  it('hides the barcode on a generic product', async () => {
+    const wrapper = mountDialog(product({ product_type: 'generic', barcodes: [] }))
+    await wrapper.vm.$nextTick()
+
+    const labels = wrapper.findAll('.cf__label').map((l) => l.text())
+    expect(labels).not.toContain('Barcode')
+    expect(wrapper.text()).toContain('A generic product carries no barcode')
+  })
+
+  // Turning a pack into a concept has to take its code with it, in the same
+  // save: the RPC applies the barcode before the type, and refuses the type
+  // change while a code is still attached.
+  it('clears the barcode when a commercial product is saved as generic', async () => {
+    const wrapper = mountDialog(product())
+    await wrapper.vm.$nextTick()
+
+    await wrapper.findAll('select')[0].setValue('generic')
+    await wrapper.find('form').trigger('submit')
+
+    expect(submitted(wrapper)).toMatchObject({ type: 'generic', barcode: '' })
+  })
+
   it('refuses to submit with no name', async () => {
     const wrapper = mountDialog(null)
     await wrapper.vm.$nextTick()

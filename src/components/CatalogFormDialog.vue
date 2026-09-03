@@ -125,7 +125,16 @@ function submit() {
     brand: brand.value.trim() || null,
     category: editing.value ? category.value.trim() : category.value.trim() || null,
     markets: markets.value,
-    barcode: editing.value ? barcode.value.trim() : barcode.value.trim() || null,
+    // A generic product has no barcode at all, so saving one as generic sends
+    // an explicit clear rather than whatever is still in the hidden input. The
+    // RPC applies the barcode before the type, which is what lets a commercial
+    // product carrying a code become a concept in a single save.
+    barcode:
+      type.value === 'generic'
+        ? (editing.value ? '' : null)
+        : editing.value
+          ? barcode.value.trim()
+          : barcode.value.trim() || null,
     baseWeight: Number(baseWeight.value.trim() || '0'),
     quantity: quantity.value.trim() ? Number(quantity.value.trim()) : null,
     quantityUnit: editing.value ? quantityUnit.value : quantityUnit.value || null,
@@ -250,7 +259,7 @@ useModal({
             </span>
           </fieldset>
 
-          <label class="cf__field">
+          <label v-if="type === 'commercial'" class="cf__field">
             <span class="cf__label">Barcode</span>
             <input v-model="barcode" class="cf__input" type="text" inputmode="numeric" :disabled="busy" />
             <span class="cf__hint">
@@ -258,6 +267,14 @@ useModal({
               product already claims is refused; emptying it makes this one unscannable.
             </span>
           </label>
+
+          <!-- Not disabled, gone: there is no such thing as the barcode of a
+               concept. 'Feta' is what somebody writes on a list and no pack is
+               printed with it, so the database refuses the pairing outright. -->
+          <p v-else class="cf__note">
+            A generic product carries no barcode. Switching this one to commercial adds the field
+            back, and saving as generic clears any code it already had.
+          </p>
 
           <label class="cf__field">
             <span class="cf__label">Image address</span>
