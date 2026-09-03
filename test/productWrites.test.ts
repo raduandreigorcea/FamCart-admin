@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 // The three writes an admin can make to the app catalog. Thin wrappers, so the
 // thing worth asserting is the argument NAMES -- PostgREST resolves an RPC by
-// name, and a rename in 010_admin_product_writes.sql with a stale name here is a
+// name, and a rename in the app database's 008_admin.sql with a stale name here is a
 // 404 that mentions neither side.
 //
 // The null-versus-zero distinction on base weight gets its own test because it

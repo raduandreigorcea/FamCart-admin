@@ -54,7 +54,7 @@ export async function fetchContributedProducts(
 }
 
 // ─── writing ─────────────────────────────────────────────────────────────────
-// All three go through RPCs added in 010_admin_product_writes.sql rather than
+// All three go through RPCs in the app database's 008_admin.sql rather than
 // touching the table, because product_catalog has one RLS policy and it is a
 // SELECT: there is no client write path and there should not be one. The RPCs
 // also compute search_text, which a client cannot -- product_search_text() has
