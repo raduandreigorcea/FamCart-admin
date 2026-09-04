@@ -1,30 +1,36 @@
 <script setup lang="ts">
 import { computed, ref, watch, type PropType } from 'vue'
 import { useModal } from '../lib/useModal'
-import type { CatalogProductRow, CatalogProductType } from '../lib/data/catalog'
+import type { CatalogProductRow } from '../lib/data/catalog'
 // The closed vocabularies, shared with the filter drawer -- see catalogVocab.ts
 // for why one more copy of the check constraints is the right trade.
-import { LANGS, MARKETS, CATEGORIES, UNITS, TIERS } from '../lib/catalogVocab'
+import { CATEGORIES, UNITS } from '../lib/catalogVocab'
 
 // Adding and correcting a reference product.
 //
 // Separate from ProductFormDialog rather than one dialog with a mode, because
-// the two tables genuinely differ: this one has a product type, a name language
-// and a market list, and none of those exist on the app database's rows. A
-// single dialog would have been a form where half the fields were conditional on
-// which database it was pointed at, which is the shape that hides a bug.
+// the two tables genuinely differ: this one belongs to a catalog assembled from
+// shop listings and the other to a household's own contributions. A single
+// dialog would have been a form where half the fields were conditional on which
+// database it was pointed at, which is the shape that hides a bug.
+//
+// THE FORM GOT SHORTER when the catalog was rebuilt, and every field that went
+// described something that no longer exists. Product type (generic/commercial),
+// name language, market list, quality tier and editorial weight all belonged to
+// a catalog of concepts imported from Open Food Facts. A product now comes from
+// a shop, in Romanian, and either a shop lists it or none does.
 //
 // WHAT IT WILL NOT LET YOU SET
 //
 // add_count, for the reason it is unwritable everywhere: it is earned usage and
 // half of the generated popularity column, and bump_product_popularity() is the
-// only thing entitled to move it. source_count likewise: it counts corroborating
-// sources rather than expressing an opinion.
+// only thing entitled to move it. listing_count likewise -- it is maintained by
+// a trigger on the listings that actually exist, so an import that fails halfway
+// cannot leave a product claiming four shops stock it.
 //
-// Aliases. A product's names in six languages are derived and imported, and a
-// text box here would be a fourth writer competing with the seed, discovery and
-// the import RPC. Editing the canonical name is enough to be useful; editing the
-// alias set is a different feature with a different shape.
+// The LISTINGS. What a shop calls a product, what it charges and whether it has
+// it are that shop's facts, refreshed by the next scrape. Editing them here
+// would be a value that reverts on a schedule, which is worse than no field.
 //
 // EVERYTHING ELSE IS EDITABLE, the barcode included. It was withheld at first
 // because a scan resolves through that value and nowhere else, so moving one
@@ -44,17 +50,12 @@ const props = defineProps({
 const emit = defineEmits<{
   (e: 'submit', value: {
     name: string
-    type: CatalogProductType
-    lang: string
     brand: string | null
     category: string | null
-    markets: string[]
     barcode: string | null
-    baseWeight: number | null
     quantity: number | null
     quantityUnit: string | null
     imageUrl: string | null
-    qualityTier: string | null
   }): void
   (e: 'cancel'): void
 }>()
@@ -63,17 +64,12 @@ const panel = ref<HTMLElement | null>(null)
 const nameInput = ref<HTMLInputElement | null>(null)
 
 const name = ref('')
-const type = ref<CatalogProductType>('generic')
-const lang = ref('en')
 const brand = ref('')
 const category = ref('')
-const markets = ref<string[]>([])
 const barcode = ref('')
-const baseWeight = ref('')
 const quantity = ref('')
 const quantityUnit = ref('')
 const imageUrl = ref('')
-const qualityTier = ref('')
 
 const editing = computed(() => props.product !== null)
 
@@ -85,26 +81,15 @@ watch(
     if (!isOpen) return
     const p = props.product
     name.value = p?.canonical_name ?? ''
-    type.value = p?.product_type ?? 'generic'
-    lang.value = p?.name_lang ?? 'en'
     brand.value = p?.brand ?? ''
     category.value = p?.category ?? ''
-    markets.value = [...(p?.markets ?? [])]
     barcode.value = p?.barcodes[0] ?? ''
-    baseWeight.value = p ? String(p.base_weight) : ''
     quantity.value = p?.quantity != null ? String(p.quantity) : ''
     quantityUnit.value = p?.quantity_unit ?? ''
     imageUrl.value = p?.image_url ?? ''
-    qualityTier.value = p?.quality_tier ?? ''
   },
   { immediate: true },
 )
-
-function toggleMarket(code: string) {
-  markets.value = markets.value.includes(code)
-    ? markets.value.filter((m) => m !== code)
-    : [...markets.value, code]
-}
 
 const submittable = computed(() => name.value.trim().length > 0 && !props.busy)
 
@@ -120,26 +105,12 @@ function submit() {
   // create RPC reads an empty barcode as no barcode.
   emit('submit', {
     name: name.value.trim(),
-    type: type.value,
-    lang: lang.value,
     brand: brand.value.trim() || null,
     category: editing.value ? category.value.trim() : category.value.trim() || null,
-    markets: markets.value,
-    // A generic product has no barcode at all, so saving one as generic sends
-    // an explicit clear rather than whatever is still in the hidden input. The
-    // RPC applies the barcode before the type, which is what lets a commercial
-    // product carrying a code become a concept in a single save.
-    barcode:
-      type.value === 'generic'
-        ? (editing.value ? '' : null)
-        : editing.value
-          ? barcode.value.trim()
-          : barcode.value.trim() || null,
-    baseWeight: Number(baseWeight.value.trim() || '0'),
+    barcode: editing.value ? barcode.value.trim() : barcode.value.trim() || null,
     quantity: quantity.value.trim() ? Number(quantity.value.trim()) : null,
     quantityUnit: editing.value ? quantityUnit.value : quantityUnit.value || null,
     imageUrl: editing.value ? imageUrl.value.trim() : imageUrl.value.trim() || null,
-    qualityTier: qualityTier.value || null,
   })
 }
 
@@ -184,46 +155,23 @@ useModal({
             />
           </label>
 
-          <div class="cf__row">
-            <label class="cf__field cf__field--grow">
-              <span class="cf__label">Type</span>
-              <select v-model="type" class="cf__input" :disabled="busy">
-                <option value="generic">Generic — a concept, no brand</option>
-                <option value="commercial">Commercial — off a shelf</option>
-              </select>
-            </label>
-
-            <label class="cf__field">
-              <span class="cf__label">Name language</span>
-              <select v-model="lang" class="cf__input" :disabled="busy">
-                <option v-for="code in LANGS" :key="code" :value="code">{{ code }}</option>
-              </select>
-            </label>
-          </div>
-
           <label class="cf__field">
             <span class="cf__label">Brand</span>
-            <input v-model="brand" class="cf__input" type="text" maxlength="60" :disabled="busy" />
-            <span class="cf__hint">Null is ordinary. A banana has no brand.</span>
+            <input v-model="brand" class="cf__input" type="text" maxlength="80" :disabled="busy" />
+            <span class="cf__hint">Null is ordinary. A banana has no brand, and Auchan files loose produce as "Non-brand", which is stored as nothing.</span>
           </label>
 
-          <div class="cf__row">
-            <label class="cf__field cf__field--grow">
-              <span class="cf__label">Category</span>
-              <select v-model="category" class="cf__input" :disabled="busy">
-                <option value="">None</option>
-                <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
-              </select>
-            </label>
-
-            <label class="cf__field">
-              <span class="cf__label">Record tier</span>
-              <select v-model="qualityTier" class="cf__input" :disabled="busy">
-                <option value="">Unchanged</option>
-                <option v-for="t in TIERS" :key="t" :value="t">{{ t }}</option>
-              </select>
-            </label>
-          </div>
+          <label class="cf__field">
+            <span class="cf__label">Category</span>
+            <select v-model="category" class="cf__input" :disabled="busy">
+              <option value="">None</option>
+              <option v-for="c in CATEGORIES" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <span class="cf__hint">
+              Often empty, and honestly so: only Auchan states a department, and a
+              guessed shelf is invisible where a missing one is findable.
+            </span>
+          </label>
 
           <div class="cf__row">
             <label class="cf__field cf__field--grow">
@@ -240,26 +188,7 @@ useModal({
             </label>
           </div>
 
-          <fieldset class="cf__field cf__markets" :disabled="busy">
-            <legend class="cf__label">Markets</legend>
-            <div class="cf__chips">
-              <button
-                v-for="code in MARKETS"
-                :key="code"
-                type="button"
-                class="cf__chip"
-                :class="{ 'cf__chip--on': markets.includes(code) }"
-                :aria-pressed="markets.includes(code)"
-                @click="toggleMarket(code)"
-              >{{ code }}</button>
-            </div>
-            <span class="cf__hint">
-              A relevance signal, not a filter: a product from the next country is still
-              suggested, just lower. Empty means unknown, which is not the same as sold nowhere.
-            </span>
-          </fieldset>
-
-          <label v-if="type === 'commercial'" class="cf__field">
+          <label class="cf__field">
             <span class="cf__label">Barcode</span>
             <input v-model="barcode" class="cf__input" type="text" inputmode="numeric" :disabled="busy" />
             <span class="cf__hint">
@@ -268,28 +197,16 @@ useModal({
             </span>
           </label>
 
-          <!-- Not disabled, gone: there is no such thing as the barcode of a
-               concept. 'Feta' is what somebody writes on a list and no pack is
-               printed with it, so the database refuses the pairing outright. -->
-          <p v-else class="cf__note">
-            A generic product carries no barcode. Switching this one to commercial adds the field
-            back, and saving as generic clears any code it already had.
-          </p>
-
           <label class="cf__field">
             <span class="cf__label">Image address</span>
             <input v-model="imageUrl" class="cf__input" type="url" :disabled="busy" />
             <span class="cf__hint">https:// only, under 500 characters.</span>
           </label>
 
-          <label class="cf__field">
-            <span class="cf__label">Base weight</span>
-            <input v-model="baseWeight" class="cf__input" type="number" min="0" :disabled="busy" />
-            <span class="cf__hint">
-              The editorial thumb on the scale. Real adds are counted separately and cannot be
-              set from here.
-            </span>
-          </label>
+          <p class="cf__note">
+            A product created here has no listing, so no shop is selling it. That is a
+            legitimate thing to want, and it also means the next scrape will not sweep it.
+          </p>
 
           <p v-if="error" class="cf__error">{{ error }}</p>
 

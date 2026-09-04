@@ -54,9 +54,9 @@ const stubs = {
     props: ['open', 'modelValue'],
     emits: ['update:modelValue', 'close'],
     template: `<div v-if="open" class="drawer">
-      <button class="drawer__generic" @click="$emit('update:modelValue', { ...modelValue, type: 'generic' })">g</button>
-      <button class="drawer__anytype" @click="$emit('update:modelValue', { ...modelValue, type: null })">any</button>
-      <button class="drawer__ro" @click="$emit('update:modelValue', { ...modelValue, market: 'RO' })">ro</button>
+      <button class="drawer__shop" @click="$emit('update:modelValue', { ...modelValue, retailer: 'lidl' })">shop</button>
+      <button class="drawer__anyshop" @click="$emit('update:modelValue', { ...modelValue, retailer: null })">any</button>
+      <button class="drawer__dairy" @click="$emit('update:modelValue', { ...modelValue, category: 'dairy' })">d</button>
       <button class="drawer__nobarcode" @click="$emit('update:modelValue', { ...modelValue, hasBarcode: false })">nb</button>
       <button class="drawer__close" @click="$emit('close')">x</button>
     </div>`,
@@ -72,7 +72,7 @@ const stubs = {
     template: `<table><tbody>
       <tr v-for="r in rows" :key="r[rowKey]" class="row">
         <td><slot name="cell-canonical_name" :row="r" /></td>
-        <td><slot name="cell-markets" :row="r" /></td>
+        <td><slot name="cell-retailers" :row="r" /></td>
         <td><slot name="cell-popularity" :row="r" /></td>
         <td><slot name="cell-actions" :row="r" /></td>
       </tr>
@@ -85,7 +85,7 @@ const stubs = {
     emits: ['submit', 'cancel'],
     template: `<div v-if="open" class="form" :data-editing="product ? product.id : ''">
       <em class="form__error">{{ error }}</em>
-      <button class="form__save" @click="$emit('submit', { name: 'Typed', type: 'generic', lang: 'en', brand: null, category: null, markets: [], barcode: null, baseWeight: 0 })">save</button>
+      <button class="form__save" @click="$emit('submit', { name: 'Typed', brand: null, category: null, barcode: null, quantity: null, quantityUnit: null, imageUrl: null })">save</button>
       <button class="form__cancel" @click="$emit('cancel')">cancel</button>
     </div>`,
   },
@@ -104,24 +104,22 @@ const stubs = {
 function row(over: Record<string, unknown> = {}) {
   return {
     id: 'c-1',
-    product_type: 'generic',
     canonical_name: 'Rice Cakes',
-    name_lang: 'en',
     brand: null,
     category: null,
-    markets: ['RO', 'DE'],
-    quality_tier: 'B',
+    retailers: ['auchan', 'lidl'],
+    min_price: 4.99,
+    currency: 'RON',
+    available: true,
+    listing_count: 2,
+    merge_key: 'x|y|-',
     quantity: null,
     quantity_unit: null,
     image_url: null,
-    base_weight: 3,
     add_count: 0,
     popularity: 3,
-    source_count: 1,
-    sources: ['admin'],
     barcodes: [],
-    alias_count: 0,
-    created_at: '2026-08-25T09:00:00.000Z',
+    first_seen_at: '2026-08-25T09:00:00.000Z',
     total_count: 444,
     ...over,
   }
@@ -156,17 +154,17 @@ describe('CatalogView', () => {
     expect(lastArgs().offset).toBe(0)
   })
 
-  it('sends the chosen type to the RPC, and drops it again for Any', async () => {
+  it('sends the chosen shop to the RPC, and drops it again for Any', async () => {
     const wrapper = await mounted()
 
     await wrapper.find('.filters-btn').trigger('click')
-    await wrapper.find('.drawer__generic').trigger('click')
+    await wrapper.find('.drawer__shop').trigger('click')
     await flush()
-    expect(lastArgs().type).toBe('generic')
+    expect(lastArgs().retailer).toBe('lidl')
 
-    await wrapper.find('.drawer__anytype').trigger('click')
+    await wrapper.find('.drawer__anyshop').trigger('click')
     await flush()
-    expect(lastArgs().type).toBeNull()
+    expect(lastArgs().retailer).toBeNull()
   })
 
   it('returns to the first page when a filter changes', async () => {
@@ -177,7 +175,7 @@ describe('CatalogView', () => {
     expect(lastArgs().offset).toBe(25)
 
     await wrapper.find('.filters-btn').trigger('click')
-    await wrapper.find('.drawer__generic').trigger('click')
+    await wrapper.find('.drawer__shop').trigger('click')
     await flush()
     expect(lastArgs().offset).toBe(0)
   })
@@ -188,10 +186,10 @@ describe('CatalogView', () => {
     const wrapper = await mounted()
 
     await wrapper.find('.filters-btn').trigger('click')
-    await wrapper.find('.drawer__ro').trigger('click')
+    await wrapper.find('.drawer__dairy').trigger('click')
     await flush()
 
-    expect(lastArgs().market).toBe('RO')
+    expect(lastArgs().category).toBe('dairy')
   })
 
   // false, not absent. The two are the same falsy value in JavaScript and
@@ -215,49 +213,49 @@ describe('CatalogView', () => {
     const wrapper = await mounted()
 
     await wrapper.find('.filters-btn').trigger('click')
-    await wrapper.find('.drawer__ro').trigger('click')
+    await wrapper.find('.drawer__dairy').trigger('click')
     await wrapper.find('.drawer__nobarcode').trigger('click')
     await flush()
 
     // Substring, not equality: each chip also carries an icon and the screen
     // reader's "Remove filter".
     const labels = wrapper.findAll('.chips__item').map((c) => c.text())
-    expect(labels.some((l) => l.includes('Market: Romania'))).toBe(true)
+    expect(labels.some((l) => l.includes('Category: dairy'))).toBe(true)
     expect(labels.some((l) => l.includes('No barcode'))).toBe(true)
 
     await wrapper.findAll('.chips__item')[0].trigger('click')
     await flush()
-    expect(lastArgs().market).toBeUndefined()
+    expect(lastArgs().category).toBeUndefined()
     expect(lastArgs().hasBarcode).toBe(false)
   })
 
   // Type predates the drawer and used to sit outside it as a segmented control:
   // no chip, not in the count, and untouched by Clear all, so "2 filters" could
   // sit above a table narrowed by three things. It is an ordinary key now.
-  it('counts and names the type filter alongside the rest', async () => {
+  it('counts and names the shop filter alongside the rest', async () => {
     const wrapper = await mounted()
 
     await wrapper.find('.filters-btn').trigger('click')
-    await wrapper.find('.drawer__generic').trigger('click')
+    await wrapper.find('.drawer__shop').trigger('click')
     await flush()
 
-    expect(lastArgs().type).toBe('generic')
+    expect(lastArgs().retailer).toBe('lidl')
     expect(wrapper.find('.filters-btn__count').text()).toBe('1')
-    expect(wrapper.findAll('.chips__item').map((c) => c.text())[0]).toContain('Generic')
+    expect(wrapper.findAll('.chips__item').map((c) => c.text())[0]).toContain('Shop: Lidl')
   })
 
-  it('drops the type along with the rest when everything is cleared', async () => {
+  it('drops the shop along with the rest when everything is cleared', async () => {
     const wrapper = await mounted()
 
     await wrapper.find('.filters-btn').trigger('click')
-    await wrapper.find('.drawer__generic').trigger('click')
+    await wrapper.find('.drawer__shop').trigger('click')
     await flush()
-    expect(lastArgs().type).toBe('generic')
+    expect(lastArgs().retailer).toBe('lidl')
 
     await wrapper.find('.chips__clear').trigger('click')
     await flush()
 
-    expect(lastArgs().type).toBeUndefined()
+    expect(lastArgs().retailer).toBeUndefined()
     expect(wrapper.findAll('.chips__item')).toHaveLength(0)
   })
 
@@ -265,7 +263,7 @@ describe('CatalogView', () => {
     const wrapper = await mounted()
 
     await wrapper.find('.filters-btn').trigger('click')
-    await wrapper.find('.drawer__ro').trigger('click')
+    await wrapper.find('.drawer__dairy').trigger('click')
     await wrapper.find('.drawer__nobarcode').trigger('click')
     await flush()
 
@@ -273,7 +271,7 @@ describe('CatalogView', () => {
     await flush()
 
     expect(wrapper.findAll('.chips__item')).toHaveLength(0)
-    expect(lastArgs().market).toBeUndefined()
+    expect(lastArgs().category).toBeUndefined()
     expect(lastArgs().hasBarcode).toBeUndefined()
   })
 
@@ -287,7 +285,7 @@ describe('CatalogView', () => {
     expect(lastArgs().offset).toBe(25)
 
     await wrapper.find('.filters-btn').trigger('click')
-    await wrapper.find('.drawer__ro').trigger('click')
+    await wrapper.find('.drawer__dairy').trigger('click')
     await flush()
     expect(lastArgs().offset).toBe(0)
   })
@@ -333,32 +331,33 @@ describe('CatalogView', () => {
   // The only place the blast radius is stated. A generic confirmation would make
   // this read like the app-database delete, which affects one database and no
   // aliases.
-  it('says what a removal actually costs, including the aliases', async () => {
-    const wrapper = await mounted([row({ alias_count: 5, barcodes: ['5949000000017'] })])
+  it('says what a removal actually costs, including every shop listing', async () => {
+    const wrapper = await mounted([row({ listing_count: 5, barcodes: ['5949000000017'] })])
 
     await wrapper.findAll('.row .u-btn')[1].trigger('click')
     const message = wrapper.find('.confirm__message').text()
 
     expect(message).toContain('production and development')
-    expect(message).toContain('5 aliases')
+    expect(message).toContain('5 of them')
     expect(message).toContain('barcode')
   })
 
   // The bar this replaced scaled to the page maximum, and the page is ordered by
   // popularity, so every row drew at 98-100%. What is actually worth seeing is
-  // how much of the number was earned rather than set.
+  // how much of the number was earned by people rather than granted by shelf
+  // presence -- five points per shop that carries it, plus one per add.
   it('says where a popularity came from rather than drawing a flat bar', async () => {
     const wrapper = await mounted([
-      row({ id: 'c-1', popularity: 102, base_weight: 100, add_count: 2 }),
-      row({ id: 'c-2', popularity: 100, base_weight: 100, add_count: 0 }),
-      row({ id: 'c-3', popularity: 4, base_weight: 0, add_count: 4 }),
+      row({ id: 'c-1', popularity: 12, listing_count: 2, add_count: 2 }),
+      row({ id: 'c-2', popularity: 10, listing_count: 2, add_count: 0 }),
+      row({ id: 'c-3', popularity: 4, listing_count: 0, add_count: 4 }),
     ])
 
     const splits = wrapper.findAll('.pop__split').map((e) => e.text())
-    expect(splits).toEqual(['2 earned', 'editorial only', 'all earned'])
+    expect(splits).toEqual(['2 earned', '2 shops', '4 earned'])
 
-    // Only the rows with real adds take any colour; most of a page is editorial
-    // and saying so in colour twenty-five times is noise.
+    // Only the rows with real adds take any colour; most of a page is shelf
+    // presence and saying so in colour twenty-five times is noise.
     expect(wrapper.findAll('.pop__split--earned')).toHaveLength(2)
   })
 

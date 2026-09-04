@@ -6,7 +6,6 @@ import DataTable from '../components/DataTable.vue'
 import TablePager from '../components/TablePager.vue'
 import FilterBar from '../components/FilterBar.vue'
 import StateBlock from '../components/StateBlock.vue'
-import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CatalogFormDialog from '../components/CatalogFormDialog.vue'
@@ -24,7 +23,7 @@ import {
   type CatalogDraft,
   type CatalogFilters,
 } from '../lib/data/catalog'
-import { MARKET_NAMES, LANG_NAMES, sourceLabel } from '../lib/catalogVocab'
+import { retailerLabel } from '../lib/catalogVocab'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 import type { Column } from '../lib/uiTypes'
 
@@ -100,19 +99,20 @@ const chips = computed<{ key: keyof CatalogFilters; label: string }[]>(() => {
   const f = filters.value
   const out: { key: keyof CatalogFilters; label: string }[] = []
 
-  if (f.type) out.push({ key: 'type', label: f.type === 'generic' ? 'Generic' : 'Commercial' })
-  if (f.market) out.push({ key: 'market', label: `Market: ${MARKET_NAMES[f.market] ?? f.market}` })
-  if (f.tier) out.push({ key: 'tier', label: `Record: tier ${f.tier}` })
+  if (f.retailer) out.push({ key: 'retailer', label: `Shop: ${retailerLabel(f.retailer)}` })
   if (f.category) out.push({ key: 'category', label: `Category: ${f.category}` })
-  if (f.source) out.push({ key: 'source', label: `Source: ${sourceLabel(f.source)}` })
-  if (f.lang) out.push({ key: 'lang', label: `Language: ${LANG_NAMES[f.lang] ?? f.lang}` })
   if (f.hasBarcode != null) out.push({ key: 'hasBarcode', label: has('barcode', f.hasBarcode) })
   if (f.hasBrand != null) out.push({ key: 'hasBrand', label: has('brand', f.hasBrand) })
-  if (f.hasMarket != null) out.push({ key: 'hasMarket', label: has('market', f.hasMarket) })
+  if (f.hasListing != null) {
+    out.push({ key: 'hasListing', label: f.hasListing ? 'Listed somewhere' : 'Listed nowhere' })
+  }
+  if (f.available != null) {
+    out.push({ key: 'available', label: f.available ? 'In stock' : 'Out of stock everywhere' })
+  }
   if (f.hasImage != null) out.push({ key: 'hasImage', label: has('image', f.hasImage) })
   if (f.hasQuantity != null) out.push({ key: 'hasQuantity', label: has('size', f.hasQuantity) })
   if (f.earned != null) {
-    out.push({ key: 'earned', label: f.earned ? 'Added by households' : 'Editorial weight only' })
+    out.push({ key: 'earned', label: f.earned ? 'Added by households' : 'Never added' })
   }
   if (f.addedWithinDays != null) {
     out.push({
@@ -160,20 +160,21 @@ const error = computed(() => (products.error.value ? describeError(products.erro
 // and the wrapper picked up a few pixels of scroll. The three per cent comes off
 // Product, which had the most to spare.
 const columns: Column<CatalogProductRow>[] = [
-  { key: 'canonical_name', label: 'Product', width: '22%' },
-  { key: 'product_type', label: 'Type', width: '9%' },
-  { key: 'quality_tier', label: 'Record', width: '7%', hideBelow: 1400 },
+  { key: 'canonical_name', label: 'Product', width: '32%' },
+  // Which shops carry it. This one column replaced Type, Record and Source at
+  // once, because all three described a catalog of imported concepts: there is
+  // no generic/commercial split any more, no completeness grade, and provenance
+  // IS the shop.
+  //
   // Three pills and a +N measure 142px with the cell's padding and no longer
-  // shrink (see .mk__code). Below 1400 there is not that much to give it without
-  // taking it off Product, so it leaves at 1400 rather than at 1100 -- which is
-  // also where it was rendering one letter per line.
-  { key: 'markets', label: 'Markets', width: '14%', hideBelow: 1400, minPx: 142 },
-  { key: 'sources', label: 'Source', width: '12%' },
+  // shrink (see .mk__code), so the floor stays.
+  { key: 'retailers', label: 'Shops', width: '18%', minPx: 142 },
+  { key: 'min_price', label: 'From', numeric: true, width: '10%', hideBelow: 1400 },
   { key: 'popularity', label: 'Popularity', numeric: true, width: '12%' },
   // 9%, because at 8 the column is 63px inside its padding and "4 days ago"
   // needs 66 -- so it wrapped to two lines in the 1400 to 1450 band and nowhere
   // else, which is the most confusing kind of layout bug to be told about.
-  { key: 'created_at', label: 'Added', width: '9%', hideBelow: 1100 },
+  { key: 'first_seen_at', label: 'First seen', width: '10%', hideBelow: 1100 },
   // 15%, and a floor of 80.
   //
   // The floor is the ICON pair (72px plus the cell's own padding), because below
@@ -185,7 +186,7 @@ const columns: Column<CatalogProductRow>[] = [
   // and 14% of the narrowest panel that ever shows labels (1099px at a 1401px
   // window) is 154 -- one pixel short, which is how `Remove` gets clipped again.
   // The point came off Product, which had the most to spare.
-  { key: 'actions', label: '', width: '15%', align: 'right', minPx: 80 },
+  { key: 'actions', label: '', width: '18%', align: 'right', minPx: 80 },
 ]
 
 // ─── how popularity is drawn ─────────────────────────────────────────────────
@@ -201,38 +202,26 @@ const columns: Column<CatalogProductRow>[] = [
 // part anyway: how much of this number was set by hand and how much was earned
 // by households actually adding the thing.
 function earned(row: CatalogProductRow): string {
-  if (row.add_count === 0) return 'editorial only'
-  if (row.base_weight === 0) return 'all earned'
+  if (row.add_count === 0) return `${row.listing_count} shop${row.listing_count === 1 ? '' : 's'}`
   return `${row.add_count} earned`
 }
 
-// The shortened provenance labels moved to catalogVocab.ts when the filter
-// drawer needed the same six; the distinction they draw is unchanged, and it is
-// not which upstream catalog a row came from but WHETHER A PERSON PUT IT THERE.
-// The tone is a table concern and stays here.
-const SOURCE_TONES: Record<string, 'good' | 'accent' | 'idle'> = {
-  admin: 'accent',
-  curated: 'good',
-  user: 'good',
-}
-
-function sourceTone(name: string): 'good' | 'accent' | 'idle' {
-  return SOURCE_TONES[name] ?? 'idle'
-}
-
-// Three, then a count. A product sold in nine markets is not more informative
-// for listing all nine in a 13% column; it is just a cell that wraps.
-const MARKETS_SHOWN = 3
+// Three, then a count. There are only three shops today, so the overflow never
+// fires -- it is here because a fourth is one line in a registry, and a cell
+// that wraps the day somebody adds one is a worse discovery than a +1.
+const RETAILERS_SHOWN = 3
 
 // What the name cell says on hover, which is where the two counts that lost
 // their columns went.
 function nameTitle(row: CatalogProductRow): string {
   const bits = [row.canonical_name]
-  if (row.alias_count > 0) {
-    bits.push(`${row.alias_count} alias${row.alias_count === 1 ? '' : 'es'}`)
-  }
   if (row.barcodes.length > 1) bits.push(`${row.barcodes.length} barcodes`)
-  bits.push(`named in ${row.name_lang}`)
+  if (row.listing_count > 0) {
+    bits.push(`${row.listing_count} listing${row.listing_count === 1 ? '' : 's'}`)
+  }
+  // The identity the dedupe rule actually used. Two rows that look like the same
+  // product are only ever explicable by comparing these.
+  bits.push(row.merge_key)
   return bits.join(' · ')
 }
 
@@ -309,9 +298,9 @@ const removalMessage = computed(() => {
   const parts = [
     'This is the shared reference catalog, so it disappears for every household of production and development at once.',
   ]
-  if (row.alias_count > 0) {
+  if (row.listing_count > 0) {
     parts.push(
-      `Its ${row.alias_count} alias${row.alias_count === 1 ? '' : 'es'} go with it, which is how it is found in languages it is not named in.`,
+      `Every shop's listing of it goes too -- ${row.listing_count} of them, with their prices. The next scrape will simply create it again, which is usually the right answer to a wrong row.`,
     )
   }
   if (row.barcodes.length > 0) {
@@ -423,66 +412,48 @@ const removalMessage = computed(() => {
             </span>
           </span>
         </template>
-        <template #cell-product_type="{ row }">
-          <StatusPill
-            :tone="row.product_type === 'commercial' ? 'idle' : 'good'"
-            :label="row.product_type === 'commercial' ? 'Commercial' : 'Generic'"
-            :dot="false"
-          />
-        </template>
-        <!-- The catalog's own judgement of how complete the record is, which it
-             scores by different rules for the two types: a generic with no
-             barcode is correct, a commercial one with neither barcode nor brand
-             cannot be identified at all. -->
-        <template #cell-quality_tier="{ row }">
-          <span
-            class="tier"
-            :class="`tier--${row.quality_tier.toLowerCase()}`"
-            :title="`Record completeness: tier ${row.quality_tier}`"
-          >{{ row.quality_tier }}</span>
-        </template>
-        <!-- Empty is not "sold nowhere", it is unknown, and a great many honest
-             records have no country metadata at all. -->
-        <template #cell-markets="{ row }">
-          <span v-if="row.markets.length" class="mk">
-            <span v-for="code in row.markets.slice(0, MARKETS_SHOWN)" :key="code" class="mk__code">
+        <!-- Empty means no shop currently lists it: created here by hand, or
+             dropped by every shop. Neither is deleted, and the next scrape may
+             put it back. -->
+        <template #cell-retailers="{ row }">
+          <span v-if="row.retailers.length" class="mk">
+            <span v-for="code in row.retailers.slice(0, RETAILERS_SHOWN)" :key="code" class="mk__code">
               {{ code }}
             </span>
             <span
-              v-if="row.markets.length > MARKETS_SHOWN"
+              v-if="row.retailers.length > RETAILERS_SHOWN"
               class="mk__more"
-              :title="row.markets.join(' ')"
-            >+{{ row.markets.length - MARKETS_SHOWN }}</span>
+              :title="row.retailers.join(' ')"
+            >+{{ row.retailers.length - RETAILERS_SHOWN }}</span>
           </span>
-          <span v-else class="u-muted" title="Unknown, which is not the same as sold nowhere">--</span>
+          <span
+            v-else
+            class="u-muted"
+            title="No shop currently lists it. Not deleted -- the next scrape may bring it back."
+          >--</span>
         </template>
-        <!-- Which writer put this row here. 'admin' is one written from this
-             dashboard, and is the one the seed's prune will never remove. -->
-        <template #cell-sources="{ row }">
-          <span v-if="row.sources.length" class="src">
-            <StatusPill
-              v-for="name in row.sources"
-              :key="name"
-              :tone="sourceTone(name)"
-              :label="sourceLabel(name)"
-              :dot="false"
-              :title="name"
-            />
-          </span>
+        <!-- Cheapest across the shops that have it IN STOCK. Empty when nobody
+             does, or when the shops carrying it publish no price: Lidl does
+             exactly that for anything out of stock. -->
+        <template #cell-min_price="{ row }">
+          <span v-if="row.min_price != null">{{ row.min_price }} {{ row.currency }}</span>
           <span v-else class="u-muted">--</span>
         </template>
         <!-- The number, and where it came from. See `earned`. -->
         <template #cell-popularity="{ row }">
-          <span class="pop" :title="`base weight ${row.base_weight} + ${row.add_count} adds`">
+          <span
+            class="pop"
+            :title="`${row.listing_count} shop listing(s) x 5 + ${row.add_count} adds`"
+          >
             <span class="pop__num u-num">{{ row.popularity }}</span>
             <span class="pop__split" :class="{ 'pop__split--earned': row.add_count > 0 }">
               {{ earned(row) }}
             </span>
           </span>
         </template>
-        <template #cell-created_at="{ row }">
-          <span class="u-muted" :title="formatDateTime(String(row.created_at))">
-            {{ formatRelative(String(row.created_at)) }}
+        <template #cell-first_seen_at="{ row }">
+          <span class="u-muted" :title="formatDateTime(String(row.first_seen_at))">
+            {{ formatRelative(String(row.first_seen_at)) }}
           </span>
         </template>
         <template #cell-actions="{ row }">
