@@ -1,12 +1,11 @@
 // The closed vocabularies the reference catalog holds, in one place.
 //
-// Every list here is a check constraint in the catalog project's 002_products.sql
+// Every list here is a check constraint in the catalog project's 002_catalog.sql
 // restated in TypeScript, and each one is validated a second time by the admin
 // RPCs before it can reach that constraint. So this file is a THIRD copy, and
 // the reason it is worth having rather than avoiding is that the alternative was
 // a fourth: CatalogFormDialog owned these lists privately, and the filter drawer
-// needs the same eleven markets, the same seventeen categories and the same six
-// languages to offer them.
+// needs the same categories and the same units to offer them.
 //
 // The failure mode if one of these drifts is quiet in one direction and loud in
 // the other. A value here that the database does not accept comes back as a
@@ -15,14 +14,19 @@
 // and a product that can never be given that category, with nothing anywhere
 // reporting it. That asymmetry is why these are listed rather than derived from
 // whatever the current page of rows happens to contain.
-
-/** The six languages FamCart's interface speaks, so the six a name can be in. */
-export const LANGS = ['en', 'de', 'es', 'ro', 'fr', 'it']
+//
+// WHAT WENT WHEN THE CATALOG WAS REBUILT (2026-09-04). LANGS, TIERS and SOURCES
+// described a catalog imported from Open Food Facts: a name per language, a
+// completeness grade, and which upstream food database a row came from. The
+// catalog is now built from what real shops list, so a product has one name in
+// one language, no grade, and a set of RETAILERS rather than a source. Those
+// three lists are gone rather than emptied -- an empty vocabulary is a filter
+// that renders and does nothing.
 
 /**
  * The eleven the check constraint accepts, which are the eleven
- * src/lib/region.ts can emit. A code outside this list matches no product at
- * all and looks exactly like a ranking bug.
+ * src/lib/region.ts can emit. Kept because a RETAILER has a country, even though
+ * a product no longer has a market list of its own.
  */
 export const MARKETS = ['RO', 'MD', 'DE', 'AT', 'CH', 'ES', 'FR', 'BE', 'IT', 'GB', 'IE']
 
@@ -36,42 +40,23 @@ export const CATEGORIES = [
   'health', 'pet', 'home', 'other',
 ]
 
-/** Quantity units, which move with a quantity or not at all. */
-export const UNITS = ['g', 'kg', 'ml', 'l', 'cl', 'piece']
-
-/** How complete a record is: A excellent, B good, C usable but incomplete. */
-export const TIERS = ['A', 'B', 'C']
-
 /**
- * Provenance, which is a licensing fact here rather than bookkeeping -- Open
- * Food Facts is ODbL. 'admin' is a row written from this dashboard and is
- * deliberately not 'curated', because catalog_prune_curated() deletes curated
- * rows the version-controlled seed does not name.
+ * Quantity units, which move with a quantity or not at all.
+ *
+ * Five now, not six: 'cl' and 'piece' are gone. The catalog stores centilitres
+ * as millilitres (there is no cl in the constraint) and counts as 'buc', which
+ * is what Romanian shelf labels say.
  */
-export const SOURCES = [
-  'curated', 'openfoodfacts', 'openproductsfacts', 'openbeautyfacts', 'user', 'admin',
-]
+export const UNITS = ['g', 'kg', 'ml', 'l', 'buc']
 
-/**
- * Provenance, shortened and toned for a table cell. 'openfoodfacts' is thirteen
- * lowercase characters that push every other column around, and the distinction
- * that matters when reading down a column is not which upstream catalog it was
- * but WHETHER A PERSON PUT IT THERE.
- */
-export const SOURCE_LABELS: Record<string, string> = {
-  admin: 'Admin',
-  curated: 'Seed',
-  user: 'User',
-  openfoodfacts: 'OFF',
-  openproductsfacts: 'OPF',
-  openbeautyfacts: 'OBF',
+/** The shops the catalog is built from, matching catalog/src/core/registry.ts. */
+export const RETAILERS = ['auchan', 'carrefour', 'lidl']
+
+/** Sentence case for a slug, for a table cell or a select. */
+export function retailerLabel(slug: string): string {
+  return slug.charAt(0).toUpperCase() + slug.slice(1)
 }
 
-export function sourceLabel(name: string): string {
-  return SOURCE_LABELS[name] ?? name
-}
-
-/** Full country names, for a filter select where two letters are a guess. */
 export const MARKET_NAMES: Record<string, string> = {
   RO: 'Romania',
   MD: 'Moldova',
@@ -84,14 +69,4 @@ export const MARKET_NAMES: Record<string, string> = {
   IT: 'Italy',
   GB: 'United Kingdom',
   IE: 'Ireland',
-}
-
-/** Full language names, same reason. */
-export const LANG_NAMES: Record<string, string> = {
-  en: 'English',
-  de: 'German',
-  es: 'Spanish',
-  ro: 'Romanian',
-  fr: 'French',
-  it: 'Italian',
 }
