@@ -24,6 +24,7 @@ import {
   type RateLimitRow,
   type TableHealth,
 } from '../lib/data/health'
+import { fetchCatalogStats, catalogConfigured } from '../lib/data/catalog'
 import { appTarget, catalogTarget, clerkIssuer } from '../lib/supabase'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange, sinceIso } from '../lib/timeRange'
 import type { AdminEventRow } from '../lib/data/types'
@@ -68,6 +69,44 @@ const events = useQuery(
 )
 const limits = useQuery((signal) => fetchRateLimits(signal))
 
+// ─── the scrapers ────────────────────────────────────────────────────────────
+// THE FAILURE THIS PANEL EXISTS FOR REPORTS NOTHING. A shop changes its markup
+// or moves an endpoint, the scraper keeps completing, and the catalog quietly
+// stops growing. There is no error anywhere -- the run is green and the number
+// is smaller.
+//
+// So the number is shown next to the one before it. A delta is the only thing
+// that distinguishes "read the whole shop" from "read a tenth of it and said it
+// was fine".
+const scrapes = useQuery((signal) => fetchCatalogStats(signal), { enabled: () => catalogConfigured() })
+
+/** How a run's verdict should read. `partial` is not a failure and not a success:
+ *  it imported what it saw and refused to conclude anything about the rest. */
+function runTone(status: string | undefined): 'good' | 'warn' | 'bad' | 'idle' {
+  if (status === 'completed') return 'good'
+  if (status === 'partial') return 'warn'
+  if (status === 'failed') return 'bad'
+  if (status === 'running') return 'idle'
+  return 'idle'
+}
+
+function runLabel(status: string | undefined): string {
+  if (status === 'completed') return 'Completed'
+  if (status === 'partial') return 'Refused to sweep'
+  if (status === 'failed') return 'Failed'
+  if (status === 'running') return 'Running'
+  return 'Never run'
+}
+
+/** A shop whose last run found nothing, or far less than the run before it, is
+ *  the thing somebody has to look at today rather than next month. */
+function needsAttention(r: { last_run?: { status?: string; products_valid?: number } | null; delta?: number | null }): boolean {
+  const status = r.last_run?.status
+  if (!r.last_run) return true
+  if (status === 'failed' || status === 'partial') return true
+  return (r.delta ?? 0) < 0
+}
+
 const jobs = failedJobs()
 const target = appTarget
 const catalog = catalogTarget()
@@ -77,7 +116,7 @@ const rangeSegments = TIME_RANGES.map((r) => ({ value: r.key, label: r.label, ti
 
 // All five, so the spinner runs until the last of them lands and the header
 // reports the stalest panel rather than the freshest. It used to watch two.
-const page = useQueryGroup([probes, health, digest, events, limits])
+const page = useQueryGroup([probes, health, digest, events, limits, scrapes])
 
 const kindOptions = computed(() => [
   { value: null, label: 'Every kind' },
@@ -310,6 +349,103 @@ const reachabilityHint = computed(() => {
       </div>
     </div>
 
+    <!-- The scrapers, and specifically the failure that reports nothing: a shop
+         changes its markup, the scraper keeps completing, and the catalog
+         quietly stops growing. Nothing errors. The run is green and the number
+         is smaller, which is why the number before it is on the same row. -->
+    <PanelCard
+      v-if="catalogConfigured()"
+      title="Scrapers"
+      note="Each shop's last run, against the one before it. A catalog can rot without anything erroring."
+      flush
+    >
+      <StateBlock v-if="scrapes.loading.value" state="loading" :lines="3" />
+      <StateBlock
+        v-else-if="scrapes.error.value"
+        state="error"
+        :title="describeError(scrapes.error.value).title"
+        :message="describeError(scrapes.error.value).detail"
+      />
+      <template v-else-if="scrapes.data.value">
+        <div class="u-tiles">
+          <StatTile label="Products" :value="scrapes.data.value.products" />
+          <StatTile label="Listings" :value="scrapes.data.value.listings" hint="One per shop that carries a product." />
+          <StatTile
+            label="With a barcode"
+            :value="scrapes.data.value.with_barcode"
+            hint="The only match anyone should fully trust. Carrefour publishes none."
+          />
+          <StatTile
+            label="Out of stock"
+            :value="scrapes.data.value.unavailable"
+            polarity="down-good"
+            hint="Reported by the shop. Nothing is ever deleted for being absent."
+          />
+          <StatTile
+            label="Sold nowhere"
+            :value="scrapes.data.value.orphans"
+            polarity="down-good"
+            hint="No shop lists it: made by hand here, or dropped everywhere."
+          />
+        </div>
+
+        <ul class="shops">
+          <li
+            v-for="shop in scrapes.data.value.retailers"
+            :key="shop.slug"
+            class="shop"
+            :class="{ 'shop--attention': needsAttention(shop) }"
+          >
+            <div class="shop__head">
+              <span class="shop__name">{{ shop.slug }}</span>
+              <StatusPill :tone="runTone(shop.last_run?.status)" :label="runLabel(shop.last_run?.status)" />
+              <StatusPill v-if="!shop.enabled" tone="idle" label="Disabled" :dot="false" />
+            </div>
+
+            <dl class="shop__facts u-facts">
+              <div>
+                <dt>Found</dt>
+                <dd class="u-num">
+                  {{ shop.last_run ? formatCount(shop.last_run.products_valid) : '--' }}
+                  <!-- The whole point of the panel. A run that read a tenth of a
+                       shop and finished cleanly looks identical to a good one
+                       until you put the previous number beside it. -->
+                  <span
+                    v-if="shop.delta !== null && shop.delta !== undefined && shop.delta !== 0"
+                    class="shop__delta"
+                    :class="shop.delta > 0 ? 'shop__delta--up' : 'shop__delta--down'"
+                  >{{ shop.delta > 0 ? '+' : '' }}{{ formatCount(shop.delta) }}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Listings</dt>
+                <dd class="u-num">{{ formatCount(shop.listings) }}</dd>
+              </div>
+              <div>
+                <dt>In stock</dt>
+                <dd class="u-num">{{ formatCount(shop.available) }}</dd>
+              </div>
+              <div>
+                <dt>Marked gone</dt>
+                <dd class="u-num">{{ shop.last_run ? formatCount(shop.last_run.marked_unavailable) : '--' }}</dd>
+              </div>
+              <div>
+                <dt>Last run</dt>
+                <dd>{{ shop.last_run ? formatDateTime(shop.last_run.started_at) : 'Never' }}</dd>
+              </div>
+            </dl>
+
+            <!-- A run that refused to sweep says why, and that sentence is the
+                 most useful thing on this panel when it appears. -->
+            <p v-if="shop.last_run?.error" class="shop__why">{{ shop.last_run.error }}</p>
+            <p v-else-if="!shop.last_run" class="shop__why">
+              No scrape has ever run for this shop.
+            </p>
+          </li>
+        </ul>
+      </template>
+    </PanelCard>
+
     <PanelCard
       title="Tables"
       note="Row counts are planner estimates, so this panel stays cheap however large the tables get. Exact counts are on the Overview."
@@ -481,6 +617,59 @@ const reachabilityHint = computed(() => {
 </template>
 
 <style scoped>
+.shops {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.shop {
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width-thin) solid var(--border-light);
+}
+
+/* A left edge rather than a background wash: the panel already alternates
+   surfaces and a second fill would fight it, where an edge reads as a margin
+   note. */
+.shop--attention {
+  box-shadow: inset 3px 0 0 var(--status-warn);
+}
+
+.shop__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.shop__name {
+  font-weight: var(--weight-semibold);
+  text-transform: capitalize;
+}
+
+.shop__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.shop__delta {
+  margin-left: 0.35rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.shop__delta--up { color: var(--status-good); }
+.shop__delta--down { color: var(--status-bad); }
+
+.shop__why {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
 .probes {
   display: flex;
   flex-direction: column;
