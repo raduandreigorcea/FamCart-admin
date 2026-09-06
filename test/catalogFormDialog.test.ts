@@ -22,24 +22,16 @@ const CatalogFormDialog = (await import('../src/components/CatalogFormDialog.vue
 function product(over: Record<string, unknown> = {}) {
   return {
     id: 'c-1',
-    product_type: 'commercial',
     canonical_name: 'Editable Thing',
-    name_lang: 'de',
     brand: 'Acme',
     category: 'pantry',
-    markets: ['RO', 'DE'],
-    quality_tier: 'B',
     quantity: 500,
     quantity_unit: 'g',
     image_url: 'https://example.com/a.jpg',
-    base_weight: 4,
     add_count: 0,
     popularity: 4,
-    source_count: 1,
-    sources: ['admin'],
     barcodes: ['4000000000021'],
-    alias_count: 0,
-    created_at: '2026-08-25T09:00:00.000Z',
+    first_seen_at: '2026-01-01T00:00:00Z',
     total_count: 1,
     ...over,
   }
@@ -64,17 +56,12 @@ describe('CatalogFormDialog', () => {
 
     expect(submitted(wrapper)).toMatchObject({
       name: 'Editable Thing',
-      type: 'commercial',
-      lang: 'de',
       brand: 'Acme',
       category: 'pantry',
-      markets: ['RO', 'DE'],
       barcode: '4000000000021',
       quantity: 500,
       quantityUnit: 'g',
       imageUrl: 'https://example.com/a.jpg',
-      qualityTier: 'B',
-      baseWeight: 4,
     })
   })
 
@@ -138,26 +125,13 @@ describe('CatalogFormDialog', () => {
 
   // A concept has no barcode, so the field is gone rather than disabled: there
   // is nothing to type into it that the database would accept.
-  it('hides the barcode on a generic product', async () => {
-    const wrapper = mountDialog(product({ product_type: 'generic', barcodes: [] }))
-    await wrapper.vm.$nextTick()
-
-    const labels = wrapper.findAll('.cf__label').map((l) => l.text())
-    expect(labels).not.toContain('Barcode')
-    expect(wrapper.text()).toContain('A generic product carries no barcode')
-  })
-
-  // Turning a pack into a concept has to take its code with it, in the same
-  // save: the RPC applies the barcode before the type, and refuses the type
-  // change while a code is still attached.
-  it('clears the barcode when a commercial product is saved as generic', async () => {
-    const wrapper = mountDialog(product())
-    await wrapper.vm.$nextTick()
-
-    await wrapper.findAll('select')[0].setValue('generic')
-    await wrapper.find('form').trigger('submit')
-
-    expect(submitted(wrapper)).toMatchObject({ type: 'generic', barcode: '' })
+  // The two tests that were here exercised the generic/commercial split: a
+  // generic product had no barcode field at all, and saving a commercial one as
+  // generic sent an explicit clear. The rebuilt catalog has no product type --
+  // every row came off a shelf -- so the barcode field is simply always there.
+  it('always offers the barcode, since there is no such thing as a concept now', () => {
+    const wrapper = mountDialog(product({ barcodes: [] }))
+    expect(wrapper.findAll('.cf__label').map((l) => l.text())).toContain('Barcode')
   })
 
   it('refuses to submit with no name', async () => {
