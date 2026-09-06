@@ -3,22 +3,18 @@ import type { PropType } from 'vue'
 import SideDrawer from './SideDrawer.vue'
 import SelectField from './SelectField.vue'
 import SegmentedControl from './SegmentedControl.vue'
-import type { CatalogFilters, CatalogProductType } from '../lib/data/catalog'
-import {
-  MARKETS, MARKET_NAMES, CATEGORIES, LANGS, LANG_NAMES, SOURCES, TIERS, sourceLabel,
-} from '../lib/catalogVocab'
+import type { CatalogFilters } from '../lib/data/catalog'
+import { CATEGORIES, RETAILERS, retailerLabel } from '../lib/catalogVocab'
 
 // Every way to narrow the reference catalog, in a drawer rather than in the
 // filter row.
 //
-// WHY A DRAWER. Twelve controls do not fit on one line, and the versions that
+// WHY A DRAWER. Ten controls do not fit on one line, and the versions that
 // try are worse than either extreme: wrapped onto three rows they push the table
 // below the fold on the page whose whole job is the table, and split between
 // "some inline, the rest behind a button" they make finding one control a
-// question of remembering which half it was in. So all of them are here -- the
-// product type included, which used to be a segmented control above the table
-// answering to nothing else on the page -- and the filter row keeps a button, a
-// count, and the chips for whatever is set.
+// question of remembering which half it was in. So all of them are here, and the
+// filter row keeps a button, a count, and the chips for whatever is set.
 //
 // WHY IT APPLIES LIVE. There is no Apply button and no local draft. A draft
 // would need Cancel to mean "put back what was there", which is a second copy of
@@ -74,67 +70,56 @@ const FLAGS: { key: keyof CatalogFilters; label: string; title: string }[] = [
   {
     key: 'hasBarcode',
     label: 'Barcode',
-    title: 'A GTIN in catalog_identifiers. A generic has none and that is correct; a commercial product without one cannot be merged on anything but its name.',
+    title: 'A GTIN in catalog_identifiers. Carrefour publishes none at all, so No is ordinary; a product without one can only ever be merged on its name and size.',
   },
   {
     key: 'hasBrand',
     label: 'Brand',
-    title: 'A maker. No is ordinary for a generic and is the shape worth finding among commercial products.',
+    title: 'A maker. Loose produce genuinely has none -- Auchan files it as "Non-brand", which is stored as nothing rather than as a made-up maker.',
   },
   {
-    key: 'hasMarket',
-    label: 'Market',
-    title: 'Whether anywhere is recorded as selling it. An empty market list means unknown, not sold nowhere, which is why this is not a twelfth country.',
+    key: 'hasListing',
+    label: 'Listed',
+    title: 'Whether any shop currently carries it. No means either a product created here by hand, or one every shop has stopped listing. Neither is deleted.',
+  },
+  {
+    key: 'available',
+    label: 'In stock',
+    title: 'Whether at least one shop has it on the shelf right now, as of that shop\'s last completed scrape.',
   },
   {
     key: 'hasImage',
     label: 'Image',
-    title: 'A picture the source published.',
+    title: 'A picture the shop published.',
   },
   {
     key: 'hasQuantity',
     label: 'Size',
-    title: 'A package size the source stated. Never inferred from the name, so its absence is honest rather than lazy.',
+    title: 'A package size, parsed from the name or stated by the shop. Lidl names rarely carry one, so its absence is common and honest.',
   },
 ]
 
 // ─── the value selects ───────────────────────────────────────────────────────
 // Each list is a check constraint in the catalog project restated in
 // TypeScript; catalogVocab.ts holds all of them and says why.
+const retailerOptions = [
+  { value: null, label: 'Any shop' },
+  ...RETAILERS.map((slug) => ({ value: slug, label: retailerLabel(slug) })),
+]
+
 // A generic is a shopping concept -- Milk, Bananas -- with no brand and no
 // barcode, none of which makes it incomplete; a commercial product is one off a
 // shelf, identified by both. The distinction is why the tri-states below cannot
 // be read as quality on their own, which is what the hint under them says.
-const typeOptions = [
-  { value: null, label: 'Any type' },
-  { value: 'generic', label: 'Generic' },
-  { value: 'commercial', label: 'Commercial' },
-]
 
-const marketOptions = [
-  { value: null, label: 'Any market' },
-  ...MARKETS.map((code) => ({ value: code, label: `${MARKET_NAMES[code] ?? code} (${code})` })),
-]
 
-const tierOptions = [
-  { value: null, label: 'Any record' },
-  ...TIERS.map((t) => ({ value: t, label: `Tier ${t}` })),
-]
 
 const categoryOptions = [
   { value: null, label: 'Any category' },
   ...CATEGORIES.map((c) => ({ value: c, label: c })),
 ]
 
-const sourceOptions = [
-  { value: null, label: 'Any source' },
-  ...SOURCES.map((s) => ({ value: s, label: sourceLabel(s) })),
-]
 
-const langOptions = [
-  { value: null, label: 'Any language' },
-  ...LANGS.map((l) => ({ value: l, label: `${LANG_NAMES[l] ?? l} (${l})` })),
-]
 
 // Relative rather than a date picker. Every question anybody actually has of
 // this column is "what has arrived lately", and a picker would ask for two
@@ -167,22 +152,10 @@ const EARNED_OPTIONS = [
       <section class="cfd__group">
         <h3 class="u-caption cfd__legend">What it is</h3>
         <SelectField
-          label="Type"
-          :model-value="modelValue.type ?? null"
-          :options="typeOptions"
-          @update:model-value="set('type', $event as CatalogProductType | null)"
-        />
-        <SelectField
-          label="Market"
-          :model-value="modelValue.market ?? null"
-          :options="marketOptions"
-          @update:model-value="set('market', $event)"
-        />
-        <SelectField
-          label="Record"
-          :model-value="modelValue.tier ?? null"
-          :options="tierOptions"
-          @update:model-value="set('tier', $event)"
+          label="Shop"
+          :model-value="modelValue.retailer ?? null"
+          :options="retailerOptions"
+          @update:model-value="set('retailer', $event)"
         />
         <SelectField
           label="Category"
@@ -190,25 +163,14 @@ const EARNED_OPTIONS = [
           :options="categoryOptions"
           @update:model-value="set('category', $event)"
         />
-        <SelectField
-          label="Source"
-          :model-value="modelValue.source ?? null"
-          :options="sourceOptions"
-          @update:model-value="set('source', $event)"
-        />
-        <SelectField
-          label="Language"
-          :model-value="modelValue.lang ?? null"
-          :options="langOptions"
-          @update:model-value="set('lang', $event)"
-        />
       </section>
 
       <section class="cfd__group">
         <h3 class="u-caption cfd__legend">What it has</h3>
         <p class="cfd__hint">
-          Missing is not the same as wrong. A generic with no brand and no barcode
-          is a complete record; a commercial one with neither cannot be identified.
+          Missing is not the same as wrong. Loose produce has no brand and
+          Carrefour publishes no barcodes at all, so those columns are empty for
+          reasons that are about the shop rather than the record.
         </p>
         <div v-for="flag in FLAGS" :key="flag.key" class="cfd__flag" :title="flag.title">
           <SegmentedControl

@@ -52,17 +52,14 @@ describe('the catalog admin surface', () => {
     await fetchCatalogProducts(
       {
         query: 'lapte',
-        type: 'generic',
-        market: 'RO',
-        tier: 'A',
+        retailer: 'carrefour',
         category: 'dairy',
-        source: 'curated',
-        lang: 'ro',
         hasBarcode: false,
         hasBrand: false,
         hasImage: true,
         hasQuantity: true,
-        hasMarket: true,
+        hasListing: true,
+        available: true,
         earned: true,
         addedWithinDays: 7,
         limit: 10,
@@ -77,17 +74,14 @@ describe('the catalog admin surface', () => {
     // a rename until a filter silently stopped narrowing anything.
     expect(rpc).toHaveBeenCalledWith('catalog_admin_products', {
       p_query: 'lapte',
-      p_type: 'generic',
-      p_market: 'RO',
-      p_tier: 'A',
+      p_retailer: 'carrefour',
       p_category: 'dairy',
-      p_source: 'curated',
-      p_lang: 'ro',
       p_has_barcode: false,
       p_has_brand: false,
       p_has_image: true,
       p_has_quantity: true,
-      p_has_market: true,
+      p_has_listing: true,
+      p_available: true,
       p_earned: true,
       p_added_since: expect.any(String),
       p_limit: 10,
@@ -104,9 +98,9 @@ describe('the catalog admin surface', () => {
     // resolves the function by which names are present -- so one missing key
     // stops the whole call finding its overload.
     for (const key of [
-      'p_query', 'p_type', 'p_market', 'p_tier', 'p_category', 'p_source',
-      'p_lang', 'p_has_barcode', 'p_has_brand', 'p_has_image', 'p_has_quantity',
-      'p_has_market', 'p_earned', 'p_added_since',
+      'p_query', 'p_retailer', 'p_category', 'p_has_barcode', 'p_has_brand',
+      'p_has_image', 'p_has_quantity', 'p_has_listing', 'p_available',
+      'p_earned', 'p_added_since',
     ]) {
       expect(args()).toHaveProperty(key)
       expect(args()[key]).toBeNull()
@@ -115,8 +109,8 @@ describe('the catalog admin surface', () => {
 
   // false is a filter and null is the absence of one. They are the same falsy
   // value in JavaScript and opposite questions here: `false` asks for the rows
-  // WITHOUT a barcode, which is the more useful half -- it is how you find what
-  // discovery admitted before the gate required both a brand and a code.
+  // WITHOUT a barcode, which is the more useful half -- Carrefour publishes none
+  // at all, so that is how you find what can never merge on anything but a name.
   it('keeps a false tri-state distinct from an unset one', async () => {
     resolving()
     await fetchCatalogProducts({ hasBarcode: false, hasBrand: true }, signal())
@@ -140,9 +134,9 @@ describe('the catalog admin surface', () => {
 
   it('counts only the filters that are set', async () => {
     expect(activeFilterCount({})).toBe(0)
-    expect(activeFilterCount({ market: null, tier: null })).toBe(0)
+    expect(activeFilterCount({ retailer: null, category: null })).toBe(0)
     // false counts: it is a filter, and the Filters button says how many.
-    expect(activeFilterCount({ market: 'RO', hasBrand: false })).toBe(2)
+    expect(activeFilterCount({ retailer: 'lidl', hasBrand: false })).toBe(2)
   })
 
   it('reads the total off the first row and reports zero for an empty page', async () => {
@@ -158,44 +152,41 @@ describe('the catalog admin surface', () => {
     const id = await createCatalogProduct(
       {
         name: 'Rice Cakes',
-        type: 'generic',
-        lang: 'en',
         brand: null,
         category: null,
-        markets: ['RO', 'DE'],
+        quantity: 250,
+        quantityUnit: 'g',
         barcode: '5949000000017',
-        baseWeight: 3,
+        imageUrl: null,
       },
       signal(),
     )
 
     expect(rpc).toHaveBeenCalledWith('catalog_admin_create_product', {
       p_name: 'Rice Cakes',
-      p_type: 'generic',
-      p_lang: 'en',
       p_brand: null,
       p_category: null,
-      p_markets: ['RO', 'DE'],
+      p_quantity: 250,
+      p_quantity_unit: 'g',
       p_barcode: '5949000000017',
-      p_base_weight: 3,
+      p_image_url: null,
     })
     expect(id).toBe('new-id')
   })
 
   it('updates by id and leaves unmentioned columns alone', async () => {
     resolving()
-    await updateCatalogProduct('c-1', { name: 'Rice Cake', type: 'generic', lang: 'en' }, signal())
+    await updateCatalogProduct('c-1', { name: 'Rice Cake' }, signal())
 
     expect(args().p_id).toBe('c-1')
-    // Null, not [] or ''. The RPC reads null as "not mentioned", and an update
-    // that omitted the barcode would otherwise erase one.
-    expect(args().p_markets).toBeNull()
-    expect(args().p_base_weight).toBeNull()
+    // Null, not ''. The RPC reads null as "not mentioned", and an update that
+    // omitted the barcode would otherwise erase one.
+    expect(args().p_brand).toBeNull()
+    expect(args().p_category).toBeNull()
     expect(args().p_barcode).toBeNull()
     expect(args().p_quantity).toBeNull()
     expect(args().p_quantity_unit).toBeNull()
     expect(args().p_image_url).toBeNull()
-    expect(args().p_quality_tier).toBeNull()
   })
 
   it('sends every editable column when the form supplies one', async () => {
@@ -204,17 +195,12 @@ describe('the catalog admin surface', () => {
       'c-1',
       {
         name: 'Rice Cake',
-        type: 'commercial',
-        lang: 'de',
         brand: 'Acme',
         category: 'snacks',
-        markets: ['DE'],
-        baseWeight: 9,
         barcode: '4000000000038',
         quantity: 750,
         quantityUnit: 'ml',
         imageUrl: 'https://example.com/a.jpg',
-        qualityTier: 'A',
       },
       signal(),
     )
@@ -222,17 +208,12 @@ describe('the catalog admin surface', () => {
     expect(args()).toEqual({
       p_id: 'c-1',
       p_name: 'Rice Cake',
-      p_type: 'commercial',
-      p_lang: 'de',
       p_brand: 'Acme',
       p_category: 'snacks',
-      p_markets: ['DE'],
-      p_base_weight: 9,
       p_barcode: '4000000000038',
       p_quantity: 750,
       p_quantity_unit: 'ml',
       p_image_url: 'https://example.com/a.jpg',
-      p_quality_tier: 'A',
     })
   })
 
@@ -242,23 +223,13 @@ describe('the catalog admin surface', () => {
     resolving()
     await updateCatalogProduct(
       'c-1',
-      { name: 'Rice Cake', type: 'generic', lang: 'en', barcode: '', imageUrl: '', quantityUnit: '' },
+      { name: 'Rice Cake', barcode: '', imageUrl: '', quantityUnit: '' },
       signal(),
     )
 
     expect(args().p_barcode).toBe('')
     expect(args().p_image_url).toBe('')
     expect(args().p_quantity_unit).toBe('')
-  })
-
-  it('passes an explicitly empty market list through as empty', async () => {
-    resolving()
-    await updateCatalogProduct(
-      'c-1',
-      { name: 'Rice Cake', type: 'generic', lang: 'en', markets: [] },
-      signal(),
-    )
-    expect(args().p_markets).toEqual([])
   })
 
   it('deletes by id', async () => {
@@ -269,8 +240,8 @@ describe('the catalog admin surface', () => {
 
   it.each([
     ['fetch', () => fetchCatalogProducts({}, signal())],
-    ['create', () => createCatalogProduct({ name: 'x', type: 'generic', lang: 'en' }, signal())],
-    ['update', () => updateCatalogProduct('c-1', { name: 'x', type: 'generic', lang: 'en' }, signal())],
+    ['create', () => createCatalogProduct({ name: 'x' }, signal())],
+    ['update', () => updateCatalogProduct('c-1', { name: 'x' }, signal())],
     ['delete', () => deleteCatalogProduct('c-1', signal())],
   ])('%s throws rather than reporting a success it did not get', async (_n, call) => {
     resolving(null, { message: 'Another product already claims that barcode.', code: 'P0001' })
