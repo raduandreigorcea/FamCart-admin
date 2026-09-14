@@ -53,6 +53,12 @@ const routes: RouteRecordRaw[] = [
     meta: { crumb: 'Catalog', icon: 'package-search' },
   },
   {
+    path: '/scrapers',
+    name: 'scrapers',
+    component: () => import('../views/ScrapersView.vue'),
+    meta: { crumb: 'Scrapers', icon: 'workflow' },
+  },
+  {
     path: '/contributed',
     name: 'contributed',
     component: () => import('../views/ContributedView.vue'),

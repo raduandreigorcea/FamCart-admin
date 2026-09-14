@@ -52,6 +52,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/', label: 'Overview', icon: 'layout-grid', title: 'System totals, activity and what just happened' },
       { to: '/catalog', label: 'Catalog', icon: 'package-search', title: 'The reference products the app ships and discovers, shared by production and development' },
+      { to: '/scrapers', label: 'Scrapers', icon: 'workflow', title: 'Each shop being read into the catalog: what is running now and how the last runs ended' },
     ],
   },
   {
