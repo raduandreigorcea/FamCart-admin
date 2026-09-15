@@ -30,6 +30,8 @@ const props = defineProps({
   /** Renders the "not recorded" treatment instead of a number. */
   unrecorded: { type: Boolean, default: false },
   unrecordedReason: { type: String, default: '' },
+  /** Still fetching: a skeleton sits in the seat, so "--" never reads as a value. */
+  loading: { type: Boolean, default: false },
 })
 
 const display = computed(() => {
@@ -64,7 +66,7 @@ const deltaTone = computed(() => {
 </script>
 
 <template>
-  <div class="tile" :class="{ 'tile--unrecorded': unrecorded }">
+  <div class="tile" :class="{ 'tile--unrecorded': unrecorded }" :aria-busy="loading || undefined">
     <div class="tile__label">{{ label }}</div>
 
     <!-- One seat, two states, rather than two layouts that happen to look alike.
@@ -74,6 +76,7 @@ const deltaTone = computed(() => {
          recorded this" into "this tile has slipped out of the row". -->
     <div class="tile__row" :class="{ 'tile__row--empty': unrecorded }">
       <div v-if="unrecorded" class="tile__nodata">Not recorded</div>
+      <span v-else-if="loading" class="tile__skeleton u-skeleton" aria-hidden="true"></span>
       <template v-else>
         <div class="tile__value u-num" :title="exact">{{ display }}</div>
         <SparkLine
@@ -173,6 +176,12 @@ const deltaTone = computed(() => {
   letter-spacing: var(--value-tracking);
 }
 
+
+.tile__skeleton {
+  width: 45%;
+  height: calc(var(--text-3xl) * 0.8);
+  margin-bottom: var(--tile-lift);
+}
 
 .tile__spark {
   width: 92px;

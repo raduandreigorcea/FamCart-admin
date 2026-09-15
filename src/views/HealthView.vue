@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import UserChip from '../components/UserChip.vue'
+import AppSpinner from '../components/AppSpinner.vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatTile from '../components/StatTile.vue'
@@ -13,7 +14,6 @@ import SegmentedControl from '../components/SegmentedControl.vue'
 import CopyValue from '../components/CopyValue.vue'
 import { useQuery, useQueryGroup, describeError } from '../lib/useQuery'
 import {
-  failedJobs,
   fetchEventDigest,
   fetchHealth,
   fetchRateLimits,
@@ -24,7 +24,7 @@ import {
   type RateLimitRow,
   type TableHealth,
 } from '../lib/data/health'
-import { fetchCatalogStats, catalogConfigured } from '../lib/data/catalog'
+import { fetchCatalogStats, catalogConfigured, type RetailerHealth } from '../lib/data/catalog'
 import { appTarget, catalogTarget, clerkIssuer } from '../lib/supabase'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange, sinceIso } from '../lib/timeRange'
 import type { AdminEventRow } from '../lib/data/types'
@@ -38,11 +38,19 @@ import {
   humanizeKind,
 } from '../lib/format'
 
-// System Health: what answers, what the database says about itself, and the
-// audit trail -- which is the closest thing FamCart has to an error stream,
-// because the browser talks to PostgREST directly and Sentry only sees the
-// browser.
-
+// System Health, read top down: first whether anything needs a look, then the
+// connection and the database behind that answer, then the audit trail and the
+// tables for whoever wants to dig.
+//
+// The scrapers are NOT drawn here. They were, before the Scrapers page existed,
+// because a dead scraper reports nothing and this was the only place to see it.
+// That page now carries the cards, the progress and the history, so a second
+// copy here was noise. What stays is the part only this page can do: a shop in
+// trouble is named in the banner, with a link to where the detail is.
+//
+// The page used to open on four equal tiles and a wall of panels, which put
+// "Auchan failed" three screens down beneath a Postgres version string. The
+// banner at the top is the answer; everything under it is the evidence.
 
 const rangeKey = ref<string>(DEFAULT_RANGE)
 const range = computed(() => resolveRange(rangeKey.value))
@@ -69,53 +77,63 @@ const events = useQuery(
 )
 const limits = useQuery((signal) => fetchRateLimits(signal))
 
-// ─── the scrapers ────────────────────────────────────────────────────────────
-// THE FAILURE THIS PANEL EXISTS FOR REPORTS NOTHING. A shop changes its markup
-// or moves an endpoint, the scraper keeps completing, and the catalog quietly
-// stops growing. There is no error anywhere -- the run is green and the number
-// is smaller.
-//
-// So the number is shown next to the one before it. A delta is the only thing
-// that distinguishes "read the whole shop" from "read a tenth of it and said it
-// was fine".
+/** Fetching again over data already on screen: a spinner in the panel head,
+ *  where a first load gets a skeleton in the body instead. */
+function refreshing(query: { fetching: Ref<boolean>; loading: Ref<boolean> }): boolean {
+  return query.fetching.value && !query.loading.value
+}
+
+// ─── the scrapers, for the banner only ───────────────────────────────────────
+// THE FAILURE THIS EXISTS FOR REPORTS NOTHING. A shop changes its markup or
+// moves an endpoint, the scraper keeps completing, and the catalog quietly stops
+// growing. There is no error anywhere -- the run is green and the number is
+// smaller. So a shop that went backwards is named like one that failed.
+const catalogOn = catalogConfigured()
 const scrapes = useQuery((signal) => fetchCatalogStats(signal), { enabled: () => catalogConfigured() })
 
-/** How a run's verdict should read. `partial` is not a failure and not a success:
- *  it imported what it saw and refused to conclude anything about the rest. */
-function runTone(status: string | undefined): 'good' | 'warn' | 'bad' | 'idle' {
-  if (status === 'completed') return 'good'
-  if (status === 'partial') return 'warn'
-  if (status === 'failed') return 'bad'
-  if (status === 'running') return 'idle'
-  return 'idle'
+/** A sentence in the banner. `to` is where its detail lives, when that is
+ *  another page. */
+type Issue = { tone: 'bad' | 'warn'; text: string; to?: string }
+
+/** catalog_stats carries only the slug. Good enough for a name: "mega-image"
+ *  reads as "mega image", and the banner capitalises the sentence. */
+function shopName(slug: string): string {
+  return slug.replace(/-/g, ' ')
 }
 
-function runLabel(status: string | undefined): string {
-  if (status === 'completed') return 'Completed'
-  if (status === 'partial') return 'Refused to sweep'
-  if (status === 'failed') return 'Failed'
-  if (status === 'running') return 'Running'
-  return 'Never run'
+/**
+ * What is wrong with a shop, in one sentence, or null when nothing is.
+ *
+ * A RUNNING shop is never flagged for its count: it is compared against a
+ * finished run while it is still reading, so every crawl in progress would show
+ * as a collapse. A disabled shop that never ran is the expected state of a shop
+ * nobody switched on.
+ */
+function shopIssue(shop: RetailerHealth): Issue | null {
+  const name = shopName(shop.slug)
+  const run = shop.last_run
+  if (!run) return shop.enabled ? { tone: 'warn', text: `${name} has never been scraped`, to: '/scrapers' } : null
+  if (run.status === 'failed') return { tone: 'bad', text: `${name} failed its last run`, to: '/scrapers' }
+  if (run.status === 'partial') return { tone: 'warn', text: `${name} refused to sweep`, to: '/scrapers' }
+  if (run.status === 'running') return null
+  if ((shop.delta ?? 0) < 0) {
+    return { tone: 'warn', text: `${name} found ${formatCount(-(shop.delta ?? 0))} fewer products than last time`, to: '/scrapers' }
+  }
+  return null
 }
 
-/** A shop whose last run found nothing, or far less than the run before it, is
- *  the thing somebody has to look at today rather than next month. */
-function needsAttention(r: { last_run?: { status?: string; products_valid?: number } | null; delta?: number | null }): boolean {
-  const status = r.last_run?.status
-  if (!r.last_run) return true
-  if (status === 'failed' || status === 'partial') return true
-  return (r.delta ?? 0) < 0
-}
+const shopIssues = computed(() =>
+  (scrapes.data.value?.retailers ?? []).map(shopIssue).filter((issue): issue is Issue => issue !== null),
+)
 
-const jobs = failedJobs()
 const target = appTarget
 const catalog = catalogTarget()
 const issuer = clerkIssuer()
 
 const rangeSegments = TIME_RANGES.map((r) => ({ value: r.key, label: r.label, title: r.description }))
 
-// All five, so the spinner runs until the last of them lands and the header
-// reports the stalest panel rather than the freshest. It used to watch two.
+// All of them, so the spinner runs until the last one lands and the header
+// reports the stalest panel rather than the freshest.
 const page = useQueryGroup([probes, health, digest, events, limits, scrapes])
 
 const kindOptions = computed(() => [
@@ -156,13 +174,15 @@ const limitColumns: Column<RateLimitRowWithId>[] = [
 ]
 
 const tableRows = computed(() => health.data.value?.tables ?? [])
-
-// The tile says the size; the only thing worth adding is what it is spread
-// over, which is the table list further down this page.
-const databaseSizeHint = computed(() =>
-  health.data.value ? `Across ${formatCount(tableRows.value.length)} tables` : '',
-)
 const eventRows = computed(() => events.data.value?.rows ?? [])
+// admin_rate_limits hands back up to 100 counters in one read, which drew the
+// panel several screens tall beside a two-line migrations card. They are paged
+// here rather than asked for a page at a time: the read is already bounded and
+// cheap, and paging it server-side would be a new RPC signature for nothing.
+const LIMIT_PAGE = 10
+const limitOffset = ref(0)
+const limitPage = computed(() => limitRows.value.slice(limitOffset.value, limitOffset.value + LIMIT_PAGE))
+
 const limitRows = computed<RateLimitRowWithId[]>(() =>
   (limits.data.value ?? []).map((row) => ({
     ...row,
@@ -195,18 +215,85 @@ const probesError = computed(() =>
 )
 
 const reachabilityHint = computed(() => {
+  if (probes.loading.value) return 'Measuring'
   if (reachability.value === 'unknown') {
     return probes.error.value ? 'Could not run the probe' : 'Not measured yet'
   }
   return reachability.value === 'ok' ? 'Slowest round trip, ms' : 'A project is not answering'
 })
+
+const connectionsHint = computed(() => {
+  const c = health.data.value?.connections
+  return c ? `of ${c.max} allowed, ${formatCount(c.active)} active` : ''
+})
+
+// Newest first, so a table that stopped receiving rows sinks to the bottom
+// where it stands out against the ones that are still moving.
+const freshness = computed(() =>
+  Object.entries(health.data.value?.freshness ?? {}).sort(([, a], [, b]) => {
+    if (a === b) return 0
+    if (!a) return 1
+    if (!b) return -1
+    return b.localeCompare(a)
+  }),
+)
+
+const migrations = computed(() => health.data.value?.migrations ?? [])
+const newestMigration = computed(() =>
+  migrations.value.reduce<string | null>((max, m) => (max === null || m.version > max ? m.version : max), null),
+)
+
+// ─── the banner ──────────────────────────────────────────────────────────────
+// Everything above the fold reduces to this: a list of sentences, each naming a
+// thing that is wrong. Silence while the checks are still out is reported as
+// "checking", never as health -- the same rule reachabilityOf() enforces.
+
+const checking = computed(
+  () => probes.loading.value || health.loading.value || digest.loading.value || (catalogOn && scrapes.loading.value),
+)
+
+const issues = computed<Issue[]>(() => {
+  const out: Issue[] = []
+  for (const probe of probes.data.value ?? []) {
+    if (!probe.ok) out.push({ tone: 'bad', text: `${probe.label} is not answering` })
+  }
+  if (!probes.loading.value && reachability.value === 'unknown') {
+    out.push({ tone: 'warn', text: 'Reachability could not be measured' })
+  }
+  if (health.error.value) out.push({ tone: 'bad', text: 'The database did not report on itself' })
+  if (scrapes.error.value) out.push({ tone: 'warn', text: 'The scrapers could not be read' })
+  out.push(...shopIssues.value)
+  if (errorEvents.value > 0) {
+    const n = errorEvents.value
+    out.push({ tone: 'warn', text: `${formatCount(n)} failed or denied ${n === 1 ? 'event' : 'events'} in the last ${range.value.label}` })
+  }
+  return out
+})
+
+const statusTone = computed<'idle' | 'good' | 'warn' | 'bad'>(() => {
+  if (issues.value.some((i) => i.tone === 'bad')) return 'bad'
+  if (issues.value.length) return 'warn'
+  return checking.value ? 'idle' : 'good'
+})
+
+const headline = computed(() => {
+  const n = issues.value.length
+  if (n) return n === 1 ? 'One thing needs a look' : `${n} things need a look`
+  return checking.value ? 'Checking everything' : 'Everything is working'
+})
+
+const allClear = computed(() =>
+  catalogOn
+    ? `Both projects answer, every shop's last run held up, and nothing was denied in the last ${range.value.label}.`
+    : `The database answers, and nothing was denied in the last ${range.value.label}.`,
+)
 </script>
 
 <template>
   <div class="page">
     <PageHeader
       title="System Health"
-      description="Reachability measured from this browser, what the database reports about itself, and the audit trail."
+      description="Whether anything needs a look, and the detail behind the answer."
       :fetched-at="page.fetchedAt.value"
       :busy="page.busy.value"
       @refresh="page.refresh"
@@ -216,12 +303,41 @@ const reachabilityHint = computed(() => {
       </template>
     </PageHeader>
 
+    <!-- The one loud thing on the page. Everything under it is quiet on purpose,
+         so that when this turns red there is nothing else competing with it. -->
+    <section
+      class="status"
+      :class="`status--${statusTone}`"
+      role="status"
+      aria-live="polite"
+      :aria-busy="checking"
+    >
+      <AppSpinner v-if="statusTone === 'idle'" :size="18" class="status__spinner" />
+      <span v-else class="status__mark" aria-hidden="true"></span>
+      <div class="status__body">
+        <p class="status__headline">
+          {{ headline }}
+          <!-- Problems already found while the rest is still out: say both. -->
+          <AppSpinner v-if="checking && statusTone !== 'idle'" :size="13" class="status__more" />
+        </p>
+        <ul v-if="issues.length" class="status__issues">
+          <li v-for="issue in issues" :key="issue.text" :class="`status__issue--${issue.tone}`">
+            <RouterLink v-if="issue.to" :to="issue.to" class="status__link">{{ issue.text }}</RouterLink>
+            <template v-else>{{ issue.text }}</template>
+          </li>
+        </ul>
+        <span v-else-if="checking" class="status__skeleton u-skeleton" aria-hidden="true"></span>
+        <p v-else class="status__detail">{{ allClear }}</p>
+      </div>
+    </section>
+
     <div class="grid">
       <div class="span-3">
         <StatTile
           label="API"
           :value="slowest === null ? null : Math.round(slowest)"
           :hint="reachabilityHint"
+          :loading="probes.loading.value"
           polarity="down-good"
         />
       </div>
@@ -230,31 +346,38 @@ const reachabilityHint = computed(() => {
           label="Database size"
           :value="health.data.value?.database_size ?? null"
           format="bytes"
-          :hint="databaseSizeHint"
+          :hint="health.data.value ? `Across ${formatCount(tableRows.length)} tables` : ''"
+          :loading="health.loading.value"
+        />
+      </div>
+      <div class="span-3">
+        <StatTile
+          label="Connections"
+          :value="health.data.value?.connections.total ?? null"
+          :hint="connectionsHint"
+          :loading="health.loading.value"
         />
       </div>
       <div class="span-3">
         <StatTile
           label="Errors logged"
           :value="errorEvents"
-          :hint="`Failed or denied events, ${range.label}`"
+          :hint="`Failed or denied, last ${range.label}`"
+          :loading="digest.loading.value"
           polarity="down-good"
-          spark-color="var(--chart-3)"
-        />
-      </div>
-      <div class="span-3">
-        <StatTile
-          label="Failed jobs"
-          unrecorded
-          unrecorded-reason="There is no job queue to fail"
         />
       </div>
     </div>
 
     <div class="grid">
-      <div class="span-5">
-        <PanelCard title="Reachability" note="Measured from this browser, the way the app reaches them." fill>
-          <StateBlock v-if="probes.loading.value" state="loading" :lines="3" />
+      <div class="span-6">
+        <PanelCard
+          title="Connection"
+          note="Measured from this browser, the way the app reaches the projects."
+          :busy="refreshing(probes)"
+          fill
+        >
+          <StateBlock v-if="probes.loading.value" state="loading" :lines="2" compact />
           <!-- The probe itself failed, so nothing was measured. Saying so beats
                rendering an empty list, which reads as "no problems found". -->
           <StateBlock
@@ -264,24 +387,28 @@ const reachabilityHint = computed(() => {
             :message="probesError"
             compact
           />
-          <div class="probes">
-            <div
-              v-for="probe in reachability === 'unknown' ? [] : (probes.data.value ?? [])"
-              :key="probe.target"
-              class="probes__row"
-            >
+          <ul v-else class="probes">
+            <li v-for="probe in probes.data.value ?? []" :key="probe.target" class="probe">
               <StatusPill :tone="probe.ok ? 'good' : 'bad'" :label="probe.ok ? 'Answering' : 'Failing'" />
-              <div class="probes__body">
-                <span class="probes__name">{{ probe.label }}</span>
-                <span class="probes__detail u-truncate">{{ probe.detail }}</span>
-              </div>
-              <span class="probes__ms u-num">{{ formatDuration(probe.latencyMs) }}</span>
-            </div>
+              <span class="probe__name">{{ probe.label }}</span>
+              <span class="probe__ms u-num">{{ formatDuration(probe.latencyMs) }}</span>
+              <span v-if="!probe.ok" class="probe__detail">{{ probe.detail }}</span>
+            </li>
+          </ul>
 
-            <!-- Static configuration, so it stays useful even when the probe
-                 could not run -- that is precisely when you want to check which
-                 project and issuer the failing request was aimed at. -->
-            <dl class="probes__config u-facts">
+          <p v-if="health.data.value" class="conn">
+            {{ formatCount(health.data.value.connections.active) }} active and
+            {{ formatCount(health.data.value.connections.idle_in_transaction) }} idle in a transaction,
+            of {{ formatCount(health.data.value.connections.total) }} open.
+          </p>
+
+          <!-- Static configuration, so it stays useful even when the probe could
+               not run -- that is precisely when you want to check which project
+               and issuer the failing request was aimed at. Closed by default
+               because it is only ever read then. -->
+          <details class="more">
+            <summary class="more__summary">Configuration</summary>
+            <dl class="config">
               <div>
                 <dt>App database</dt>
                 <dd class="u-mono">{{ target.label }}</dd>
@@ -298,194 +425,45 @@ const reachabilityHint = computed(() => {
                 <dt>Postgres</dt>
                 <dd class="u-mono">{{ health.data.value?.server_version || '--' }}</dd>
               </div>
+              <div>
+                <dt>Server time</dt>
+                <dd>{{ health.data.value ? formatDateTime(health.data.value.server_time) : '--' }}</dd>
+              </div>
             </dl>
-          </div>
+          </details>
         </PanelCard>
       </div>
 
-      <div class="span-7">
-        <PanelCard title="Connections and freshness" note="What the server reports right now." fill>
-          <StateBlock v-if="health.loading.value" state="loading" :lines="4" />
+      <div class="span-6">
+        <PanelCard
+          title="Newest row per table"
+          note="When each table last received a row. One that stopped sinks to the bottom."
+          :busy="refreshing(health)"
+          fill
+        >
+          <StateBlock v-if="health.loading.value" state="loading" :lines="5" compact />
           <StateBlock
             v-else-if="health.error.value"
             state="error"
             :title="describeError(health.error.value).title"
             :message="describeError(health.error.value).detail"
           />
-          <template v-else-if="health.data.value">
-            <dl class="conn u-facts">
-              <div>
-                <dt>Connections</dt>
-                <dd class="u-num">
-                  {{ formatCount(health.data.value.connections.total) }}
-                  <span class="conn__of">of {{ health.data.value.connections.max }}</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Active</dt>
-                <dd class="u-num">{{ formatCount(health.data.value.connections.active) }}</dd>
-              </div>
-              <div>
-                <dt>Idle in transaction</dt>
-                <dd class="u-num">{{ formatCount(health.data.value.connections.idle_in_transaction) }}</dd>
-              </div>
-              <div>
-                <dt>Server time</dt>
-                <dd>{{ formatDateTime(health.data.value.server_time) }}</dd>
-              </div>
-            </dl>
-
-            <h4 class="sub u-caption">Newest row per table</h4>
-            <ul class="fresh">
-              <li v-for="(value, key) in health.data.value.freshness" :key="key" class="fresh__row">
-                <span class="fresh__name u-mono">{{ key }}</span>
-                <span class="fresh__when" :title="value ? formatDateTime(value) : 'empty table'">
-                  {{ value ? formatRelative(value) : 'empty' }}
-                </span>
-              </li>
-            </ul>
-          </template>
+          <ul v-else class="fresh">
+            <li v-for="[name, value] in freshness" :key="name" class="fresh__row">
+              <span class="fresh__name u-mono">{{ name }}</span>
+              <span class="fresh__when" :class="{ 'fresh__when--empty': !value }" :title="value ? formatDateTime(value) : ''">
+                {{ value ? formatRelative(value) : 'empty' }}
+              </span>
+            </li>
+          </ul>
         </PanelCard>
       </div>
     </div>
 
-    <!-- The scrapers, and specifically the failure that reports nothing: a shop
-         changes its markup, the scraper keeps completing, and the catalog
-         quietly stops growing. Nothing errors. The run is green and the number
-         is smaller, which is why the number before it is on the same row. -->
-    <PanelCard
-      v-if="catalogConfigured()"
-      title="Scrapers"
-      note="Each shop's last run, against the one before it. A catalog can rot without anything erroring."
-      flush
-    >
-      <StateBlock v-if="scrapes.loading.value" state="loading" :lines="3" />
-      <StateBlock
-        v-else-if="scrapes.error.value"
-        state="error"
-        :title="describeError(scrapes.error.value).title"
-        :message="describeError(scrapes.error.value).detail"
-      />
-      <template v-else-if="scrapes.data.value">
-        <div class="u-tiles">
-          <StatTile label="Products" :value="scrapes.data.value.products" />
-          <StatTile label="Listings" :value="scrapes.data.value.listings" hint="One per shop that carries a product." />
-          <StatTile
-            label="With a barcode"
-            :value="scrapes.data.value.with_barcode"
-            hint="The only match anyone should fully trust. Carrefour publishes none."
-          />
-          <StatTile
-            label="Out of stock"
-            :value="scrapes.data.value.unavailable"
-            polarity="down-good"
-            hint="Reported by the shop. Nothing is ever deleted for being absent."
-          />
-          <StatTile
-            label="Sold nowhere"
-            :value="scrapes.data.value.orphans"
-            polarity="down-good"
-            hint="No shop lists it: made by hand here, or dropped everywhere."
-          />
-        </div>
-
-        <ul class="shops">
-          <li
-            v-for="shop in scrapes.data.value.retailers"
-            :key="shop.slug"
-            class="shop"
-            :class="{ 'shop--attention': needsAttention(shop) }"
-          >
-            <div class="shop__head">
-              <span class="shop__name">{{ shop.slug }}</span>
-              <StatusPill :tone="runTone(shop.last_run?.status)" :label="runLabel(shop.last_run?.status)" />
-              <StatusPill v-if="!shop.enabled" tone="idle" label="Disabled" :dot="false" />
-            </div>
-
-            <dl class="shop__facts u-facts">
-              <div>
-                <dt>Found</dt>
-                <dd class="u-num">
-                  {{ shop.last_run ? formatCount(shop.last_run.products_valid) : '--' }}
-                  <!-- The whole point of the panel. A run that read a tenth of a
-                       shop and finished cleanly looks identical to a good one
-                       until you put the previous number beside it. -->
-                  <span
-                    v-if="shop.delta !== null && shop.delta !== undefined && shop.delta !== 0"
-                    class="shop__delta"
-                    :class="shop.delta > 0 ? 'shop__delta--up' : 'shop__delta--down'"
-                  >{{ shop.delta > 0 ? '+' : '' }}{{ formatCount(shop.delta) }}</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Listings</dt>
-                <dd class="u-num">{{ formatCount(shop.listings) }}</dd>
-              </div>
-              <div>
-                <dt>In stock</dt>
-                <dd class="u-num">{{ formatCount(shop.available) }}</dd>
-              </div>
-              <div>
-                <dt>Marked gone</dt>
-                <dd class="u-num">{{ shop.last_run ? formatCount(shop.last_run.marked_unavailable) : '--' }}</dd>
-              </div>
-              <div>
-                <dt>Last run</dt>
-                <dd>{{ shop.last_run ? formatDateTime(shop.last_run.started_at) : 'Never' }}</dd>
-              </div>
-            </dl>
-
-            <!-- A run that refused to sweep says why, and that sentence is the
-                 most useful thing on this panel when it appears. -->
-            <p v-if="shop.last_run?.error" class="shop__why">{{ shop.last_run.error }}</p>
-            <p v-else-if="!shop.last_run" class="shop__why">
-              No scrape has ever run for this shop.
-            </p>
-          </li>
-        </ul>
-      </template>
-    </PanelCard>
-
-    <PanelCard
-      title="Tables"
-      note="Row counts are planner estimates, so this panel stays cheap however large the tables get. Exact counts are on the Overview."
-      flush
-    >
-      <DataTable
-        :columns="tableColumns"
-        :rows="tableRows"
-        row-key="table_name"
-        :loading="health.loading.value"
-        empty-title="No table statistics"
-        empty-message="The server reported no user tables in the public schema."
-      >
-        <template #cell-table_name="{ row }">
-          <span class="u-mono">{{ row.table_name }}</span>
-        </template>
-        <template #cell-live_rows="{ row }">{{ formatCount(Number(row.live_rows)) }}</template>
-        <template #cell-dead_rows="{ row }">
-          <span :class="{ 'dead--high': Number(row.dead_rows) > Number(row.live_rows) * 0.2 }">
-            {{ formatCount(Number(row.dead_rows)) }}
-          </span>
-        </template>
-        <template #cell-total_bytes="{ row }">{{ formatBytes(Number(row.total_bytes)) }}</template>
-        <template #cell-index_bytes="{ row }">{{ formatBytes(Number(row.index_bytes)) }}</template>
-        <template #cell-seq_scan="{ row }">{{ formatCount(Number(row.seq_scan)) }}</template>
-        <template #cell-idx_scan="{ row }">
-          {{ row.idx_scan === null ? '--' : formatCount(Number(row.idx_scan)) }}
-        </template>
-        <template #cell-last_vacuum="{ row }">
-          <span v-if="row.last_vacuum" :title="formatDateTime(String(row.last_vacuum))">
-            {{ formatRelative(String(row.last_vacuum)) }}
-          </span>
-          <span v-else class="u-muted">never</span>
-        </template>
-      </DataTable>
-    </PanelCard>
-
     <PanelCard
       title="Recent events"
-      :note="`The audit trail. ${formatCount(errorEvents)} error and ${formatCount(warnEvents)} warning events in the last ${range.label}.`"
+      :note="`The audit trail: ${formatCount(errorEvents)} errors and ${formatCount(warnEvents)} warnings in the last ${range.label}.`"
+      :busy="refreshing(events)"
       flush
     >
       <template #actions>
@@ -549,17 +527,56 @@ const reachabilityHint = computed(() => {
       </template>
     </PanelCard>
 
+    <PanelCard
+      title="Tables"
+      note="Row counts are planner estimates, so this stays cheap however large the tables get. Exact counts are on the Overview."
+      :busy="refreshing(health)"
+      flush
+    >
+      <DataTable
+        :columns="tableColumns"
+        :rows="tableRows"
+        row-key="table_name"
+        :loading="health.loading.value"
+        empty-title="No table statistics"
+        empty-message="The server reported no user tables in the public schema."
+      >
+        <template #cell-table_name="{ row }">
+          <span class="u-mono">{{ row.table_name }}</span>
+        </template>
+        <template #cell-live_rows="{ row }">{{ formatCount(Number(row.live_rows)) }}</template>
+        <template #cell-dead_rows="{ row }">
+          <span :class="{ 'dead--high': Number(row.dead_rows) > Number(row.live_rows) * 0.2 }">
+            {{ formatCount(Number(row.dead_rows)) }}
+          </span>
+        </template>
+        <template #cell-total_bytes="{ row }">{{ formatBytes(Number(row.total_bytes)) }}</template>
+        <template #cell-index_bytes="{ row }">{{ formatBytes(Number(row.index_bytes)) }}</template>
+        <template #cell-seq_scan="{ row }">{{ formatCount(Number(row.seq_scan)) }}</template>
+        <template #cell-idx_scan="{ row }">
+          {{ row.idx_scan === null ? '--' : formatCount(Number(row.idx_scan)) }}
+        </template>
+        <template #cell-last_vacuum="{ row }">
+          <span v-if="row.last_vacuum" :title="formatDateTime(String(row.last_vacuum))">
+            {{ formatRelative(String(row.last_vacuum)) }}
+          </span>
+          <span v-else class="u-muted">never</span>
+        </template>
+      </DataTable>
+    </PanelCard>
+
     <div class="grid">
       <div class="span-7">
         <PanelCard
           title="Rate limit counters"
           note="Buckets currently filling. Anything near its ceiling is someone being throttled, or a limit set too low."
+          :busy="refreshing(limits)"
           flush
           fill
         >
           <DataTable
             :columns="limitColumns"
-            :rows="limitRows"
+            :rows="limitPage"
             row-key="id"
             :loading="limits.loading.value"
             :error="limits.error.value ? describeError(limits.error.value).detail : ''"
@@ -589,27 +606,37 @@ const reachabilityHint = computed(() => {
               </span>
             </template>
           </DataTable>
+
+          <!-- Always drawn, like Recent events: "1–1 of 1" says this is the whole
+               table, where a lone row with no foot reads as something cut off. -->
+          <template #footer>
+            <TablePager
+              :total="limitRows.length"
+              :offset="limitOffset"
+              :limit="LIMIT_PAGE"
+              :loading="limits.fetching.value"
+              @go="limitOffset = $event"
+            />
+          </template>
         </PanelCard>
       </div>
 
       <div class="span-5">
-        <PanelCard title="Failed jobs" fill>
-          <StateBlock
-            state="unrecorded"
-            title="There is no job queue"
-            :message="jobs.available ? '' : jobs.reason"
-            :would-require="jobs.available ? '' : jobs.wouldRequire"
-          />
-        </PanelCard>
-
-        <PanelCard title="Applied migrations" class="stacked" note="What this database believes it has run." flush fill>
-          <StateBlock v-if="health.loading.value" state="loading" :lines="4" compact />
-          <ul v-else class="migrations">
-            <li v-for="m in health.data.value?.migrations ?? []" :key="m.version" class="migrations__row">
-              <span class="u-mono migrations__version">{{ m.version }}</span>
-              <span class="migrations__name u-truncate">{{ m.name }}</span>
-            </li>
-          </ul>
+        <PanelCard
+          title="Applied migrations"
+          :note="migrations.length ? `${formatCount(migrations.length)} applied, the newest is ${newestMigration}.` : 'What this database believes it has run.'"
+          fill
+        >
+          <StateBlock v-if="health.loading.value" state="loading" :lines="2" compact />
+          <details v-else-if="migrations.length" class="more more--flat">
+            <summary class="more__summary">Show all</summary>
+            <ul class="migrations">
+              <li v-for="m in migrations" :key="m.version" class="migrations__row">
+                <span class="u-mono migrations__version">{{ m.version }}</span>
+                <span class="migrations__name u-truncate">{{ m.name }}</span>
+              </li>
+            </ul>
+          </details>
         </PanelCard>
       </div>
     </div>
@@ -617,154 +644,223 @@ const reachabilityHint = computed(() => {
 </template>
 
 <style scoped>
-.shops {
-  list-style: none;
+/* ── the banner ───────────────────────────────────────────────────────────── */
+
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-lg);
+  border: var(--border-width-thin) solid var(--border-main);
+  background: var(--bg-surface);
+  box-shadow: var(--elevation-soft);
+}
+
+/* The mark is a dot sitting in a halo of its own colour, so the state reads
+   from across the room and not only from the words. The words are always there
+   too: colour never carries the meaning alone. */
+.status__mark {
+  --mark: var(--status-idle);
+  --halo: var(--status-idle-bg);
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 0.45rem;
+  border-radius: 50%;
+  background: var(--mark);
+  box-shadow: 0 0 0 5px var(--halo);
+}
+
+.status--good .status__mark { --mark: var(--status-good); --halo: var(--status-good-bg); }
+.status--warn .status__mark { --mark: var(--status-warn); --halo: var(--status-warn-bg); }
+.status--bad .status__mark { --mark: var(--status-bad); --halo: var(--status-bad-bg); }
+
+/* Sits where the mark will land, in the same box, so nothing moves when the
+   checks come back. */
+.status__spinner {
+  margin-top: 0.3rem;
+  color: var(--text-secondary);
+}
+
+/* A problem tints the whole band, not just the dot: it should be impossible to
+   scroll past. A healthy page keeps the ordinary surface. */
+.status--warn { background: var(--status-warn-bg); border-color: transparent; }
+.status--bad { background: var(--status-bad-bg); border-color: transparent; }
+
+.status__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.status__headline {
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--space-3);
-}
-
-.shop {
-  padding: var(--space-3) var(--space-4);
-  border-top: var(--border-width-thin) solid var(--border-light);
-}
-
-/* A left edge rather than a background wash: the panel already alternates
-   surfaces and a second fill would fight it, where an edge reads as a margin
-   note. */
-.shop--attention {
-  box-shadow: inset 3px 0 0 var(--status-warn);
-}
-
-.shop__head {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  color: var(--text-primary);
 }
 
-.shop__name {
-  font-weight: var(--weight-semibold);
-  text-transform: capitalize;
-}
-
-.shop__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-}
-
-.shop__delta {
-  margin-left: 0.35rem;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-}
-
-.shop__delta--up { color: var(--status-good); }
-.shop__delta--down { color: var(--status-bad); }
-
-.shop__why {
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-xs);
+.status__more {
   color: var(--text-secondary);
 }
 
-.probes {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.probes__row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.probes__body {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: var(--leading-snug);
-}
-
-.probes__name {
+.status__detail {
+  margin: var(--space-1-5) 0 0;
   font-size: var(--text-sm);
-  color: var(--text-primary);
+  color: var(--text-secondary);
+}
+
+.status__skeleton {
+  width: min(28rem, 100%);
+  height: 12px;
+  margin-top: var(--space-2);
+}
+
+.status__issues {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  font-size: var(--text-sm);
   font-weight: var(--weight-medium);
 }
 
-.probes__detail {
-  font-size: var(--text-2xs);
-  color: var(--text-disabled);
+.status__issues li::first-letter {
+  text-transform: uppercase;
 }
 
-.probes__ms {
+.status__issue--bad { color: var(--status-bad); }
+
+/* The sentence is the link, in its own colour: a link-blue phrase in a red list
+   would read as a different kind of thing. The underline is what says "go". */
+.status__link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.status__link:hover {
+  text-decoration-thickness: 2px;
+}
+.status__issue--warn { color: var(--status-warn); }
+
+/* ── connection ───────────────────────────────────────────────────────────── */
+
+.probes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.probe {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: var(--space-3);
+}
+
+.probe__name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+}
+
+.probe__ms {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
 }
 
-.probes__config,
+.probe__detail {
+  grid-column: 2 / -1;
+  font-size: var(--text-xs);
+  color: var(--status-bad);
+}
+
 .conn {
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.more {
+  margin-top: var(--space-4);
   padding-top: var(--space-3);
   border-top: var(--border-width-thin) solid var(--border-light);
 }
 
-.conn {
+.more--flat {
+  margin-top: 0;
   padding-top: 0;
-  border-top: none;
+  border-top: 0;
 }
 
-.probes__config dd,
-.conn dd {
+.more__summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-primary);
+  border-radius: var(--radius-xs);
+}
+
+.more__summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.config {
+  margin: var(--space-3) 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-3);
+}
+
+.config dt {
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.config dd {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--text-primary);
   word-break: break-all;
 }
 
-.conn dd {
-  font-size: var(--text-lg);
-  font-weight: var(--weight-semibold);
-}
-
-.conn__of {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-regular);
-  color: var(--text-disabled);
-}
-
-.sub {
-  margin: var(--space-4) 0 var(--space-2);
-  padding-top: var(--space-3);
-  border-top: var(--border-width-thin) solid var(--border-light);
-}
+/* ── freshness ────────────────────────────────────────────────────────────── */
 
 .fresh {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: var(--space-1) var(--space-4);
 }
 
 .fresh__row {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-2);
-  font-size: var(--text-xs);
-  padding: 2px 0;
+  gap: var(--space-3);
+  padding: var(--space-1-5) 0;
+  font-size: var(--text-sm);
+  border-bottom: var(--border-width-thin) solid var(--border-light);
+}
+
+.fresh__row:last-child {
+  border-bottom: 0;
 }
 
 .fresh__name {
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 
@@ -772,6 +868,12 @@ const reachabilityHint = computed(() => {
   color: var(--text-primary);
   white-space: nowrap;
 }
+
+.fresh__when--empty {
+  color: var(--text-disabled);
+}
+
+/* ── tables, events, migrations ───────────────────────────────────────────── */
 
 .dead--high {
   color: var(--warning-text);
@@ -786,6 +888,8 @@ const reachabilityHint = computed(() => {
 
 .link {
   color: var(--color-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   text-decoration: none;
   display: inline-block;
   max-width: 100%;
@@ -795,13 +899,9 @@ const reachabilityHint = computed(() => {
   text-decoration: underline;
 }
 
-.stacked {
-  margin-top: var(--space-4);
-}
-
 .migrations {
   list-style: none;
-  margin: 0;
+  margin: var(--space-3) 0 0;
   padding: 0;
   max-height: 220px;
   overflow-y: auto;
@@ -810,7 +910,7 @@ const reachabilityHint = computed(() => {
 .migrations__row {
   display: flex;
   gap: var(--space-3);
-  padding: var(--space-1) var(--space-4);
+  padding: var(--space-1) 0;
   font-size: var(--text-xs);
   border-bottom: var(--border-width-thin) solid var(--border-light);
 }
@@ -827,5 +927,11 @@ const reachabilityHint = computed(() => {
 .migrations__name {
   color: var(--text-primary);
   min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .status {
+    padding: var(--space-4);
+  }
 }
 </style>

@@ -71,6 +71,16 @@ const groups: { heading: string; items: NavItem[] }[] = [
       { to: '/bans', label: 'Bans', icon: 'ban', title: 'Accounts the app refuses and households an admin withdrew' },
     ],
   },
+  // Last, because these are not FamCart's own data: they are what the services
+  // it runs on say about it, asked through the app project's edge function.
+  {
+    heading: 'Services',
+    items: [
+      { to: '/services/sentry', label: 'Sentry', icon: 'brand-sentry', title: 'Errors the app reported, and feedback people sent, archived included' },
+      { to: '/services/onesignal', label: 'OneSignal', icon: 'brand-onesignal', title: 'Push notifications sent, and how many arrived' },
+      { to: '/services/clerk', label: 'Clerk', icon: 'brand-clerk', title: 'Accounts in the sign-in service and how they sign in' },
+    ],
+  },
 ]
 </script>
 

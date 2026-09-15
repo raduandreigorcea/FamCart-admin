@@ -33,12 +33,14 @@ const icon = computed(() => (typeof route.meta.icon === 'string' ? route.meta.ic
 
 <template>
   <header class="head">
-    <div class="head__ident" :class="{ 'head__ident--plain': !icon }">
+    <div class="head__ident">
       <span v-if="icon" class="head__plate" aria-hidden="true">
-        <AppIcon :name="icon" :size="18" />
+        <AppIcon :name="icon" :size="22" :stroke="2" />
       </span>
-      <h1 class="head__title">{{ title }}</h1>
-      <p v-if="description" class="head__desc">{{ description }}</p>
+      <div class="head__text">
+        <h1 class="head__title">{{ title }}</h1>
+        <p v-if="description" class="head__desc">{{ description }}</p>
+      </div>
     </div>
 
     <div class="head__tools">
@@ -82,62 +84,62 @@ const icon = computed(() => (typeof route.meta.icon === 'string' ? route.meta.ic
   border-bottom: var(--border-width-thin) solid var(--border-main);
 }
 
-/* A two-column grid rather than a flex row, so the plate is centred on the
-   TITLE's line box instead of on the whole ident column.
-   Top-aligning the two is what read as broken: the title's cap sits about five
-   pixels below the top of its line box, so a 36px plate flush with that top
-   hangs six pixels low beside it. Giving the title its own grid row hands the
-   plate a box of exactly the right height to centre in, which holds at any type
-   scale and needs no nudge kept in sync by hand. */
+/* The mark beside a block holding the title AND the description, centred on the
+   two together -- exactly how FamCart lays out a dialog's title (the
+   __title-wrap in AppSettingsModal and the rest): a flex row, a 12px gap, the
+   text stacked in its own box.
+
+   It used to be a grid that centred the plate on the title's line alone, with
+   the description hanging below it in a second row. That was a deliberate
+   choice for a single line, and it made every page header here look unlike the
+   app the moment a description was present, which is every page. */
 .head__ident {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  column-gap: var(--space-3);
+  gap: var(--space-3);
   min-width: 0;
 }
 
-.head__plate { grid-row: 1; }
-.head__title { grid-column: 2; grid-row: 1; }
-.head__desc { grid-column: 2; grid-row: 2; }
-
-/* No section glyph. The empty first column would still be followed by a column
-   gap, indenting the title by twelve pixels against nothing. */
-.head__ident--plain {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.head__ident--plain .head__title,
-.head__ident--plain .head__desc {
-  grid-column: 1;
+.head__text {
+  min-width: 0;
 }
 
 /* The section mark. Tinted rather than outlined, because it is identity and not
-   a control -- nothing about it should invite a click. */
+   a control -- nothing about it should invite a click.
+
+   Drawn exactly as FamCart draws the mark beside a dialog title (AppSettingsModal,
+   HouseholdSettingsModal, PurchaseHistoryModal and the rest): a 38px plate, a
+   22px icon, the primary mixed 10% into the surface. It had its own 36px plate,
+   18px icon and --admin-accent-wash tint, which made the dashboard look like a
+   different product from the app it administers. */
 .head__plate {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   flex: none;
   border-radius: var(--radius-md);
-  background: var(--admin-accent-wash);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--bg-surface));
   color: var(--color-primary);
 }
 
 .head__title {
   margin: 0;
-  font-size: var(--text-xl);
-  font-weight: var(--weight-bold);
+  /* text-lg and extrabold, as FamCart's dialog titles are. It was a step larger
+     on the grounds that this is a page heading, and beside the app it simply
+     read as too big. */
+  font-size: var(--text-lg);
+  font-weight: var(--weight-extrabold);
   letter-spacing: -0.02em;
   color: var(--text-primary);
   line-height: var(--leading-tight);
 }
 
 .head__desc {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
+  margin: 0.1rem 0 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   color: var(--text-secondary);
   line-height: var(--leading-snug);
   max-width: 78ch;

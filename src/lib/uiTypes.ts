@@ -83,4 +83,4 @@ export interface Segment {
 }
 
 /** The tones a StatusPill can take. States only, never series identity. */
-export type Tone = 'good' | 'warn' | 'bad' | 'idle' | 'accent'
+export type Tone = 'good' | 'warn' | 'bad' | 'idle' | 'live' | 'accent'

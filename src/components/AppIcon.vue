@@ -12,6 +12,8 @@ import { computed, type PropType } from 'vue'
 //
 // These are lucide, copied verbatim out of the lucide-static package by
 // scripts/sync-icons.mjs, which can also verify them (npm run icons:check).
+// The `brand-` ones are company marks from simple-icons and Iconify's logos,
+// synced by the same script; see its BRANDS list.
 // Never edit a file in src/assets by hand: icon path data cannot be reviewed by
 // reading it, so the only thing that makes it trustworthy is that it came from a
 // package with a version number and still matches.
@@ -81,6 +83,7 @@ const style = computed(() => ({
   <span
     v-if="markup"
     class="icon"
+    :class="{ 'icon--brand': name.startsWith('brand-') }"
     :style="style"
     :role="label ? 'img' : undefined"
     :aria-label="label || undefined"
@@ -105,5 +108,15 @@ const style = computed(() => ({
   height: 100%;
   display: block;
   stroke-width: var(--icon-stroke);
+}
+
+/* A company's mark is a filled shape, not a stroke. The files carry either no
+   fill (simple-icons, which would paint black) or the brand's own colour
+   (Iconify's logos), and both give way to currentColor here -- CSS wins over a
+   presentation attribute -- so a mark follows the theme like every icon. */
+.icon--brand :deep(svg),
+.icon--brand :deep(svg *) {
+  fill: currentColor;
+  stroke: none;
 }
 </style>

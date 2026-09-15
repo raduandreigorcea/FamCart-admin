@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PropType } from 'vue'
+import AppSpinner from './AppSpinner.vue'
 import type { Tone } from '../lib/uiTypes'
 
 // A state, said in words and colour together.
@@ -13,13 +14,16 @@ defineProps({
   label: { type: String, required: true },
   /** A leading dot. Off for pills that are really tags rather than states. */
   dot: { type: Boolean, default: true },
+  /** The dot turns into a spinner: this state is still happening. */
+  busy: { type: Boolean, default: false },
   title: { type: String, default: undefined },
 })
 </script>
 
 <template>
   <span class="pill" :class="`pill--${tone}`" :title="title">
-    <span v-if="dot" class="pill__dot" aria-hidden="true"></span>
+    <AppSpinner v-if="busy" :size="9" />
+    <span v-else-if="dot" class="pill__dot" aria-hidden="true"></span>
     {{ label }}
   </span>
 </template>
@@ -62,6 +66,12 @@ defineProps({
   color: var(--status-bad);
   background: var(--status-bad-bg);
   border-color: var(--danger-border);
+}
+
+.pill--live {
+  color: var(--status-live-ink);
+  background: var(--status-live-bg);
+  border-color: var(--status-live-border);
 }
 
 .pill--idle {

@@ -82,6 +82,26 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/BansView.vue'),
     meta: { crumb: 'Bans', icon: 'ban' },
   },
+  // The outside services FamCart runs on, read through the app project's
+  // admin-services edge function (lib/data/services.ts).
+  {
+    path: '/services/sentry',
+    name: 'sentry',
+    component: () => import('../views/SentryView.vue'),
+    meta: { crumb: 'Sentry', icon: 'brand-sentry' },
+  },
+  {
+    path: '/services/onesignal',
+    name: 'onesignal',
+    component: () => import('../views/OneSignalView.vue'),
+    meta: { crumb: 'OneSignal', icon: 'brand-onesignal' },
+  },
+  {
+    path: '/services/clerk',
+    name: 'clerk',
+    component: () => import('../views/ClerkView.vue'),
+    meta: { crumb: 'Clerk', icon: 'brand-clerk' },
+  },
   // This page was /trash while it listed only withdrawn households. The name
   // stopped being true once banned accounts joined them, and a redirect costs
   // one line against a bookmark that would otherwise land on Not found.

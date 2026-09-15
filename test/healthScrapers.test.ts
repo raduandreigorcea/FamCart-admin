@@ -2,15 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import type { Component } from 'vue'
 
-// The scrapers panel, which exists for the failure that reports nothing.
+// The scrapers, as Health reports them: in the banner, and nowhere else.
 //
-// A shop changes its markup or moves an endpoint, the scraper keeps completing,
-// and the catalog quietly stops growing. Nothing errors: the run is green and
-// the number is smaller. So the number the run before it found sits on the same
-// row, and a shop that went backwards is marked.
-//
-// A panel whose whole job is to be noticed has to be tested for being
-// noticeable, not merely for rendering.
+// The cards live on the Scrapers page. What Health still owes is the failure
+// that reports nothing: a shop changes its markup or moves an endpoint, the
+// scraper keeps completing, and the catalog quietly stops growing. Nothing
+// errors -- the run is green and the number is smaller. So a shop that went
+// backwards has to be named at the top of the page exactly like one that failed,
+// and a banner whose whole job is to be noticed is tested for what it says.
 
 const stats = vi.hoisted(() => ({ value: null as unknown, configured: true }))
 
@@ -20,8 +19,8 @@ vi.mock('../src/lib/data/catalog', () => ({
 }))
 
 // Everything else the page asks for answers empty; none of it is what this file
-// is about. Only the fetchers are replaced -- reachabilityOf, severityOf and
-// failedJobs stay real, because stubbing a pure function tests the stub.
+// is about. Only the fetchers are replaced -- reachabilityOf and severityOf stay
+// real, because stubbing a pure function tests the stub.
 vi.mock('../src/lib/data/health', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/lib/data/health')>()
   return {
@@ -52,7 +51,7 @@ const stubs = {
   CopyValue: { props: ['value'], template: '<code>{{ value }}</code>' },
   UserChip: { template: '<div />' },
   AppIcon: { props: ['name'], template: '<i />' },
-  RouterLink: { template: '<a><slot /></a>' },
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }
 
 function shop(over: Record<string, unknown> = {}) {
@@ -84,6 +83,7 @@ function shop(over: Record<string, unknown> = {}) {
 
 function statsFor(retailers: unknown[]) {
   return {
+    counted_at: '2026-09-15T09:45:00Z',
     products: 60103,
     listings: 61312,
     unavailable: 12000,
@@ -96,11 +96,11 @@ function statsFor(retailers: unknown[]) {
   }
 }
 
-async function mountHealth() {
+async function banner() {
   const wrapper = mount(HealthView, { global: { stubs } })
   await flushPromises()
   await flushPromises()
-  return wrapper
+  return { wrapper, banner: wrapper.find('.status') }
 }
 
 beforeEach(() => {
@@ -108,74 +108,70 @@ beforeEach(() => {
   stats.value = statsFor([shop()])
 })
 
-describe('the scrapers panel', () => {
-  it('shows each shop and how its last run ended', async () => {
-    const text = (await mountHealth()).text()
-    expect(text).toContain('auchan')
-    expect(text).toContain('Completed')
+describe('the scrapers on Health', () => {
+  it('are not drawn as cards: those live on the Scrapers page', async () => {
+    const { wrapper } = await banner()
+    expect(wrapper.findAll('.shop')).toHaveLength(0)
   })
 
-  it('puts the previous run beside it, which is the entire point', async () => {
-    // Without a delta, a run that read a tenth of a shop and finished cleanly is
-    // indistinguishable from one that read all of it.
-    const wrapper = await mountHealth()
-    expect(wrapper.find('.shop__delta').text()).toContain('839')
-  })
-
-  it('marks a shop that went backwards', async () => {
-    stats.value = statsFor([shop({ delta: -20000, previous_valid: 80000 })])
-    const wrapper = await mountHealth()
-    expect(wrapper.findAll('.shop--attention')).toHaveLength(1)
-    expect(wrapper.find('.shop__delta--down').exists()).toBe(true)
-  })
-
-  it('marks a run that refused to sweep, and shows the reason it gave', async () => {
-    // `partial` is neither a failure nor a success: it imported what it saw and
-    // refused to conclude anything about the rest. The sentence saying why is
-    // the most useful thing on the panel when it appears.
-    stats.value = statsFor([
-      shop({
-        last_run: {
-          ...shop().last_run,
-          status: 'partial',
-          error: 'found 1, previous completed run found 3 (below the 50% floor)',
-        },
-      }),
-    ])
-    const wrapper = await mountHealth()
-    expect(wrapper.text()).toContain('Refused to sweep')
-    expect(wrapper.text()).toContain('below the 50% floor')
-    expect(wrapper.findAll('.shop--attention')).toHaveLength(1)
-  })
-
-  it('marks a failed run, and never lets it read as a healthy one', async () => {
+  it('name a failed shop in the banner, linked to where the detail is', async () => {
     stats.value = statsFor([shop({ last_run: { ...shop().last_run, status: 'failed', error: 'circuit open' } })])
-    const wrapper = await mountHealth()
-    expect(wrapper.text()).toContain('Failed')
-    expect(wrapper.findAll('.shop--attention')).toHaveLength(1)
+    const { banner: b } = await banner()
+    expect(b.classes()).toContain('status--bad')
+    const link = b.find('a')
+    expect(link.text()).toBe('auchan failed its last run')
+    expect(link.attributes('href')).toBe('/scrapers')
   })
 
-  it('marks a shop that has never run at all', async () => {
+  it('name a shop that went backwards, because nothing else will', async () => {
+    stats.value = statsFor([shop({ delta: -20000, previous_valid: 80000 })])
+    const { banner: b } = await banner()
+    expect(b.text()).toContain('auchan found 20,000 fewer products than last time')
+  })
+
+  it('name a run that refused to sweep', async () => {
+    stats.value = statsFor([shop({ last_run: { ...shop().last_run, status: 'partial' } })])
+    expect((await banner()).banner.text()).toContain('auchan refused to sweep')
+  })
+
+  it('name a shop that has never run at all', async () => {
     // The quietest failure of the lot: a retailer registered and never scraped
     // reads as an empty shop rather than as a missing job.
-    stats.value = statsFor([shop({ last_run: null, delta: null, listings: 0, available: 0 })])
-    const wrapper = await mountHealth()
-    expect(wrapper.text()).toContain('No scrape has ever run')
-    expect(wrapper.findAll('.shop--attention')).toHaveLength(1)
+    stats.value = statsFor([shop({ last_run: null, delta: null })])
+    expect((await banner()).banner.text()).toContain('auchan has never been scraped')
   })
 
-  it('leaves a healthy shop unmarked, so the mark keeps meaning something', async () => {
-    const wrapper = await mountHealth()
-    expect(wrapper.findAll('.shop')).toHaveLength(1)
-    expect(wrapper.findAll('.shop--attention')).toHaveLength(0)
+  it('leave a disabled shop that never ran alone', async () => {
+    stats.value = statsFor([shop({ enabled: false, last_run: null, delta: null })])
+    expect((await banner()).banner.text()).not.toContain('auchan')
   })
 
-  it('says nothing at all when the catalog is not configured', async () => {
-    // The catalog credentials are optional, and their absence is an ordinary
-    // state rather than a fault of the shops.
+  it('do not flag a shop that is still reading', async () => {
+    // Mid-crawl, the count is compared against a finished run, so every crawl in
+    // progress would otherwise read as a collapse.
+    stats.value = statsFor([
+      shop({ delta: -4375, last_run: { ...shop().last_run, status: 'running', finished_at: null } }),
+    ])
+    expect((await banner()).banner.text()).not.toContain('auchan')
+  })
+
+  it('leave a healthy shop out of the banner, so a mention keeps meaning something', async () => {
+    expect((await banner()).banner.text()).not.toContain('auchan')
+  })
+
+  it('say nothing at all when the catalog is not configured', async () => {
     stats.configured = false
-    const wrapper = await mountHealth()
-    expect(wrapper.findAll('.shop')).toHaveLength(0)
-    expect(wrapper.text()).not.toContain('Scrapers')
+    const { wrapper } = await banner()
+    expect(wrapper.text()).not.toContain('auchan')
+    expect(wrapper.find('a[href="/scrapers"]').exists()).toBe(false)
+  })
+})
+
+describe('the banner', () => {
+  it('never reports health when nothing was measured', async () => {
+    // The probes answer empty in this file, which is "not measured", not "fine".
+    const { banner: b } = await banner()
+    expect(b.text()).not.toContain('Everything is working')
+    expect(b.text()).toContain('Reachability could not be measured')
   })
 })

@@ -101,24 +101,49 @@ const version = JSON.parse(
   readFileSync(join(root, 'node_modules', 'lucide-static', 'package.json'), 'utf8'),
 ).version
 
+// ─── brand marks ─────────────────────────────────────────────────────────────
+//
+// The Services pages name outside companies, and a company is recognised by its
+// mark, not by a generic bug or bell. Lucide deliberately draws no logos, so
+// these come from the two open (CC0) logo sets that do, under the same rule as
+// everything above: copied from a package with a version number, never drawn.
+//
+// simple-icons ships files, copied verbatim. OneSignal is not in simple-icons,
+// so it comes from Iconify's `logos` set, which ships path data in JSON: the
+// wrapping <svg> is built here, and the path is left untouched. Neither carries
+// a usable colour -- AppIcon paints every `brand-` icon in currentColor, so a
+// mark follows the theme and the rail's active state like every other icon.
+const BRANDS = [
+  { name: 'brand-sentry', set: 'simple-icons', icon: 'sentry' },   // Sentry
+  { name: 'brand-clerk', set: 'simple-icons', icon: 'clerk' },     // Clerk
+  { name: 'brand-onesignal', set: 'logos', icon: 'onesignal' },    // OneSignal
+]
+
+const modules = join(root, 'node_modules')
+let logos = null
+
+function brandSvg({ set, icon }) {
+  if (set === 'simple-icons') {
+    const from = join(modules, 'simple-icons', 'icons', `${icon}.svg`)
+    return existsSync(from) ? readFileSync(from, 'utf8') : null
+  }
+  logos ??= JSON.parse(readFileSync(join(modules, '@iconify-json', 'logos', 'icons.json'), 'utf8'))
+  const entry = logos.icons[icon]
+  if (!entry) return null
+  const width = entry.width ?? logos.width ?? 16
+  const height = entry.height ?? logos.height ?? 16
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">${entry.body}</svg>\n`
+}
+
 const missing = []
 const drifted = []
 let written = 0
 
-for (const name of ICONS) {
-  const from = join(source, `${name}.svg`)
-  if (!existsSync(from)) {
-    // A renamed or removed upstream icon. Loud, because the alternative is a
-    // silently empty <span> where an icon should be.
-    missing.push(name)
-    continue
-  }
-
-  const svg = readFileSync(from, 'utf8')
+function place(name, svg) {
   const to = join(dest, `${name}.svg`)
   const current = existsSync(to) ? readFileSync(to, 'utf8') : null
 
-  if (current === svg) continue
+  if (current === svg) return
 
   if (check) {
     drifted.push(current === null ? `${name} (not copied yet)` : name)
@@ -128,27 +153,49 @@ for (const name of ICONS) {
   }
 }
 
+for (const name of ICONS) {
+  const from = join(source, `${name}.svg`)
+  if (!existsSync(from)) {
+    // A renamed or removed upstream icon. Loud, because the alternative is a
+    // silently empty <span> where an icon should be.
+    missing.push(name)
+    continue
+  }
+  place(name, readFileSync(from, 'utf8'))
+}
+
+for (const brand of BRANDS) {
+  const svg = brandSvg(brand)
+  if (svg === null) {
+    missing.push(`${brand.icon} (${brand.set})`)
+    continue
+  }
+  place(brand.name, svg)
+}
+
 // Anything in src/assets that no icon in ICONS accounts for. Not an error — it
 // may be deliberate — but worth naming, since an unused 1KB file is how a set
 // like this slowly stops matching what the code uses.
-const known = new Set(ICONS.map((n) => `${n}.svg`))
+const known = new Set([...ICONS, ...BRANDS.map((b) => b.name)].map((n) => `${n}.svg`))
 const stray = readdirSync(dest).filter((f) => f.endsWith('.svg') && !known.has(f))
+const total = ICONS.length + BRANDS.length
+const sources = `lucide-static@${version}, simple-icons and @iconify-json/logos`
 
 if (missing.length) {
-  console.error(`Not in lucide-static@${version}: ${missing.join(', ')}`)
-  console.error('The icon was renamed or removed upstream. Pick its replacement and update ICONS.')
+  console.error(`Not found upstream: ${missing.join(', ')}`)
+  console.error('The icon was renamed or removed upstream. Pick its replacement and update ICONS or BRANDS.')
   process.exit(1)
 }
 
 if (check) {
   if (drifted.length) {
-    console.error(`Out of sync with lucide-static@${version}: ${drifted.join(', ')}`)
+    console.error(`Out of sync with ${sources}: ${drifted.join(', ')}`)
     console.error('Run `npm run icons:sync`. Never edit the files in src/assets by hand.')
     process.exit(1)
   }
-  console.log(`All ${ICONS.length} icons match lucide-static@${version}.`)
+  console.log(`All ${total} icons match ${sources}.`)
 } else {
-  console.log(`Synced ${written} of ${ICONS.length} icons from lucide-static@${version}.`)
+  console.log(`Synced ${written} of ${total} icons from ${sources}.`)
 }
 
 if (stray.length) {

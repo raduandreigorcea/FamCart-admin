@@ -250,8 +250,10 @@ export interface RetailerHealth {
   slug: string
   country: string
   enabled: boolean
-  listings: number
-  available: number
+  /** From the cached count (catalog 020): null until counted, or for a shop
+   *  added since the last count. */
+  listings: number | null
+  available: number | null
   last_run: {
     status: 'running' | 'completed' | 'partial' | 'failed'
     started_at: string
@@ -272,6 +274,14 @@ export interface RetailerHealth {
 }
 
 export interface CatalogStats {
+  /**
+   * When the totals and each shop's listing counts were counted. They are read
+   * from a cache that pg_cron refills every 15 minutes (catalog 020), because
+   * counting on every call timed out while a scrape was running. Null until the
+   * first count, in which case the totals below are absent too. Runs and deltas
+   * are always live.
+   */
+  counted_at: string | null
   products: number
   listings: number
   unavailable: number

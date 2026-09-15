@@ -7,8 +7,13 @@
 // chart and a definition list want different padding and a container that tries
 // to serve all three ends up fighting each of them.
 
+import AppSpinner from './AppSpinner.vue'
+
 defineProps({
   title: { type: String, default: '' },
+  /** Refetching what is already on screen. Beside the title rather than over
+   *  the body, because the numbers there are still true until the new ones land. */
+  busy: { type: Boolean, default: false },
   /** One line under the title. Where a derived metric admits it is derived. */
   note: { type: String, default: '' },
   /** Removes body padding, for a table that should meet the panel edge. */
@@ -22,7 +27,10 @@ defineProps({
   <section class="panel" :class="{ 'panel--fill': fill }">
     <header v-if="title || $slots.actions" class="panel__head">
       <div class="panel__heading">
-        <h3 v-if="title" class="panel__title">{{ title }}</h3>
+        <div class="panel__titlerow">
+          <h3 v-if="title" class="panel__title">{{ title }}</h3>
+          <AppSpinner v-if="busy" :size="12" label="Refreshing" class="panel__spinner" />
+        </div>
         <p v-if="note" class="panel__note">{{ note }}</p>
       </div>
       <div v-if="$slots.actions" class="panel__actions">
@@ -82,6 +90,16 @@ defineProps({
 
 .panel__heading {
   min-width: 0;
+}
+
+.panel__titlerow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panel__spinner {
+  color: var(--text-disabled);
 }
 
 .panel__title {
