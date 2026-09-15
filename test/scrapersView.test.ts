@@ -11,11 +11,12 @@ import type { Component } from 'vue'
 // the page is left, since a timer that outlives its page keeps querying a small
 // database for nobody.
 
-const state = vi.hoisted(() => ({ runs: [] as unknown[], configured: true, fetches: 0 }))
+const state = vi.hoisted(() => ({ runs: [] as unknown[], configured: true, fetches: 0, stats: null as unknown }))
 
 vi.mock('../src/lib/data/catalog', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/data/catalog')>()),
   catalogConfigured: () => state.configured,
+  fetchCatalogStats: async () => state.stats,
 }))
 
 vi.mock('../src/lib/data/scrapers', async (importOriginal) => ({
@@ -68,6 +69,7 @@ beforeEach(() => {
   state.configured = true
   state.fetches = 0
   state.runs = [run()]
+  state.stats = null
 })
 
 afterEach(() => {
@@ -138,6 +140,20 @@ describe('the scrapers page', () => {
     wrapper.unmount()
     await vi.advanceTimersByTimeAsync(60_000)
     expect(state.fetches).toBe(2)
+  })
+
+  it('shows the catalog totals under the cards, and says when they were counted', async () => {
+    // Counted on a schedule rather than live, so a number without its age would
+    // read as current when it can be a quarter of an hour behind the cards.
+    state.stats = {
+      counted_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      products: 102742, listings: 108400, unavailable: 38600, identifiers: 58200,
+      with_barcode: 58200, with_price: 100000, earned: 3, orphans: 0, retailers: [],
+    }
+    const text = (await mountPage()).find('.totals').text()
+    expect(text).toContain('102.7k')
+    expect(text).toContain('products')
+    expect(text).toContain('Counted')
   })
 
   it('says the catalog is not connected, instead of an empty page', async () => {

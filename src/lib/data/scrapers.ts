@@ -116,15 +116,16 @@ export function runDurationMs(
 /**
  * `partial` is neither: it imported what it saw and refused to sweep the rest.
  *
- * Running is `idle`, not the accent. The accent in this design system is the
- * same green as `good`, so a running shop and a finished one read as the same
- * state from across the page.
+ * Running is `live`, a yellow of its own. Not the accent, which in this design
+ * system is the same green as `good`, so a running shop and a finished one read
+ * as the same state; and no longer `idle`, whose grey read as a shop nobody had
+ * started.
  */
-export function runTone(status: RunStatus): 'good' | 'warn' | 'bad' | 'idle' {
+export function runTone(status: RunStatus): 'good' | 'warn' | 'bad' | 'live' {
   if (status === 'completed') return 'good'
   if (status === 'partial') return 'warn'
   if (status === 'failed') return 'bad'
-  return 'idle'
+  return 'live'
 }
 
 /**

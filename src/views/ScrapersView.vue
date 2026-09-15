@@ -2,11 +2,12 @@
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
+import ShopRunCard from '../components/ShopRunCard.vue'
 import StateBlock from '../components/StateBlock.vue'
 import StatusPill from '../components/StatusPill.vue'
 import DataTable from '../components/DataTable.vue'
 import { useQuery, describeError } from '../lib/useQuery'
-import { catalogConfigured } from '../lib/data/catalog'
+import { catalogConfigured, fetchCatalogStats } from '../lib/data/catalog'
 import {
   RUN_HISTORY_LIMIT,
   expectedCount,
@@ -20,14 +21,16 @@ import {
   type ScrapeRunRow,
 } from '../lib/data/scrapers'
 import type { Column } from '../lib/uiTypes'
-import { formatCount, formatDateTime, formatRelative } from '../lib/format'
+import { formatCompact, formatCount, formatDateTime, formatRelative } from '../lib/format'
 
 // Scrapers: is a shop being read right now, how far has it got, and how did the
 // last runs end.
 //
-// The Health page already carries each shop's LAST verdict. What it cannot say
-// is whether a crawl that started two hours ago is still moving, because a
-// dashboard that refreshes only on a button shows one moment. So this page asks
+// The ONLY place the shops are drawn. Health used to carry a copy of these cards
+// and now only names a shop in trouble in its banner, linking here. What a
+// Health-style page could never say is whether a crawl that started two hours
+// ago is still moving, because a dashboard that refreshes only on a button
+// shows one moment. So this page asks
 // again on its own, and it is the one page here that does -- the note on
 // useQuery about not revalidating in the background is about panels whose
 // numbers change daily, and a nightly crawl reports progress every few minutes.
@@ -37,8 +40,33 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 // row and add load to a database that is already the bottleneck.
 const REFRESH_MS = 30_000
 
+/** Roughly how many shops are live, so the loading row is the shape it will be. */
+const SKELETON_SHOPS = 4
+
 const configured = catalogConfigured()
 const runs = useQuery((signal) => fetchScrapeRuns(signal), { enabled: () => catalogConfigured() })
+
+// The catalog as a whole, under the cards; it moved here from Health with them.
+// Counted by pg_cron every 15 minutes (catalog 020), so it is read once and on
+// Refresh rather than on the 30 second poll: it cannot have changed in between.
+const stats = useQuery((signal) => fetchCatalogStats(signal), { enabled: () => catalogConfigured() })
+
+function refresh() {
+  void runs.refetch()
+  void stats.refetch()
+}
+
+const catalogTotals = computed(() => {
+  const s = stats.data.value
+  if (!s) return []
+  return [
+    { value: s.products, label: 'products' },
+    { value: s.listings, label: 'listings' },
+    { value: s.with_barcode, label: 'with a barcode' },
+    { value: s.unavailable, label: 'out of stock' },
+    { value: s.orphans, label: 'sold nowhere' },
+  ]
+})
 
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -60,25 +88,41 @@ const now = computed(() => runs.fetchedAt.value ?? Date.now())
 const history = computed(() => runs.data.value ?? [])
 const loadError = computed(() => (runs.error.value ? describeError(runs.error.value).detail : ''))
 
-// Everything a tile needs, worked out once per refresh rather than per binding.
+// The poll, as opposed to the first load: the cards stay, and a spinner beside
+// the History title says the numbers are being asked for again.
+const polling = computed(() => runs.fetching.value && !runs.loading.value)
+
+// Everything a card needs, worked out once per refresh rather than per binding.
 const shops = computed(() =>
   latestPerShop(history.value).map((run) => {
     const running = run.status === 'running'
     const expected = running ? expectedCount(run, history.value) : null
     const length = formatRunDuration(runDurationMs(run, now.value))
     return {
-      run,
-      expected,
-      percent: expected ? Math.min(100, Math.round((run.products_found / expected) * 100)) : null,
-      unit: running
-        ? expected
-          ? `of about ${formatCount(expected)} so far`
-          : 'products read so far'
-        : 'products read',
-      when: running
-        ? `Running for ${length}`
-        : `Started ${formatRelative(run.started_at, now.value)}, took ${length}`,
-      message: runMessage(run),
+      id: run.id,
+      props: {
+        name: run.shopName,
+        tone: runTone(run.status),
+        label: runLabel(run.status),
+        running,
+        count: formatCount(run.products_found),
+        unit: running
+          ? expected
+            ? `of about ${formatCount(expected)} so far`
+            : 'products read so far'
+          : 'products read',
+        progress: expected ? { value: run.products_found, max: expected } : null,
+        when: running
+          ? `Running for ${length}`
+          : `Started ${formatRelative(run.started_at, now.value)}, took ${length}`,
+        whenTitle: formatDateTime(run.started_at),
+        facts: [
+          { label: 'New', value: formatCount(run.products_created) },
+          { label: 'Updated', value: formatCount(run.updated) },
+          { label: 'Gone', value: formatCount(run.marked_unavailable), title: 'Listings this run marked as no longer sold' },
+        ],
+        message: runMessage(run),
+      },
     }
   }),
 )
@@ -107,8 +151,8 @@ function asRun(row: unknown): ScrapeRunRow {
       title="Scrapers"
       description="The nightly runs that read each shop into the catalog. While this page is open it checks again every 30 seconds."
       :fetched-at="runs.fetchedAt.value"
-      :busy="runs.fetching.value"
-      @refresh="runs.refetch"
+      :busy="runs.fetching.value || stats.fetching.value"
+      @refresh="refresh"
     />
 
     <PanelCard v-if="!configured" title="Scrapers">
@@ -120,7 +164,11 @@ function asRun(row: unknown): ScrapeRunRow {
     </PanelCard>
 
     <template v-else>
-      <StateBlock v-if="runs.loading.value" state="loading" :lines="3" />
+      <!-- The cards' own shape while the first read is out, so the page does not
+           jump from three grey lines to a row of cards. -->
+      <ul v-if="runs.loading.value" class="shops" aria-busy="true" aria-label="Loading the runs">
+        <ShopRunCard v-for="n in SKELETON_SHOPS" :key="n" loading />
+      </ul>
       <StateBlock v-else-if="loadError" state="error" title="Could not read the runs" :message="loadError" />
       <StateBlock
         v-else-if="!shops.length"
@@ -129,55 +177,26 @@ function asRun(row: unknown): ScrapeRunRow {
         message="No scraper has recorded a run. The nightly job writes one row per shop when it starts."
       />
 
-      <!-- One tile per shop, from its newest run. The count is the headline
+      <!-- One card per shop, from its newest run. The count is the headline
            because it is the one number that answers both questions this page
            exists for: is it moving, and did it read the whole shop. -->
       <ul v-else class="shops" aria-label="Each shop's newest run">
-        <li v-for="tile in shops" :key="tile.run.id" class="shop" :class="`shop--${tile.run.status}`">
-          <div class="shop__head">
-            <h2 class="shop__name">{{ tile.run.shopName }}</h2>
-            <StatusPill :tone="runTone(tile.run.status)" :label="runLabel(tile.run.status)" />
-          </div>
+        <ShopRunCard v-for="shop in shops" :key="shop.id" v-bind="shop.props" />
+      </ul>
 
-          <p class="shop__count">
-            <span class="shop__number u-num">{{ formatCount(tile.run.products_found) }}</span>
-            <span class="shop__unit">{{ tile.unit }}</span>
-          </p>
-
-          <div
-            v-if="tile.percent !== null"
-            class="shop__progress"
-            role="progressbar"
-            :aria-valuenow="tile.run.products_found"
-            aria-valuemin="0"
-            :aria-valuemax="tile.expected ?? undefined"
-            :aria-label="`${tile.run.shopName}: ${tile.percent}% of what its last full run read`"
-          >
-            <span class="shop__bar" :style="{ width: `${tile.percent}%` }"></span>
-          </div>
-
-          <p class="shop__when" :title="formatDateTime(tile.run.started_at)">{{ tile.when }}</p>
-
-          <dl class="shop__facts">
-            <div>
-              <dt class="u-caption">New</dt>
-              <dd class="u-num">{{ formatCount(tile.run.products_created) }}</dd>
-            </div>
-            <div>
-              <dt class="u-caption">Updated</dt>
-              <dd class="u-num">{{ formatCount(tile.run.updated) }}</dd>
-            </div>
-            <div>
-              <dt class="u-caption" title="Listings this run marked as no longer sold">Gone</dt>
-              <dd class="u-num">{{ formatCount(tile.run.marked_unavailable) }}</dd>
-            </div>
-          </dl>
-
-          <p v-if="tile.message" class="shop__why" :title="tile.message">{{ tile.message }}</p>
+      <!-- One line of prose rather than five more big numbers: context for the
+           cards, not a second headline. It says when it was counted, because
+           unlike the cards it is not live. -->
+      <ul v-if="stats.data.value" class="totals" aria-label="The catalog as a whole">
+        <li v-for="t in catalogTotals" :key="t.label" :title="formatCount(t.value)">
+          <span class="totals__value u-num">{{ formatCompact(t.value) }}</span> {{ t.label }}
+        </li>
+        <li class="totals__when" :title="stats.data.value.counted_at ? formatDateTime(stats.data.value.counted_at) : ''">
+          {{ stats.data.value.counted_at ? `Counted ${formatRelative(stats.data.value.counted_at)}` : 'Not counted yet' }}
         </li>
       </ul>
 
-      <PanelCard title="History" :note="`The last ${RUN_HISTORY_LIMIT} runs, newest first.`" flush>
+      <PanelCard title="History" :note="`The last ${RUN_HISTORY_LIMIT} runs, newest first.`" :busy="polling" flush>
         <DataTable
           :columns="columns"
           :rows="history"
@@ -190,7 +209,11 @@ function asRun(row: unknown): ScrapeRunRow {
             <span class="history__shop">{{ asRun(row).shopName }}</span>
           </template>
           <template #cell-status="{ row }">
-            <StatusPill :tone="runTone(asRun(row).status)" :label="runLabel(asRun(row).status)" />
+            <StatusPill
+              :tone="runTone(asRun(row).status)"
+              :label="runLabel(asRun(row).status)"
+              :busy="asRun(row).status === 'running'"
+            />
           </template>
           <template #cell-started_at="{ row }">
             <span :title="formatRelative(asRun(row).started_at, now)">{{ formatDateTime(asRun(row).started_at) }}</span>
@@ -217,7 +240,7 @@ function asRun(row: unknown): ScrapeRunRow {
 </template>
 
 <style scoped>
-/* Tiles rather than full-width rows: four shops read side by side, so a count
+/* Cards rather than full-width rows: four shops read side by side, so a count
    that is a tenth of its neighbour's is visible without reading a number.
    auto-fit, not auto-fill, so four shops stretch across the page. */
 .shops {
@@ -229,122 +252,28 @@ function asRun(row: unknown): ScrapeRunRow {
   gap: var(--space-3);
 }
 
-.shop {
+.totals {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
   background: var(--bg-surface);
   border: var(--border-width-thin) solid var(--border-main);
   border-radius: var(--radius-md);
 }
 
-/* An edge only for the states somebody has to act on. A running shop is shown
-   by its bar and its pulsing dot instead, and a finished one needs nothing. */
-.shop--failed { box-shadow: inset 3px 0 0 var(--status-bad); }
-.shop--partial { box-shadow: inset 3px 0 0 var(--status-warn); }
-
-.shop__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.shop__name {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-tight);
-}
-
-/* The one piece of motion on the page, and it means something: this is live. */
-.shop--running :deep(.pill__dot) {
-  animation: shop-live 1.6s ease-in-out infinite;
-}
-
-@keyframes shop-live {
-  50% { opacity: 0.25; }
-}
-
-.shop__count {
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  column-gap: var(--space-1-5);
-}
-
-.shop__number {
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-bold);
-  line-height: var(--leading-tight);
-  color: var(--text-primary);
-}
-
-.shop__unit,
-.shop__when {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-
-.shop__when {
-  margin: 0;
-}
-
-.shop__progress {
-  height: 6px;
-  margin: var(--space-1) 0;
-  border-radius: var(--radius-pill);
-  background: var(--border-light);
-  overflow: hidden;
-}
-
-.shop__bar {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-primary);
-  transition: width 0.6s ease;
-}
-
-.shop__facts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-2);
-  margin: var(--space-3) 0;
-  padding-top: var(--space-3);
-  border-top: var(--border-width-thin) solid var(--border-light);
-}
-
-.shop__facts dd {
-  /* The browser indents a <dd> by 40px, which is what pushed every value off
-     its label in the first version of this page. */
-  margin: 0;
+.totals__value {
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
 
-/* Pinned to the bottom, so the messages of a row of failed shops line up
-   whatever the tiles above them hold. */
-.shop__why {
-  margin: auto 0 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--status-bad-bg);
-  color: var(--status-bad);
-  font-size: var(--text-xs);
-  line-height: var(--leading-snug);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.shop--partial .shop__why {
-  background: var(--status-warn-bg);
-  color: var(--status-warn);
+.totals__when {
+  margin-left: auto;
+  color: var(--text-disabled);
 }
 
 .history__shop {
@@ -358,10 +287,5 @@ function asRun(row: unknown): ScrapeRunRow {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-secondary);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .shop--running :deep(.pill__dot) { animation: none; }
-  .shop__bar { transition: none; }
 }
 </style>

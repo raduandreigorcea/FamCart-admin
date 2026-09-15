@@ -15,6 +15,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
 import { banUser, fetchUserDetail, unbanUser } from '../lib/data/users'
+import { fetchClerkUser, methodsLabel, serviceProblem } from '../lib/data/services'
 import { formatCount, formatDateTime, formatRelative, humanizeKind } from '../lib/format'
 
 const route = useRoute()
@@ -23,6 +24,14 @@ const router = useRouter()
 const userId = computed(() => String(route.params.userId ?? ''))
 
 const detail = useQuery((signal) => fetchUserDetail(userId.value, signal), { watch: [userId] })
+
+// What Clerk holds for the account: how they sign in and when they last did.
+// A separate query so a Clerk that is slow, unset or down costs this panel and
+// nothing else on the page. "Last active" above is the last WRITE; this is the
+// last sign-in, which is the answer to "do they still use it".
+const clerk = useQuery((signal) => fetchClerkUser(userId.value, signal), { watch: [userId] })
+const clerkUser = computed(() => clerk.data.value)
+const clerkProblem = computed(() => serviceProblem(clerk.error.value))
 
 useLeafCrumb(() =>
   crumbOf(userId.value, detail.data.value?.profile, (p) => p.user_id, (p) => p.display_name),
@@ -289,6 +298,61 @@ const membershipNote = computed(() => {
         </div>
       </div>
 
+      <PanelCard title="Sign-in" note="What Clerk, the sign-in service, holds for this account." :busy="clerk.fetching.value">
+        <StateBlock v-if="clerk.loading.value" state="loading" :lines="2" compact />
+        <StateBlock
+          v-else-if="clerkProblem"
+          state="empty"
+          :title="clerkProblem.title"
+          :message="clerkProblem.message"
+          compact
+        />
+        <StateBlock
+          v-else-if="clerk.error.value"
+          state="error"
+          title="Could not read Clerk"
+          :message="describeError(clerk.error.value).detail"
+          compact
+        />
+        <StateBlock
+          v-else-if="!clerkUser"
+          state="empty"
+          title="No Clerk account"
+          message="Clerk has no account with this id. It was deleted there, and this profile outlived it."
+          compact
+        />
+        <dl v-else class="signin u-facts">
+          <div>
+            <dt>Email</dt>
+            <dd>{{ clerkUser.email ?? 'None' }}</dd>
+          </div>
+          <div>
+            <dt>Signs in with</dt>
+            <dd>{{ methodsLabel(clerkUser.methods) }}</dd>
+          </div>
+          <div>
+            <dt>Last sign-in</dt>
+            <dd :title="clerkUser.lastSignInAt ? formatDateTime(clerkUser.lastSignInAt) : ''">
+              {{ clerkUser.lastSignInAt ? formatRelative(clerkUser.lastSignInAt) : 'Never' }}
+            </dd>
+          </div>
+          <div>
+            <dt>Account created</dt>
+            <dd :title="clerkUser.createdAt ? formatDateTime(clerkUser.createdAt) : ''">
+              {{ clerkUser.createdAt ? formatRelative(clerkUser.createdAt) : 'Unknown' }}
+            </dd>
+          </div>
+          <div>
+            <dt>Two-factor</dt>
+            <dd>
+              {{ clerkUser.twoFactor ? 'On' : 'Off' }}
+              <StatusPill v-if="clerkUser.banned" tone="bad" label="Banned in Clerk" />
+              <StatusPill v-else-if="clerkUser.locked" tone="warn" label="Locked in Clerk" />
+            </dd>
+          </div>
+        </dl>
+      </PanelCard>
+
       <PanelCard
         title="Audit trail"
         note="Rows this account produced in security_events. Empty is the normal state."
@@ -488,6 +552,21 @@ const membershipNote = computed(() => {
 .hh__row:last-child,
 .events__row:last-child {
   border-bottom: none;
+}
+
+/* The Clerk facts, across the panel rather than down it: five short answers. */
+.signin {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+}
+
+.signin dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
 }
 
 .hh__link {

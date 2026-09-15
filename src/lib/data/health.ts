@@ -1,6 +1,6 @@
 import { getAppSupabase, getCatalogSupabase } from '../supabase'
 import { sinceIso, type TimeRange } from '../timeRange'
-import { unavailable, type AdminEventRow, type Metric, type Page } from './types'
+import type { AdminEventRow, Page } from './types'
 import { queryError } from './errors'
 
 // System Health.
@@ -17,7 +17,10 @@ import { queryError } from './errors'
 //      stream, since the browser talks to PostgREST directly and Sentry only
 //      ever sees the browser.
 //
-// One thing is not: a job queue. There isn't one. See failedJobs() at the foot.
+// One thing is not: a job queue, because there isn't one. The only asynchronous
+// work is the push webhook in 007_realtime.sql, whose failures land in the edge
+// function's logs rather than in a table this can query, so the page shows no
+// "failed jobs" at all rather than a tile that can only say "not recorded".
 
 export interface ProbeResult {
   target: string
@@ -247,28 +250,4 @@ export function severityOf(kind: string): 'error' | 'warn' | 'info' {
   if (/failed|denied|rejected|blocked/.test(kind)) return 'error'
   if (/rate_limit|limit_exceeded|throttled|removed|revoked/.test(kind)) return 'warn'
   return 'info'
-}
-
-// ─── the one health metric with nothing behind it ────────────────────────────
-//
-// There is no job queue in FamCart. Nothing is enqueued, nothing is retried and
-// nothing can therefore fail and sit in a dead-letter table. The asynchronous
-// work that does exist is a database webhook firing a Supabase edge function on
-// item insert (007_realtime.sql), and its failures land in the edge function's
-// own logs in the Supabase dashboard, not in a table this can query.
-//
-// So "failed jobs" is not zero. It is unmeasured, and those are different.
-export interface FailedJob {
-  id: string
-  queue: string
-  failedAt: string
-  attempts: number
-  error: string
-}
-
-export function failedJobs(): Metric<FailedJob[]> {
-  return unavailable(
-    'There is no job queue. The only asynchronous work is the push webhook in 007_realtime.sql, whose failures go to the edge function’s logs rather than to a table.',
-    'A jobs table with a status column, or reading the Supabase Edge Function logs through the Management API from a server that holds a key.',
-  )
 }
