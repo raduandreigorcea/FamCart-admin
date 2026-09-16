@@ -27,7 +27,6 @@ function product(over: Record<string, unknown> = {}) {
     category: 'pantry',
     quantity: 500,
     quantity_unit: 'g',
-    image_url: 'https://example.com/a.jpg',
     add_count: 0,
     popularity: 4,
     barcodes: ['4000000000021'],
@@ -61,7 +60,6 @@ describe('CatalogFormDialog', () => {
       barcode: '4000000000021',
       quantity: 500,
       quantityUnit: 'g',
-      imageUrl: 'https://example.com/a.jpg',
     })
   })
 
@@ -74,13 +72,12 @@ describe('CatalogFormDialog', () => {
     const inputs = wrapper.findAll('input')
     for (const input of inputs) {
       const el = input.element as HTMLInputElement
-      if (el.value === '4000000000021' || el.value.startsWith('https://')) await input.setValue('')
+      if (el.value === '4000000000021') await input.setValue('')
     }
     await wrapper.find('form').trigger('submit')
 
     const out = submitted(wrapper)
     expect(out?.barcode).toBe('')
-    expect(out?.imageUrl).toBe('')
   })
 
   // The mirror: nothing exists to leave alone yet, and the create RPC reads an
@@ -94,7 +91,6 @@ describe('CatalogFormDialog', () => {
 
     const out = submitted(wrapper)
     expect(out?.barcode).toBeNull()
-    expect(out?.imageUrl).toBeNull()
     expect(out?.category).toBeNull()
   })
 

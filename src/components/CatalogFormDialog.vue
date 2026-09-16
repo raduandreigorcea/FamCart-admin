@@ -55,7 +55,6 @@ const emit = defineEmits<{
     barcode: string | null
     quantity: number | null
     quantityUnit: string | null
-    imageUrl: string | null
   }): void
   (e: 'cancel'): void
 }>()
@@ -69,7 +68,6 @@ const category = ref('')
 const barcode = ref('')
 const quantity = ref('')
 const quantityUnit = ref('')
-const imageUrl = ref('')
 
 const editing = computed(() => props.product !== null)
 
@@ -86,7 +84,6 @@ watch(
     barcode.value = p?.barcodes[0] ?? ''
     quantity.value = p?.quantity != null ? String(p.quantity) : ''
     quantityUnit.value = p?.quantity_unit ?? ''
-    imageUrl.value = p?.image_url ?? ''
   },
   { immediate: true },
 )
@@ -110,7 +107,6 @@ function submit() {
     barcode: editing.value ? barcode.value.trim() : barcode.value.trim() || null,
     quantity: quantity.value.trim() ? Number(quantity.value.trim()) : null,
     quantityUnit: editing.value ? quantityUnit.value : quantityUnit.value || null,
-    imageUrl: editing.value ? imageUrl.value.trim() : imageUrl.value.trim() || null,
   })
 }
 
@@ -195,12 +191,6 @@ useModal({
               8 to 14 digits, and a scan resolves through this and nothing else. A code another
               product already claims is refused; emptying it makes this one unscannable.
             </span>
-          </label>
-
-          <label class="cf__field">
-            <span class="cf__label">Image address</span>
-            <input v-model="imageUrl" class="cf__input" type="url" :disabled="busy" />
-            <span class="cf__hint">https:// only, under 500 characters.</span>
           </label>
 
           <p class="cf__note">

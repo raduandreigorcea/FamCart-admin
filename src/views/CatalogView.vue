@@ -109,7 +109,6 @@ const chips = computed<{ key: keyof CatalogFilters; label: string }[]>(() => {
   if (f.available != null) {
     out.push({ key: 'available', label: f.available ? 'In stock' : 'Out of stock everywhere' })
   }
-  if (f.hasImage != null) out.push({ key: 'hasImage', label: has('image', f.hasImage) })
   if (f.hasQuantity != null) out.push({ key: 'hasQuantity', label: has('size', f.hasQuantity) })
   if (f.earned != null) {
     out.push({ key: 'earned', label: f.earned ? 'Added by households' : 'Never added' })

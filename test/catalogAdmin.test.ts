@@ -56,7 +56,6 @@ describe('the catalog admin surface', () => {
         category: 'dairy',
         hasBarcode: false,
         hasBrand: false,
-        hasImage: true,
         hasQuantity: true,
         hasListing: true,
         available: true,
@@ -78,7 +77,6 @@ describe('the catalog admin surface', () => {
       p_category: 'dairy',
       p_has_barcode: false,
       p_has_brand: false,
-      p_has_image: true,
       p_has_quantity: true,
       p_has_listing: true,
       p_available: true,
@@ -99,7 +97,7 @@ describe('the catalog admin surface', () => {
     // stops the whole call finding its overload.
     for (const key of [
       'p_query', 'p_retailer', 'p_category', 'p_has_barcode', 'p_has_brand',
-      'p_has_image', 'p_has_quantity', 'p_has_listing', 'p_available',
+      'p_has_quantity', 'p_has_listing', 'p_available',
       'p_earned', 'p_added_since',
     ]) {
       expect(args()).toHaveProperty(key)
@@ -117,7 +115,6 @@ describe('the catalog admin surface', () => {
 
     expect(args().p_has_barcode).toBe(false)
     expect(args().p_has_brand).toBe(true)
-    expect(args().p_has_image).toBeNull()
   })
 
   // Resolved against the clock at request time, not at the click. A dashboard
@@ -157,7 +154,6 @@ describe('the catalog admin surface', () => {
         quantity: 250,
         quantityUnit: 'g',
         barcode: '5949000000017',
-        imageUrl: null,
       },
       signal(),
     )
@@ -169,7 +165,6 @@ describe('the catalog admin surface', () => {
       p_quantity: 250,
       p_quantity_unit: 'g',
       p_barcode: '5949000000017',
-      p_image_url: null,
     })
     expect(id).toBe('new-id')
   })
@@ -186,7 +181,6 @@ describe('the catalog admin surface', () => {
     expect(args().p_barcode).toBeNull()
     expect(args().p_quantity).toBeNull()
     expect(args().p_quantity_unit).toBeNull()
-    expect(args().p_image_url).toBeNull()
   })
 
   it('sends every editable column when the form supplies one', async () => {
@@ -200,7 +194,6 @@ describe('the catalog admin surface', () => {
         barcode: '4000000000038',
         quantity: 750,
         quantityUnit: 'ml',
-        imageUrl: 'https://example.com/a.jpg',
       },
       signal(),
     )
@@ -213,7 +206,6 @@ describe('the catalog admin surface', () => {
       p_barcode: '4000000000038',
       p_quantity: 750,
       p_quantity_unit: 'ml',
-      p_image_url: 'https://example.com/a.jpg',
     })
   })
 
@@ -223,12 +215,11 @@ describe('the catalog admin surface', () => {
     resolving()
     await updateCatalogProduct(
       'c-1',
-      { name: 'Rice Cake', barcode: '', imageUrl: '', quantityUnit: '' },
+      { name: 'Rice Cake', barcode: '', quantityUnit: '' },
       signal(),
     )
 
     expect(args().p_barcode).toBe('')
-    expect(args().p_image_url).toBe('')
     expect(args().p_quantity_unit).toBe('')
   })
 
