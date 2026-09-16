@@ -53,14 +53,13 @@ export interface CatalogProductRow {
   brand: string | null
   category: string | null
   /**
-   * These three were declared here before the RPC returned them, which was not a
+   * These were declared here before the RPC returned them, which was not a
    * cosmetic gap: CatalogFormDialog fills its form from this row and submits
    * every field, so while they arrived undefined, correcting a product's name
-   * cleared its size and its image.
+   * cleared its size.
    */
   quantity: number | null
   quantity_unit: string | null
-  image_url: string | null
   /** Earned by real people adding the product. No import ever writes it. */
   add_count: number
   listing_count: number
@@ -99,7 +98,6 @@ export interface CatalogFilters {
   category?: string | null
   hasBarcode?: boolean | null
   hasBrand?: boolean | null
-  hasImage?: boolean | null
   hasQuantity?: boolean | null
   hasListing?: boolean | null
   /** true: at least one shop has it in stock right now. */
@@ -140,7 +138,6 @@ export async function fetchCatalogProducts(
       p_category: params.category ?? null,
       p_has_barcode: params.hasBarcode ?? null,
       p_has_brand: params.hasBrand ?? null,
-      p_has_image: params.hasImage ?? null,
       p_has_quantity: params.hasQuantity ?? null,
       p_has_listing: params.hasListing ?? null,
       p_available: params.available ?? null,
@@ -167,7 +164,6 @@ export interface CatalogDraft {
   quantity?: number | null
   quantityUnit?: string | null
   barcode?: string | null
-  imageUrl?: string | null
 }
 
 /**
@@ -190,7 +186,6 @@ export async function createCatalogProduct(
       p_quantity: draft.quantity ?? null,
       p_quantity_unit: draft.quantityUnit ?? null,
       p_barcode: draft.barcode ?? null,
-      p_image_url: draft.imageUrl ?? null,
     })
     .abortSignal(signal)
 
@@ -228,7 +223,6 @@ export async function updateCatalogProduct(
       p_category: draft.category ?? null,
       p_quantity: draft.quantity ?? null,
       p_quantity_unit: draft.quantityUnit ?? null,
-      p_image_url: draft.imageUrl ?? null,
       p_barcode: draft.barcode ?? null,
     })
     .abortSignal(signal)

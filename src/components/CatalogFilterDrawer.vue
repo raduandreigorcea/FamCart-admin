@@ -88,11 +88,6 @@ const FLAGS: { key: keyof CatalogFilters; label: string; title: string }[] = [
     title: 'Whether at least one shop has it on the shelf right now, as of that shop\'s last completed scrape.',
   },
   {
-    key: 'hasImage',
-    label: 'Image',
-    title: 'A picture the shop published.',
-  },
-  {
     key: 'hasQuantity',
     label: 'Size',
     title: 'A package size, parsed from the name or stated by the shop. Lidl names rarely carry one, so its absence is common and honest.',
