@@ -113,7 +113,14 @@ describe('HoverCard', () => {
     expect(document.getElementById(id!)?.textContent).toContain('Belgium')
     wrapper.unmount()
   })
+  it('keeps the control’s own cursor when it sits inside one', () => {
+    const inside = mount(HoverCard, { props: { focusable: false }, slots: { default: 'BE' }, global: { stubs } })
+    const alone = mount(HoverCard, { slots: { default: 'BE' }, global: { stubs } })
+    expect(inside.find('.hover').classes()).toContain('hover--inside')
+    expect(alone.find('.hover').classes()).not.toContain('hover--inside')
+  })
 })
+
 
 describe('CountryCode', () => {
   it('shows the code, and the country\'s name on hover', async () => {

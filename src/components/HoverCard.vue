@@ -149,6 +149,7 @@ function onFocusOut(event: FocusEvent) {
     v-bind="$attrs"
     ref="trigger"
     class="hover"
+    :class="{ 'hover--inside': !focusable }"
     :tabindex="focusable ? 0 : undefined"
     :aria-describedby="open && !interactive ? cardId : undefined"
     :aria-details="open && interactive ? cardId : undefined"
@@ -184,6 +185,12 @@ function onFocusOut(event: FocusEvent) {
   text-underline-offset: 3px;
   cursor: help;
   border-radius: var(--radius-xs);
+}
+
+/* Inside a control -- a segment, a copy button, a link -- the control's own
+   cursor stays: a "?" over something that clicks reads as broken. */
+.hover--inside {
+  cursor: inherit;
 }
 
 .hover:focus-visible {
