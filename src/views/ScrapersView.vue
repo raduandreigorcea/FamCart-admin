@@ -193,7 +193,8 @@ const shops = computed(() =>
 // "As many as fit" is read off the grid itself: with auto-fill, the browser
 // resolves grid-template-columns to one length per track, so counting them is
 // counting the columns at the cards' real size, whatever the window.
-const FALLBACK_COLUMNS = 4
+// The grid's own column count (see .shops below), for a DOM that cannot say.
+const FALLBACK_COLUMNS = 5
 const grid = ref<HTMLElement | null>(null)
 const columnCount = ref(FALLBACK_COLUMNS)
 
@@ -354,18 +355,30 @@ function asRun(row: unknown): ScrapeRunRow {
 /* Cards rather than full-width rows: shops read side by side, so a count that is
    a tenth of its neighbour's is visible without reading a number.
 
-   auto-fill, not auto-fit. auto-fit collapses the empty tracks and hands their
-   room to the cards, which was fine for four shops and turns one shop -- a
-   country chosen in the selector -- into a banner the width of the page. With
-   auto-fill the empty tracks keep their room, so a card is the same size whether
-   it has twenty-one neighbours or none. */
+   FIVE COLUMNS, FIXED. As many 14rem columns as fit made narrow cards on a wide
+   screen -- seven or eight to a row, the facts crowded. Five is wide enough to
+   read and still a row of shops at a glance. Fixed rather than auto-fit on
+   purpose: auto-fit hands empty tracks' room to the cards, and one shop -- a
+   country chosen in the selector -- became a banner the width of the page. With
+   fixed tracks a card is a fifth of the row whatever its neighbours.
+
+   The one-row view counts the resolved columns (measure() above), so it follows
+   this rule without knowing the number. Below a width where five would crush the
+   cards, it falls back to as many as fit -- the dashboard is a desktop tool, but a
+   narrowed window should not break it. */
 .shops {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+@media (max-width: 1100px) {
+  .shops {
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  }
 }
 
 .shops__more {

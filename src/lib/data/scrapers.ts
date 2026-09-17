@@ -253,6 +253,10 @@ export function expectedCount(run: ScrapeRunRow, runs: ScrapeRunRow[]): number |
  */
 export function runMessage(run: Pick<ScrapeRunRow, 'shop' | 'error'>): string | null {
   if (!run.error) return null
+  // The catalog's reaper (007) writes a whole sentence explaining how it knows,
+  // and a card has two lines. What it means is short: the job was killed before
+  // it could close its own run -- in practice, the nightly time limit.
+  if (run.error.startsWith('abandoned:')) return 'Killed before it could finish'
   const prefix = `import failed for ${run.shop}: `
   const text = run.error.startsWith(prefix)
     ? `Import failed: ${run.error.slice(prefix.length)}`

@@ -178,7 +178,8 @@ describe('the scrapers page', () => {
   })
 
   // Every country at once is a wall of cards. It gets one row, as many as fit --
-  // four here, since the test DOM lays nothing out -- and says how many it left.
+  // five, the grid's column count, since the test DOM lays nothing out -- and
+  // says how many it left.
   // In the order they started, newest first, like the history under them: a
   // shop left off the row is still in that table, failure and all.
   it('shows one row of the newest cards for every country, and how many it left out', async () => {
@@ -192,8 +193,8 @@ describe('the scrapers page', () => {
     ]
     const wrapper = await mountPage()
     const names = wrapper.findAll('.shop__name').map((n) => n.text())
-    expect(names).toEqual(['One', 'Two', 'Three', 'Four'])
-    expect(wrapper.find('.shops__more').text()).toContain('+2 more')
+    expect(names).toEqual(['One', 'Two', 'Three', 'Four', 'Five'])
+    expect(wrapper.find('.shops__more').text()).toContain('+1 more')
   })
 
   it('shows every card of a chosen country, however many', async () => {
