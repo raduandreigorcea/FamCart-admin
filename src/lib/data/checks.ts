@@ -1,7 +1,7 @@
 import { formatDuration, formatRelative } from '../format'
 import type { RetailerHealth } from './catalog'
 import type { ProbeResult } from './health'
-import { isStalled } from './scrapers'
+import { isDeliberate, isStalled } from './scrapers'
 import {
   fetchClerkSummary,
   fetchPushNotifications,
@@ -296,7 +296,7 @@ export function scrapersCheck(retailers: RetailerHealth[] | null | undefined, no
       broken.push(`${name} has gone quiet`)
     } else if (now - Date.parse(run.started_at) > SCRAPE_WINDOW_MS) {
       broken.push(`${name} has not run in ${formatRelative(run.started_at, now).replace(/ ago$/, '')}`)
-    } else if (run.status === 'partial') refused.push(`${name} refused to sweep`)
+    } else if (run.status === 'partial' && !isDeliberate(run)) refused.push(`${name} refused to sweep`)
   }
 
   if (broken.length) return { ...base, tone: 'bad', detail: [...broken, ...refused].join(', ') }

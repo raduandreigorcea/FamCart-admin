@@ -64,7 +64,7 @@ export interface ScrapeRunRow {
    * since 2026-09-17 -- what it REMOVED as outside groceries. Null or without
    * those keys on older runs.
    */
-  stats: { purged_listings?: number; purged_products?: number; excluded?: number } | null
+  stats: { purged_listings?: number; purged_products?: number; excluded?: number; deliberate?: boolean } | null
 }
 
 /**
@@ -192,11 +192,20 @@ export function isStalled(run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'>, n
  * is read, and a stalled run that the card calls "No sign of life" must not be
  * "Running" one screen further down.
  */
+/** A partial run that was partial on purpose (catalog run.ts, stats.deliberate). */
+export function isDeliberate(run: { status: string; stats?: { deliberate?: boolean } | null }): boolean {
+  return run.status === 'partial' && run.stats?.deliberate === true
+}
+
 export function runPill(
-  run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'>,
+  run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'> & { stats?: ScrapeRunRow['stats'] },
   now = Date.now(),
 ): { tone: 'good' | 'warn' | 'bad' | 'live'; label: string; busy: boolean } {
   if (isStalled(run, now)) return { tone: 'warn', label: 'No sign of life', busy: false }
+  // Partial ON PURPOSE -- Carrefour's nightly groceries-only pass, a slice, a
+  // removals-only run -- is a run that did what it was asked. Only a run the
+  // database refused to sweep is partial for a reason somebody should read.
+  if (isDeliberate(run)) return { tone: 'good', label: 'Done', busy: false }
   return { tone: runTone(run.status), label: runLabel(run.status), busy: run.status === 'running' }
 }
 

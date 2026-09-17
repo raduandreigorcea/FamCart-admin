@@ -148,6 +148,15 @@ describe('the scrapers on Health', () => {
     expect((await banner()).banner.text()).toContain('Auchan RO refused to sweep')
   })
 
+  // Carrefour's nightly run reads groceries only and closes partial on purpose.
+  // Naming it every morning would teach the banner to be ignored.
+  it('leave a run that was partial on purpose out of the banner', async () => {
+    stats.value = statsFor([
+      shop({ last_run: { ...shop().last_run, status: 'partial', stats: { deliberate: true } } }),
+    ])
+    expect((await banner()).banner.text()).not.toContain('Auchan')
+  })
+
   it('name a shop that has never run at all', async () => {
     // The quietest failure of the lot: a retailer registered and never scraped
     // reads as an empty shop rather than as a missing job.
