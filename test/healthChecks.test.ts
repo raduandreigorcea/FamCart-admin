@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   stats: null as unknown,
   health: null as unknown,
   probes: [] as unknown[],
+  digest: [] as unknown[],
 }))
 
 vi.mock('../src/lib/data/checks', async (importOriginal) => ({
@@ -34,7 +35,7 @@ vi.mock('../src/lib/data/health', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/data/health')>()),
   probeProjects: async () => state.probes,
   fetchHealth: async () => state.health,
-  fetchEventDigest: async () => [],
+  fetchEventDigest: async () => state.digest,
   fetchSecurityEvents: async () => ({ rows: [], total: 0 }),
   fetchRateLimits: async () => [],
 }))
@@ -83,14 +84,15 @@ function statsRow(retailers: unknown[] = []) {
   }
 }
 
-async function mountPage() {
-  const wrapper = mount(HealthView, { global: { stubs } })
+async function mountPage(options: { attachTo?: Element } = {}) {
+  const wrapper = mount(HealthView, { global: { stubs }, ...options })
   await flushPromises()
   await flushPromises()
   return wrapper
 }
 
 beforeEach(() => {
+  state.digest = []
   state.site = good('site', 'Live site')
   state.pipelines = [good('app-ci', 'App CI'), good('release', 'Release APK'), good('catalog-ci', 'Catalog CI')]
   state.services = [good('service-sentry', 'Sentry'), good('service-onesignal', 'OneSignal'), good('service-clerk', 'Clerk')]
@@ -152,5 +154,47 @@ describe('the checks', () => {
   it('say everything is working when every line is green', async () => {
     const banner = (await mountPage()).find('.status')
     expect(banner.text()).toContain('Everything is working')
+  })
+})
+
+describe('where the banner takes you', () => {
+  it('opens a failing pipeline\'s own run on GitHub, in a new tab', async () => {
+    state.pipelines = [
+      { key: 'app-ci', label: 'App CI', tone: 'bad', detail: 'Failed 2 hours ago', href: 'https://github.com/x/y/actions/runs/9' },
+    ]
+    const link = (await mountPage()).find('.status a[target="_blank"]')
+    expect(link.attributes('href')).toBe('https://github.com/x/y/actions/runs/9')
+    expect(link.text()).toContain('App CI')
+  })
+
+  it('takes a service problem to that service\'s page', async () => {
+    state.services = [
+      { key: 'service-clerk', label: 'Clerk', tone: 'bad', detail: 'HTTP 502', href: '/services/clerk' },
+    ]
+    const link = (await mountPage()).find('.status a[href="/services/clerk"]')
+    expect(link.exists()).toBe(true)
+  })
+
+  it('takes a database that does not answer to the connection panel on this page', async () => {
+    state.probes = [{ target: 'app', label: 'App database', ok: false, latencyMs: null, detail: 'timeout' }]
+    const wrapper = await mountPage({ attachTo: document.body })
+    const panel = document.getElementById('health-connection')!
+    const scrolled = vi.fn()
+    panel.scrollIntoView = scrolled
+    await wrapper.find('.status button').trigger('click')
+    expect(scrolled).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('takes failed events to the events panel on this page', async () => {
+    state.digest = [{ kind: 'rpc_denied', events: 3, distinct_actors: 1, first_seen: '', last_seen: '' }]
+    const wrapper = await mountPage({ attachTo: document.body })
+    const panel = document.getElementById('health-events')!
+    const scrolled = vi.fn()
+    panel.scrollIntoView = scrolled
+    const button = wrapper.findAll('.status button').find((b) => b.text().includes('failed or denied'))!
+    await button.trigger('click')
+    expect(scrolled).toHaveBeenCalled()
+    wrapper.unmount()
   })
 })

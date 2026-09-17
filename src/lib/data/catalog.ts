@@ -251,6 +251,8 @@ export interface RetailerHealth {
   listings: number | null
   available: number | null
   last_run: {
+    /** The run's id (catalog 020), so a page can link to that run. */
+    id?: string
     status: 'running' | 'completed' | 'partial' | 'failed'
     started_at: string
     finished_at: string | null

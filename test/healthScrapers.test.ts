@@ -71,6 +71,7 @@ function shop(over: Record<string, unknown> = {}) {
     listings: 59700,
     available: 40000,
     last_run: {
+      id: 'run-a',
       status: 'completed',
       // Recent, relative to now: an old date is a shop the nightly job missed,
       // which is a finding of its own and would mask the one under test.
@@ -132,7 +133,8 @@ describe('the scrapers on Health', () => {
     expect(b.classes()).toContain('status--bad')
     const link = b.find('a')
     expect(link.text()).toBe('Auchan RO failed its last run')
-    expect(link.attributes('href')).toBe('/scrapers')
+    // Not the whole page: the shop's country, with that run marked.
+    expect(link.attributes('href')).toBe('/scrapers?country=RO&run=run-a')
   })
 
   it('name a shop that went backwards, because nothing else will', async () => {
@@ -175,7 +177,7 @@ describe('the scrapers on Health', () => {
     stats.configured = false
     const { wrapper } = await banner()
     expect(wrapper.text()).not.toContain('Auchan')
-    expect(wrapper.find('a[href="/scrapers"]').exists()).toBe(false)
+    expect(wrapper.find('a[href^="/scrapers"]').exists()).toBe(false)
   })
 })
 
