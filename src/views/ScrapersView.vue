@@ -12,7 +12,6 @@ import { catalogConfigured, fetchCatalogStats } from '../lib/data/catalog'
 import {
   ALL_COUNTRIES,
   RUN_HISTORY_LIMIT,
-  byUrgency,
   isStalled,
   quietFor,
   countriesIn,
@@ -23,9 +22,8 @@ import {
   inCountry,
   latestPerShop,
   runDurationMs,
-  runLabel,
   runMessage,
-  runTone,
+  runPill,
   type ScrapeRunRow,
 } from '../lib/data/scrapers'
 import type { Column, Segment } from '../lib/uiTypes'
@@ -141,7 +139,7 @@ const polling = computed(() => runs.fetching.value && !runs.loading.value)
 
 // Everything a card needs, worked out once per refresh rather than per binding.
 const shops = computed(() =>
-  byUrgency(latestPerShop(shown.value), now.value).map((run) => {
+  latestPerShop(shown.value).map((run) => {
     const running = run.status === 'running'
     const expected = running ? expectedCount(run, history.value) : null
     const length = formatRunDuration(runDurationMs(run, now.value))
@@ -150,13 +148,14 @@ const shops = computed(() =>
     const quiet = running ? quietFor(run, now.value) : null
     const stalled = isStalled(run, now.value)
     const alive = quiet === null ? '' : ` · alive ${formatRunDuration(quiet)} ago`
+    const pill = runPill(run, now.value)
     return {
       id: run.id,
       props: {
         name: run.shopName,
-        tone: stalled ? 'warn' : runTone(run.status),
-        label: stalled ? 'No sign of life' : runLabel(run.status),
-        running: running && !stalled,
+        tone: pill.tone,
+        label: pill.label,
+        running: pill.busy,
         attention: stalled,
         count: formatCount(run.products_found),
         unit: running
@@ -186,8 +185,10 @@ const shops = computed(() =>
 )
 
 // ONE ROW WHEN EVERY COUNTRY IS ON SHOW. Twenty-two cards is a wall; the row
-// holds as many as fit at their normal size, most urgent first (byUrgency), and
-// says how many it left out. A chosen country shows all of its shops.
+// holds as many as fit at their normal size, in the order they started, newest
+// first, and says how many it left out. No shop is lost by it: every run is in
+// the history under the cards, with the same pill (runPill). A chosen country
+// shows all of its shops.
 //
 // "As many as fit" is read off the grid itself: with auto-fill, the browser
 // resolves grid-template-columns to one length per track, so counting them is
@@ -323,11 +324,7 @@ function asRun(row: unknown): ScrapeRunRow {
             <span class="history__shop">{{ asRun(row).shopName }}</span>
           </template>
           <template #cell-status="{ row }">
-            <StatusPill
-              :tone="runTone(asRun(row).status)"
-              :label="runLabel(asRun(row).status)"
-              :busy="asRun(row).status === 'running'"
-            />
+            <StatusPill v-bind="runPill(asRun(row), now)" />
           </template>
           <template #cell-started_at="{ row }">
             <span :title="formatRelative(asRun(row).started_at, now)">{{ formatDateTime(asRun(row).started_at) }}</span>

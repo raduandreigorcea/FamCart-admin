@@ -179,20 +179,21 @@ describe('the scrapers page', () => {
 
   // Every country at once is a wall of cards. It gets one row, as many as fit --
   // four here, since the test DOM lays nothing out -- and says how many it left.
-  it('shows one row of cards for every country, and how many it left out', async () => {
+  // In the order they started, newest first, like the history under them: a
+  // shop left off the row is still in that table, failure and all.
+  it('shows one row of the newest cards for every country, and how many it left out', async () => {
     state.runs = [
-      run({ id: '1', shop: 's1', country: 'RO' }),
-      run({ id: '2', shop: 's2', country: 'RO' }),
-      run({ id: '3', shop: 's3', country: 'IT' }),
-      run({ id: '4', shop: 's4', country: 'IT' }),
-      run({ id: '5', shop: 's5', country: 'AT' }),
-      run({ id: '6', shop: 's6', country: 'AT', status: 'failed', error: 'refused' }),
+      run({ id: '1', shop: 's1', shopName: 'One', country: 'RO' }),
+      run({ id: '2', shop: 's2', shopName: 'Two', country: 'RO' }),
+      run({ id: '3', shop: 's3', shopName: 'Three', country: 'IT' }),
+      run({ id: '4', shop: 's4', shopName: 'Four', country: 'IT' }),
+      run({ id: '5', shop: 's5', shopName: 'Five', country: 'AT' }),
+      run({ id: '6', shop: 's6', shopName: 'Six', country: 'AT', status: 'failed' }),
     ]
     const wrapper = await mountPage()
-    expect(wrapper.findAll('.shop')).toHaveLength(4)
+    const names = wrapper.findAll('.shop__name').map((n) => n.text())
+    expect(names).toEqual(['One', 'Two', 'Three', 'Four'])
     expect(wrapper.find('.shops__more').text()).toContain('+2 more')
-    // The failed shop came last and is still on show: the row is picked by urgency.
-    expect(wrapper.text()).toContain('Refused')
   })
 
   it('shows every card of a chosen country, however many', async () => {
@@ -243,7 +244,7 @@ describe('the scrapers page', () => {
     expect(text).toContain('Running')
   })
 
-  it('says a running shop has gone quiet, and puts it first', async () => {
+  it('says a running shop has gone quiet', async () => {
     state.runs = [
       run({ id: 'ok', shop: 'lidl' }),
       run({
@@ -258,11 +259,10 @@ describe('the scrapers page', () => {
       }),
     ]
     const wrapper = await mountPage()
-    const first = wrapper.findAll('.shop')[0]
-    expect(first.text()).toContain('Carrefour')
-    expect(first.text()).toContain('No sign of life')
-    expect(first.text()).toContain('14 min')
-    expect(first.classes()).toContain('shop--attention')
+    const card = wrapper.findAll('.shop').find((c) => c.text().includes('Carrefour'))!
+    expect(card.text()).toContain('No sign of life')
+    expect(card.text()).toContain('14 min')
+    expect(card.classes()).toContain('shop--attention')
   })
 
   it('lists every run it read in the history', async () => {
