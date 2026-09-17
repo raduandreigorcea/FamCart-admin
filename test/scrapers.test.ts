@@ -268,9 +268,18 @@ describe('runMessage', () => {
     )
   })
 
+  // The catalog's reaper (007) explains itself at length, and the card has two
+  // lines. What happened, in words that fit: the job never got to close the run.
+  it('says an abandoned run was killed, in words that fit a card', () => {
+    expect(runMessage({
+      shop: 'carrefour',
+      error: 'abandoned: no result was ever recorded, so the process died without closing it',
+    })).toBe('Killed before it could finish')
+  })
+
   it('leaves any other message whole, capitalised', () => {
-    expect(runMessage({ shop: 'carrefour', error: 'abandoned: no result was ever recorded' })).toBe(
-      'Abandoned: no result was ever recorded',
+    expect(runMessage({ shop: 'lidl-be', error: 'crawl ended early: circuit opened' })).toBe(
+      'Crawl ended early: circuit opened',
     )
     expect(runMessage({ shop: 'lidl', error: null })).toBeNull()
   })
