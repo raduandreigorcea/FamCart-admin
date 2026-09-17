@@ -49,6 +49,9 @@ const {
   ALL_COUNTRIES,
   countriesIn,
   byUrgency,
+  STALE_AFTER_MS,
+  quietFor,
+  isStalled,
   inCountry,
   countryName,
   RUN_HISTORY_LIMIT,
@@ -72,6 +75,8 @@ function row(over: Record<string, unknown> = {}) {
     products_created: 0,
     marked_unavailable: 0,
     error: null,
+    pages_read: 0,
+    last_alive_at: null,
     retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' },
     ...over,
   }
@@ -182,6 +187,49 @@ describe('byUrgency', () => {
     expect(byUrgency(await fetchScrapeRuns(signal())).map((r) => r.id)).toEqual([
       'fail', 'part', 'run1', 'done1', 'done2',
     ])
+  })
+})
+
+describe('the sign of life', () => {
+  const now = Date.parse('2026-09-17T10:00:00Z')
+  const running = (lastAlive: string | null) =>
+    row({ status: 'running', finished_at: null, started_at: '2026-09-17T08:00:00Z', last_alive_at: lastAlive })
+
+  it('asks for the pages read and when the shop was last heard from', async () => {
+    await fetchScrapeRuns(signal())
+    expect(calls.select).toContain('pages_read')
+    expect(calls.select).toContain('last_alive_at')
+  })
+
+  it('measures the quiet from the last sign of life', async () => {
+    answer.data = [running('2026-09-17T09:59:40Z')]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(quietFor(run, now)).toBe(20_000)
+  })
+
+  // A run from a scraper that predates the sign of life has none, and saying it
+  // is stalled would be an alarm about the deploy, not about the shop.
+  it('says nothing about a run that never reported one', async () => {
+    answer.data = [running(null)]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(quietFor(run, now)).toBeNull()
+    expect(isStalled(run, now)).toBe(false)
+  })
+
+  it('calls a running run stalled once the shop has been silent too long', async () => {
+    answer.data = [
+      running(new Date(now - STALE_AFTER_MS + 1000).toISOString()),
+      running(new Date(now - STALE_AFTER_MS - 1000).toISOString()),
+    ]
+    const [fresh, silent] = await fetchScrapeRuns(signal())
+    expect(isStalled(fresh, now)).toBe(false)
+    expect(isStalled(silent, now)).toBe(true)
+  })
+
+  it('never calls a finished run stalled, however old its last sign', async () => {
+    answer.data = [row({ status: 'completed', last_alive_at: '2026-09-01T00:00:00Z' })]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(isStalled(run, now)).toBe(false)
   })
 })
 
