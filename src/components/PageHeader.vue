@@ -46,25 +46,31 @@ const icon = computed(() => (typeof route.meta.icon === 'string' ? route.meta.ic
     <div class="head__tools">
       <slot name="tools" />
 
-      <span v-if="fetchedAt" class="head__stamp" :title="new Date(fetchedAt).toISOString()">
-        Read {{ formatRelative(new Date(fetchedAt)) }}
-      </span>
+      <!-- The stamp hangs under Refresh instead of sitting beside it. Beside it,
+           every change of wording -- "now", "30 s ago", "2 min ago" -- changed
+           its width and pushed the page's own controls sideways, twice a minute
+           on a page that polls. Under it, and out of the flow, it moves nothing. -->
+      <div class="head__refresh-wrap">
+        <button
+          type="button"
+          class="u-btn head__refresh"
+          :disabled="busy"
+          title="Run every query on this page again"
+          @click="emit('refresh')"
+        >
+          <AppIcon
+            class="head__refresh-glyph"
+            :class="{ 'head__refresh-glyph--spin': busy }"
+            name="rotate-cw"
+            :size="13"
+          />
+          Refresh
+        </button>
 
-      <button
-        type="button"
-        class="u-btn head__refresh"
-        :disabled="busy"
-        title="Run every query on this page again"
-        @click="emit('refresh')"
-      >
-        <AppIcon
-          class="head__refresh-glyph"
-          :class="{ 'head__refresh-glyph--spin': busy }"
-          name="rotate-cw"
-          :size="13"
-        />
-        Refresh
-      </button>
+        <span v-if="fetchedAt" class="head__stamp" :title="new Date(fetchedAt).toISOString()">
+          Read {{ formatRelative(new Date(fetchedAt)) }}
+        </span>
+      </div>
     </div>
   </header>
 </template>
@@ -153,7 +159,16 @@ const icon = computed(() => (typeof route.meta.icon === 'string' ? route.meta.ic
   flex: none;
 }
 
+.head__refresh-wrap {
+  position: relative;
+}
+
+/* Absolute, so its width never reaches the row. It sits in the header's own
+   bottom padding, right-aligned under the button it describes. */
 .head__stamp {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
   font-size: var(--text-2xs);
   color: var(--text-disabled);
   white-space: nowrap;
