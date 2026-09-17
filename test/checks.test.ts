@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 
 // The checks on Health: one line each for the things that must be working --
 // the live site, the pipelines, the services, the scrapers -- green or not.
@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest'
 
 import {
   PIPELINES,
+  PIPELINE_CACHE_MS,
   SCRAPE_WINDOW_MS,
   checkPipeline,
   checkServices,
@@ -22,6 +23,12 @@ import { ServiceUnavailable } from '../src/lib/data/services'
 import type { RetailerHealth } from '../src/lib/data/catalog'
 
 const signal = () => new AbortController().signal
+
+// The pipeline checks remember their answers in localStorage; one test's answer
+// must not become the next one's.
+beforeEach(() => {
+  localStorage.clear()
+})
 const NOW = Date.parse('2026-09-17T12:00:00Z')
 
 function answering(body: unknown, status = 200): typeof fetch {
@@ -98,6 +105,84 @@ describe('checkPipeline', () => {
   it('says it could not check when there is no run at all', async () => {
     const check = await checkPipeline(ci, signal(), answering({ workflow_runs: [] }), NOW)
     expect(check.tone).toBe('warn')
+  })
+})
+
+describe('checkPipeline, remembered', () => {
+  // GitHub allows sixty unauthenticated requests an hour per ADDRESS, shared by
+  // everything on the network. So a result is kept: reused outright for a few
+  // minutes, then re-asked conditionally, and shown with its age when GitHub
+  // refuses rather than disappearing.
+  const ci = PIPELINES[0]
+  const body = (conclusion: string) => ({
+    workflow_runs: [{ status: 'completed', conclusion, html_url: 'https://x/1', updated_at: '2026-09-17T09:00:00Z' }],
+  })
+
+  function memoryStore() {
+    const data = new Map<string, string>()
+    return {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => void data.set(k, v),
+    }
+  }
+
+  function recording(responses: Response[]) {
+    const seen: Array<Record<string, string>> = []
+    const impl = (async (_url: string, init: RequestInit) => {
+      seen.push({ ...(init.headers as Record<string, string>) })
+      return responses.shift()!
+    }) as unknown as typeof fetch
+    return { impl, seen }
+  }
+
+  const ok = (b: unknown, etag = '"v1"') =>
+    new Response(JSON.stringify(b), { status: 200, headers: { etag } })
+
+  it('does not ask again within the cache window', async () => {
+    const store = memoryStore()
+    const { impl, seen } = recording([ok(body('success'))])
+    await checkPipeline(ci, signal(), impl, NOW, store)
+    const again = await checkPipeline(ci, signal(), impl, NOW + PIPELINE_CACHE_MS - 1000, store)
+    expect(seen).toHaveLength(1)
+    expect(again.tone).toBe('good')
+  })
+
+  it('asks conditionally once the window has passed, and a 304 keeps the last answer', async () => {
+    const store = memoryStore()
+    const { impl, seen } = recording([ok(body('failure')), new Response(null, { status: 304 })])
+    await checkPipeline(ci, signal(), impl, NOW, store)
+    const again = await checkPipeline(ci, signal(), impl, NOW + PIPELINE_CACHE_MS + 1000, store)
+    expect(seen[1]['if-none-match']).toBe('"v1"')
+    expect(again.tone).toBe('bad')
+  })
+
+  it('shows the last known answer, with its age, when GitHub refuses', async () => {
+    const store = memoryStore()
+    const { impl } = recording([ok(body('success')), new Response('{}', { status: 403 })])
+    await checkPipeline(ci, signal(), impl, NOW, store)
+    const later = await checkPipeline(ci, signal(), impl, NOW + 20 * 60_000, store)
+    expect(later.tone).toBe('good')
+    expect(later.detail).toContain('as of 20 minutes ago')
+  })
+
+  it('still says it could not check when GitHub refuses and nothing is remembered', async () => {
+    const { impl } = recording([new Response('{}', { status: 403 })])
+    const check = await checkPipeline(ci, signal(), impl, NOW, memoryStore())
+    expect(check.tone).toBe('warn')
+  })
+
+  it('works without storage at all, as in a private window', async () => {
+    const broken = {
+      getItem: () => {
+        throw new Error('denied')
+      },
+      setItem: () => {
+        throw new Error('denied')
+      },
+    }
+    const { impl } = recording([ok(body('success'))])
+    const check = await checkPipeline(ci, signal(), impl, NOW, broken)
+    expect(check.tone).toBe('good')
   })
 })
 
