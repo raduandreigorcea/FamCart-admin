@@ -20,14 +20,14 @@ import {
   fetchScrapeRuns,
   formatRunDuration,
   inCountry,
-  latestPerShop,
+  splitCards,
   runDurationMs,
   runMessage,
   runPill,
   type ScrapeRunRow,
 } from '../lib/data/scrapers'
 import type { Column, Segment } from '../lib/uiTypes'
-import { formatCompact, formatCount, formatDateTime, formatRelative } from '../lib/format'
+import { formatClock, formatCompact, formatCount, formatDateTime, formatRelative } from '../lib/format'
 
 // Scrapers: is a shop being read right now, how far has it got, and how did the
 // last runs end.
@@ -137,9 +137,15 @@ const loadError = computed(() => (runs.error.value ? describeError(runs.error.va
 // the History title says the numbers are being asked for again.
 const polling = computed(() => runs.fetching.value && !runs.loading.value)
 
+// THE FIVE NEWEST RUNS ARE CARDS; EVERYTHING OLDER IS THE HISTORY. A run is in
+// one or the other, never both, and one card per shop (see splitCards). This
+// replaced a row sized by measuring the grid with a "+N more" line under it:
+// with the history right below, "more" was already on the page.
+const split = computed(() => splitCards(shown.value))
+
 // Everything a card needs, worked out once per refresh rather than per binding.
 const shops = computed(() =>
-  latestPerShop(shown.value).map((run) => {
+  split.value.cards.map((run) => {
     const running = run.status === 'running'
     const expected = running ? expectedCount(run, history.value) : null
     const length = formatRunDuration(runDurationMs(run, now.value))
@@ -149,6 +155,9 @@ const shops = computed(() =>
     const stalled = isStalled(run, now.value)
     const alive = quiet === null ? '' : ` · alive ${formatRunDuration(quiet)} ago`
     const pill = runPill(run, now.value)
+    // The hour it started, which is how a nightly run is read; the relative
+    // time is in the tooltip with the full date.
+    const started = `Started ${formatClock(run.started_at, now.value)}`
     return {
       id: run.id,
       props: {
@@ -165,9 +174,9 @@ const shops = computed(() =>
           : 'products read',
         progress: expected ? { value: run.products_found, max: expected } : null,
         when: running
-          ? `Running for ${length}${alive}`
-          : `Started ${formatRelative(run.started_at, now.value)}, took ${length}`,
-        whenTitle: formatDateTime(run.started_at),
+          ? `${started} · running for ${length}${alive}`
+          : `${started} · took ${length}`,
+        whenTitle: `${formatDateTime(run.started_at)}, ${formatRelative(run.started_at, now.value)}`,
         facts: [
           ...(running
             ? [{ label: 'Pages', value: formatCount(run.pages_read), title: 'Pages read so far, products or not' }]
@@ -183,46 +192,6 @@ const shops = computed(() =>
     }
   }),
 )
-
-// ONE ROW WHEN EVERY COUNTRY IS ON SHOW. Twenty-two cards is a wall; the row
-// holds as many as fit at their normal size, in the order they started, newest
-// first, and says how many it left out. No shop is lost by it: every run is in
-// the history under the cards, with the same pill (runPill). A chosen country
-// shows all of its shops.
-//
-// "As many as fit" is read off the grid itself: with auto-fill, the browser
-// resolves grid-template-columns to one length per track, so counting them is
-// counting the columns at the cards' real size, whatever the window.
-// The grid's own column count (see .shops below), for a DOM that cannot say.
-const FALLBACK_COLUMNS = 5
-const grid = ref<HTMLElement | null>(null)
-const columnCount = ref(FALLBACK_COLUMNS)
-
-function measure() {
-  const el = grid.value
-  if (!el || typeof getComputedStyle !== 'function') return
-  // A resolved template is lengths only ("224px 224px ..."). Anything else --
-  // the unresolved repeat() a DOM without layout returns -- is not a count.
-  const tracks = getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/)
-  const resolved = tracks.length > 0 && tracks.every((t) => /^\d+(\.\d+)?px$/.test(t))
-  columnCount.value = resolved ? tracks.length : FALLBACK_COLUMNS
-}
-
-let resizer: ResizeObserver | null = null
-watch(grid, (el) => {
-  resizer?.disconnect()
-  if (!el) return
-  measure()
-  if (typeof ResizeObserver === 'function') {
-    resizer = new ResizeObserver(measure)
-    resizer.observe(el)
-  }
-})
-onBeforeUnmount(() => resizer?.disconnect())
-
-const oneRow = computed(() => country.value === ALL_COUNTRIES)
-const visibleShops = computed(() => (oneRow.value ? shops.value.slice(0, columnCount.value) : shops.value))
-const hiddenCount = computed(() => shops.value.length - visibleShops.value.length)
 
 // The message gets the room: it is the only column whose content is a sentence,
 // and the one a failed row is read for.
@@ -287,14 +256,9 @@ function asRun(row: unknown): ScrapeRunRow {
       <!-- One card per shop, from its newest run. The count is the headline
            because it is the one number that answers both questions this page
            exists for: is it moving, and did it read the whole shop. -->
-      <template v-else>
-        <ul ref="grid" class="shops" aria-label="Each shop's newest run">
-          <ShopRunCard v-for="shop in visibleShops" :key="shop.id" v-bind="shop.props" />
-        </ul>
-        <p v-if="hiddenCount > 0" class="shops__more">
-          +{{ hiddenCount }} more, choose a country
-        </p>
-      </template>
+      <ul v-else class="shops" aria-label="The newest runs">
+        <ShopRunCard v-for="shop in shops" :key="shop.id" v-bind="shop.props" />
+      </ul>
 
       <!-- One line of prose rather than five more big numbers: context for the
            cards, not a second headline. It says when it was counted, because
@@ -312,14 +276,14 @@ function asRun(row: unknown): ScrapeRunRow {
         </li>
       </ul>
 
-      <PanelCard title="History" :note="`The last ${RUN_HISTORY_LIMIT} runs, newest first.`" :busy="polling" flush>
+      <PanelCard title="History" :note="`Older runs, newest first, from the last ${RUN_HISTORY_LIMIT}.`" :busy="polling" flush>
         <DataTable
           :columns="columns"
-          :rows="shown"
+          :rows="split.history"
           row-key="id"
           :loading="runs.loading.value"
           :error="loadError"
-          empty-title="No runs yet"
+          empty-title="Nothing older than the cards"
         >
           <template #cell-shopName="{ row }">
             <span class="history__shop">{{ asRun(row).shopName }}</span>
@@ -362,10 +326,10 @@ function asRun(row: unknown): ScrapeRunRow {
    country chosen in the selector -- became a banner the width of the page. With
    fixed tracks a card is a fifth of the row whatever its neighbours.
 
-   The one-row view counts the resolved columns (measure() above), so it follows
-   this rule without knowing the number. Below a width where five would crush the
-   cards, it falls back to as many as fit -- the dashboard is a desktop tool, but a
-   narrowed window should not break it. */
+   Five is also CARD_COUNT, the runs the page draws as cards, so they fill the
+   row exactly. Below a width where five would crush them the grid falls back to
+   as many as fit -- the dashboard is a desktop tool, but a narrowed window
+   should not break it. */
 .shops {
   list-style: none;
   margin: 0;
@@ -379,13 +343,6 @@ function asRun(row: unknown): ScrapeRunRow {
   .shops {
     grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
   }
-}
-
-.shops__more {
-  margin: calc(var(--space-2) * -1) 0 0;
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  text-align: right;
 }
 
 .totals {
