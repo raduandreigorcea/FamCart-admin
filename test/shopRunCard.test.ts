@@ -41,6 +41,21 @@ describe('ShopRunCard', () => {
     expect(bar.find('.shop__bar').attributes('style')).toContain('50%')
   })
 
+  it('says what the bar measures, in words under it and to a screen reader', () => {
+    const wrapper = card({ progress: { value: 1200, max: 3568 }, progressLabel: '1,200 of 3,568 departments' })
+    expect(wrapper.find('.shop__plan').text()).toBe('1,200 of 3,568 departments')
+    expect(wrapper.find('[role="progressbar"]').attributes('aria-label')).toContain('1,200 of 3,568 departments')
+  })
+
+  // A run with no plan and no earlier run to compare with still moves, and a
+  // card with no bar at all read as a run that was not going anywhere.
+  it('draws a bar that says only "working" when there is nothing to measure against', () => {
+    const bar = card({ running: true, indeterminate: true }).find('[role="progressbar"]')
+    expect(bar.exists()).toBe(true)
+    expect(bar.classes()).toContain('shop__progress--indeterminate')
+    expect(bar.attributes('aria-valuenow')).toBeUndefined()
+  })
+
   it('shows only a skeleton while loading, and nothing that reads as data', () => {
     const wrapper = card({ loading: true })
     expect(wrapper.classes()).toContain('shop--loading')
