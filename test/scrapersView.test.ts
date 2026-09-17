@@ -175,6 +175,53 @@ describe('the scrapers page', () => {
     expect(wrapper.find('[role="radio"][aria-checked="true"]').text()).toBe('All')
   })
 
+  // Every country at once is a wall of cards. It gets one row, as many as fit --
+  // four here, since the test DOM lays nothing out -- and says how many it left.
+  it('shows one row of cards for every country, and how many it left out', async () => {
+    state.runs = [
+      run({ id: '1', shop: 's1', country: 'RO' }),
+      run({ id: '2', shop: 's2', country: 'RO' }),
+      run({ id: '3', shop: 's3', country: 'IT' }),
+      run({ id: '4', shop: 's4', country: 'IT' }),
+      run({ id: '5', shop: 's5', country: 'AT' }),
+      run({ id: '6', shop: 's6', country: 'AT', status: 'failed', error: 'refused' }),
+    ]
+    const wrapper = await mountPage()
+    expect(wrapper.findAll('.shop')).toHaveLength(4)
+    expect(wrapper.find('.shops__more').text()).toContain('+2 more')
+    // The failed shop came last and is still on show: the row is picked by urgency.
+    expect(wrapper.text()).toContain('Refused')
+  })
+
+  it('shows every card of a chosen country, however many', async () => {
+    state.runs = [1, 2, 3, 4, 5, 6].map((n) => run({ id: `a${n}`, shop: `at${n}`, country: 'AT' }))
+      .concat(run({ id: 'r', shop: 'lidl', country: 'RO' }))
+    const wrapper = await mountPage()
+    await wrapper.find('[role="radio"][title="Austria"]').trigger('click')
+    expect(wrapper.findAll('.shop')).toHaveLength(6)
+    expect(wrapper.find('.shops__more').exists()).toBe(false)
+  })
+
+  it('counts the chosen country in the totals line, and drops what is global only', async () => {
+    state.runs = [run({ id: '1', shop: 'lidl-it', country: 'IT' }), run({ id: '2', shop: 'lidl', country: 'RO' })]
+    state.stats = {
+      counted_at: new Date().toISOString(),
+      products: 90000, listings: 95000, unavailable: 20000, identifiers: 50000,
+      with_barcode: 50000, with_price: 80000, earned: 3, orphans: 700, retailers: [],
+      countries: { IT: { products: 225, listings: 230, unavailable: 4, with_barcode: 100 } },
+    }
+    const wrapper = await mountPage()
+    expect(wrapper.find('.totals').text()).toContain('90k')
+    expect(wrapper.find('.totals').text()).toContain('sold nowhere')
+
+    await wrapper.find('[role="radio"][title="Italy"]').trigger('click')
+    const text = wrapper.find('.totals').text()
+    expect(text).toContain('225')
+    expect(text).toContain('230')
+    expect(text).not.toContain('90k')
+    expect(text).not.toContain('sold nowhere')
+  })
+
   it('lists every run it read in the history', async () => {
     state.runs = [run({ id: 'a' }), run({ id: 'b' }), run({ id: 'c' })]
     const wrapper = await mountPage()

@@ -144,6 +144,23 @@ export function countriesIn(runs: ScrapeRunRow[]): string[] {
   return [...new Set(runs.map((run) => run.country).filter(Boolean))].sort()
 }
 
+/**
+ * The same runs, most urgent first: failed or refused to sweep, then running,
+ * then the rest in the order they came. Stable within each band.
+ *
+ * With every country on show the page has room for one row of cards, so this is
+ * what decides which shops make it -- and a shop that broke must never be the
+ * one left out.
+ */
+export function byUrgency(runs: ScrapeRunRow[]): ScrapeRunRow[] {
+  const band = (run: ScrapeRunRow) =>
+    run.status === 'failed' || run.status === 'partial' ? 0 : run.status === 'running' ? 1 : 2
+  return runs
+    .map((run, index) => ({ run, index }))
+    .sort((a, b) => band(a.run) - band(b.run) || a.index - b.index)
+    .map(({ run }) => run)
+}
+
 /** One country's runs, or every run for ALL_COUNTRIES. */
 export function inCountry(runs: ScrapeRunRow[], country: string): ScrapeRunRow[] {
   return country === ALL_COUNTRIES ? runs : runs.filter((run) => run.country === country)

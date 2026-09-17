@@ -12,6 +12,7 @@ import { catalogConfigured, fetchCatalogStats } from '../lib/data/catalog'
 import {
   ALL_COUNTRIES,
   RUN_HISTORY_LIMIT,
+  byUrgency,
   countriesIn,
   countryName,
   expectedCount,
@@ -61,17 +62,6 @@ function refresh() {
   void stats.refetch()
 }
 
-const catalogTotals = computed(() => {
-  const s = stats.data.value
-  if (!s) return []
-  return [
-    { value: s.products, label: 'products' },
-    { value: s.listings, label: 'listings' },
-    { value: s.with_barcode, label: 'with a barcode' },
-    { value: s.unavailable, label: 'out of stock' },
-    { value: s.orphans, label: 'sold nowhere' },
-  ]
-})
 
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -113,6 +103,34 @@ watch(segments, (list) => {
 })
 
 const shown = computed(() => inCountry(history.value, country.value))
+
+// The totals follow the selector. A country's numbers come from the cache's own
+// per-country count (catalog 020), not from adding shops up: a product two shops
+// in one country both sell is one product there. "Sold nowhere" belongs to no
+// country, so it is only said for all of them. A catalog that predates the
+// per-country count sends none, and then the line says nothing rather than show
+// the whole catalog's numbers under a country's name.
+const catalogTotals = computed(() => {
+  const s = stats.data.value
+  if (!s) return []
+  if (country.value === ALL_COUNTRIES) {
+    return [
+      { value: s.products, label: 'products' },
+      { value: s.listings, label: 'listings' },
+      { value: s.with_barcode, label: 'with a barcode' },
+      { value: s.unavailable, label: 'out of stock' },
+      { value: s.orphans, label: 'sold nowhere' },
+    ]
+  }
+  if (!s.countries) return []
+  const c = s.countries[country.value] ?? { products: 0, listings: 0, with_barcode: 0, unavailable: 0 }
+  return [
+    { value: c.products, label: 'products' },
+    { value: c.listings, label: 'listings' },
+    { value: c.with_barcode, label: 'with a barcode' },
+    { value: c.unavailable, label: 'out of stock' },
+  ]
+})
 const loadError = computed(() => (runs.error.value ? describeError(runs.error.value).detail : ''))
 
 // The poll, as opposed to the first load: the cards stay, and a spinner beside
@@ -121,7 +139,7 @@ const polling = computed(() => runs.fetching.value && !runs.loading.value)
 
 // Everything a card needs, worked out once per refresh rather than per binding.
 const shops = computed(() =>
-  latestPerShop(shown.value).map((run) => {
+  byUrgency(latestPerShop(shown.value)).map((run) => {
     const running = run.status === 'running'
     const expected = running ? expectedCount(run, history.value) : null
     const length = formatRunDuration(runDurationMs(run, now.value))
@@ -153,6 +171,43 @@ const shops = computed(() =>
     }
   }),
 )
+
+// ONE ROW WHEN EVERY COUNTRY IS ON SHOW. Twenty-two cards is a wall; the row
+// holds as many as fit at their normal size, most urgent first (byUrgency), and
+// says how many it left out. A chosen country shows all of its shops.
+//
+// "As many as fit" is read off the grid itself: with auto-fill, the browser
+// resolves grid-template-columns to one length per track, so counting them is
+// counting the columns at the cards' real size, whatever the window.
+const FALLBACK_COLUMNS = 4
+const grid = ref<HTMLElement | null>(null)
+const columnCount = ref(FALLBACK_COLUMNS)
+
+function measure() {
+  const el = grid.value
+  if (!el || typeof getComputedStyle !== 'function') return
+  // A resolved template is lengths only ("224px 224px ..."). Anything else --
+  // the unresolved repeat() a DOM without layout returns -- is not a count.
+  const tracks = getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/)
+  const resolved = tracks.length > 0 && tracks.every((t) => /^\d+(\.\d+)?px$/.test(t))
+  columnCount.value = resolved ? tracks.length : FALLBACK_COLUMNS
+}
+
+let resizer: ResizeObserver | null = null
+watch(grid, (el) => {
+  resizer?.disconnect()
+  if (!el) return
+  measure()
+  if (typeof ResizeObserver === 'function') {
+    resizer = new ResizeObserver(measure)
+    resizer.observe(el)
+  }
+})
+onBeforeUnmount(() => resizer?.disconnect())
+
+const oneRow = computed(() => country.value === ALL_COUNTRIES)
+const visibleShops = computed(() => (oneRow.value ? shops.value.slice(0, columnCount.value) : shops.value))
+const hiddenCount = computed(() => shops.value.length - visibleShops.value.length)
 
 // The message gets the room: it is the only column whose content is a sentence,
 // and the one a failed row is read for.
@@ -217,14 +272,23 @@ function asRun(row: unknown): ScrapeRunRow {
       <!-- One card per shop, from its newest run. The count is the headline
            because it is the one number that answers both questions this page
            exists for: is it moving, and did it read the whole shop. -->
-      <ul v-else class="shops" aria-label="Each shop's newest run">
-        <ShopRunCard v-for="shop in shops" :key="shop.id" v-bind="shop.props" />
-      </ul>
+      <template v-else>
+        <ul ref="grid" class="shops" aria-label="Each shop's newest run">
+          <ShopRunCard v-for="shop in visibleShops" :key="shop.id" v-bind="shop.props" />
+        </ul>
+        <p v-if="hiddenCount > 0" class="shops__more">
+          +{{ hiddenCount }} more, choose a country
+        </p>
+      </template>
 
       <!-- One line of prose rather than five more big numbers: context for the
            cards, not a second headline. It says when it was counted, because
            unlike the cards it is not live. -->
-      <ul v-if="stats.data.value" class="totals" aria-label="The catalog as a whole">
+      <ul
+        v-if="stats.data.value && catalogTotals.length"
+        class="totals"
+        :aria-label="country === ALL_COUNTRIES ? 'The catalog as a whole' : `The catalog in ${countryName(country)}`"
+      >
         <li v-for="t in catalogTotals" :key="t.label" :title="formatCount(t.value)">
           <span class="totals__value u-num">{{ formatCompact(t.value) }}</span> {{ t.label }}
         </li>
@@ -292,6 +356,13 @@ function asRun(row: unknown): ScrapeRunRow {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
   gap: var(--space-3);
+}
+
+.shops__more {
+  margin: calc(var(--space-2) * -1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-align: right;
 }
 
 .totals {
