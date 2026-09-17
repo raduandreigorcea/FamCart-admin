@@ -205,7 +205,8 @@ describe('the scrapers page', () => {
     ]
     const wrapper = await mountPage()
     const names = wrapper.findAll('.shop__name').map((n) => n.text())
-    expect(names).toEqual(['One', 'Two', 'Three', 'Four', 'Five'])
+    // The name carries its country now, a hover card of its own.
+    expect(names).toEqual(['One RO', 'Two RO', 'Three RO', 'Four RO', 'Five RO'])
     expect(wrapper.find('.history').attributes('data-rows')).toBe('2')
   })
 

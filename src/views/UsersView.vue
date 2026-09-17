@@ -9,6 +9,7 @@ import TablePager from '../components/TablePager.vue'
 import FilterBar from '../components/FilterBar.vue'
 import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
+import UserId from '../components/UserId.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { useTableState } from '../lib/useTableState'
 import { fetchUsers, isUserSort } from '../lib/data/users'
@@ -128,7 +129,10 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         </template>
 
         <template #cell-user_id="{ row }">
-          <CopyValue :value="String(row.user_id)" :display="shortUserId(String(row.user_id))" label="Clerk id" />
+          <!-- The copy button is the focusable part, so the card opens from it. -->
+          <UserId :id="String(row.user_id)" wraps>
+            <CopyValue :value="String(row.user_id)" :display="shortUserId(String(row.user_id))" label="Clerk id" />
+          </UserId>
         </template>
 
         <template #cell-first_seen="{ row }">
