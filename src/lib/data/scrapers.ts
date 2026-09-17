@@ -132,49 +132,21 @@ export function countryName(code: string): string {
   }
 }
 
-export interface CountrySection {
-  code: string
-  name: string
-  runs: ScrapeRunRow[]
-}
+/** The selector's "every country" value. Not a market code, so it cannot collide. */
+export const ALL_COUNTRIES = 'all'
 
 /**
- * One section per country, each shop in the country it sells in.
- *
- * NO COUNTRY IS SPECIAL, Romania included. An earlier version split the page
- * into "Romania" and "Abroad", which read as the other ten countries being an
- * afterthought. Sections go by the country's name because that is how a person
- * scans a list of countries; shops inside by name, then slug, so two runs of a
- * page draw the same order.
- *
- * Takes one run per shop (see latestPerShop).
+ * The countries the selector offers: each one that has a run in the rows at
+ * hand, once, by code. Only those, because a country with no run yet would be a
+ * button that empties the page and says nothing about why.
  */
-export function groupByCountry(runs: ScrapeRunRow[]): CountrySection[] {
-  const byCode = new Map<string, ScrapeRunRow[]>()
-  for (const run of runs) {
-    const list = byCode.get(run.country) ?? []
-    list.push(run)
-    byCode.set(run.country, list)
-  }
-  return [...byCode.entries()]
-    .map(([code, list]) => ({
-      code,
-      name: countryName(code),
-      runs: list.sort((a, b) => a.shopName.localeCompare(b.shopName) || a.shop.localeCompare(b.shop)),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+export function countriesIn(runs: ScrapeRunRow[]): string[] {
+  return [...new Set(runs.map((run) => run.country).filter(Boolean))].sort()
 }
 
-/**
- * The shops somebody should look at: a run that failed, or one that imported
- * what it read and refused to sweep. Not a running one -- that is the normal
- * state of half the page for half the morning.
- *
- * They stay in their country's section as well. This list is what the page
- * names at the top, so one broken shop is not a card among twenty-two.
- */
-export function needsAttention(runs: ScrapeRunRow[]): ScrapeRunRow[] {
-  return runs.filter((run) => run.status === 'failed' || run.status === 'partial')
+/** One country's runs, or every run for ALL_COUNTRIES. */
+export function inCountry(runs: ScrapeRunRow[], country: string): ScrapeRunRow[] {
+  return country === ALL_COUNTRIES ? runs : runs.filter((run) => run.country === country)
 }
 
 /** How long a run took, or for a running one, how long it has been going. */

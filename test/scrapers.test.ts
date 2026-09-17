@@ -46,8 +46,9 @@ const {
   formatRunDuration,
   expectedCount,
   runMessage,
-  groupByCountry,
-  needsAttention,
+  ALL_COUNTRIES,
+  countriesIn,
+  inCountry,
   countryName,
   RUN_HISTORY_LIMIT,
 } = await import('../src/lib/data/scrapers')
@@ -137,46 +138,32 @@ describe('latestPerShop', () => {
   })
 })
 
-describe('groupByCountry', () => {
-  const shop = (slug: string, country: string, name = 'Lidl', status = 'completed') =>
-    row({ id: slug, status, retailer: { slug, name, country } })
+describe('countriesIn', () => {
+  const shop = (slug: string, country: string) =>
+    row({ id: slug, retailer: { slug, name: 'Lidl', country } })
 
-  // No country is special, Romania included: a section per country, in the
-  // order a person scans a list of countries, which is by name.
-  it('gives each country its own section, ordered by the country\'s name', async () => {
-    answer.data = [
-      shop('lidl', 'RO'),
-      shop('lidl-de', 'DE'),
-      shop('hofer', 'AT', 'Hofer'),
-      shop('lidl-at', 'AT'),
-    ]
-    const sections = groupByCountry(await fetchScrapeRuns(signal()))
-    expect(sections.map((s) => s.name)).toEqual(['Austria', 'Germany', 'Romania'])
-    expect(sections[0].runs.map((r) => r.shop)).toEqual(['hofer', 'lidl-at'])
+  // The selector offers what the page can show, no more: a country with no run
+  // yet would be a button that empties the page.
+  it('is each country that has a run, once, by code', async () => {
+    answer.data = [shop('lidl', 'RO'), shop('lidl-it', 'IT'), shop('lidl-at', 'AT'), shop('hofer', 'AT')]
+    expect(countriesIn(await fetchScrapeRuns(signal()))).toEqual(['AT', 'IT', 'RO'])
   })
 
-  // A failure is not lifted out of its country; the page names it separately.
-  it('keeps a failed shop in its own country', async () => {
-    answer.data = [shop('lidl-be', 'BE', 'Lidl', 'failed')]
-    const [belgium] = groupByCountry(await fetchScrapeRuns(signal()))
-    expect(belgium.code).toBe('BE')
-    expect(belgium.runs).toHaveLength(1)
-  })
-
-  it('draws nothing for no runs', () => {
-    expect(groupByCountry([])).toEqual([])
+  it('leaves out a run whose shop has no country', async () => {
+    answer.data = [shop('lidl', 'RO'), shop('mystery', '')]
+    expect(countriesIn(await fetchScrapeRuns(signal()))).toEqual(['RO'])
   })
 })
 
-describe('needsAttention', () => {
-  it('is the shops that failed or refused to sweep, never the running ones', async () => {
+describe('inCountry', () => {
+  it('keeps one country\'s runs, and all of them for ALL_COUNTRIES', async () => {
     answer.data = [
-      row({ id: 'a', status: 'failed', retailer: { slug: 'lidl-be', name: 'Lidl', country: 'BE' } }),
-      row({ id: 'b', status: 'partial', retailer: { slug: 'auchan', name: 'Auchan', country: 'RO' } }),
-      row({ id: 'c', status: 'running', retailer: { slug: 'lidl-es', name: 'Lidl', country: 'ES' } }),
-      row({ id: 'd', status: 'completed', retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' } }),
+      row({ id: 'a', retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' } }),
+      row({ id: 'b', retailer: { slug: 'lidl-it', name: 'Lidl', country: 'IT' } }),
     ]
-    expect(needsAttention(await fetchScrapeRuns(signal())).map((r) => r.id)).toEqual(['a', 'b'])
+    const runs = await fetchScrapeRuns(signal())
+    expect(inCountry(runs, 'IT').map((r) => r.id)).toEqual(['b'])
+    expect(inCountry(runs, ALL_COUNTRIES).map((r) => r.id)).toEqual(['a', 'b'])
   })
 })
 

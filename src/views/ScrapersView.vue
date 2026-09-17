@@ -1,29 +1,31 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import ShopRunCard from '../components/ShopRunCard.vue'
 import StateBlock from '../components/StateBlock.vue'
 import StatusPill from '../components/StatusPill.vue'
+import SegmentedControl from '../components/SegmentedControl.vue'
 import DataTable from '../components/DataTable.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { catalogConfigured, fetchCatalogStats } from '../lib/data/catalog'
 import {
+  ALL_COUNTRIES,
   RUN_HISTORY_LIMIT,
+  countriesIn,
+  countryName,
   expectedCount,
   fetchScrapeRuns,
-  countryName,
   formatRunDuration,
-  groupByCountry,
+  inCountry,
   latestPerShop,
-  needsAttention,
   runDurationMs,
   runLabel,
   runMessage,
   runTone,
   type ScrapeRunRow,
 } from '../lib/data/scrapers'
-import type { Column } from '../lib/uiTypes'
+import type { Column, Segment } from '../lib/uiTypes'
 import { formatCompact, formatCount, formatDateTime, formatRelative } from '../lib/format'
 
 // Scrapers: is a shop being read right now, how far has it got, and how did the
@@ -89,34 +91,47 @@ onBeforeUnmount(() => {
 const now = computed(() => runs.fetchedAt.value ?? Date.now())
 
 const history = computed(() => runs.data.value ?? [])
+
+// WHICH COUNTRY. Twenty-two shops in one grid is a wall; the selector cuts it to
+// one country's handful, the way the time range does on Health. Kept for as long
+// as the page is open, like that one, and not remembered: the page should open
+// on every shop, since "nothing is wrong" is a claim about all of them.
+const country = ref<string>(ALL_COUNTRIES)
+
+// Only the countries that have a run, so no button empties the page. Codes
+// rather than names, because eleven country names do not fit in one control;
+// the name is in the tooltip.
+const segments = computed<Segment[]>(() => [
+  { value: ALL_COUNTRIES, label: 'All', title: 'Every country' },
+  ...countriesIn(history.value).map((code) => ({ value: code, label: code, title: countryName(code) })),
+])
+
+// A refresh can take away the country on show -- its runs aged out of the rows.
+// Fall back to every shop rather than draw an empty page with a live filter.
+watch(segments, (list) => {
+  if (!list.some((segment) => segment.value === country.value)) country.value = ALL_COUNTRIES
+})
+
+const shown = computed(() => inCountry(history.value, country.value))
 const loadError = computed(() => (runs.error.value ? describeError(runs.error.value).detail : ''))
 
 // The poll, as opposed to the first load: the cards stay, and a spinner beside
 // the History title says the numbers are being asked for again.
 const polling = computed(() => runs.fetching.value && !runs.loading.value)
 
-const latest = computed(() => latestPerShop(history.value))
-
-/** Where a card sits on the page, so the list at the top can take you there. */
-function cardId(run: ScrapeRunRow): string {
-  return `shop-${run.id}`
-}
-
 // Everything a card needs, worked out once per refresh rather than per binding.
-function cardFor(run: ScrapeRunRow) {
+const shops = computed(() =>
+  latestPerShop(shown.value).map((run) => {
     const running = run.status === 'running'
     const expected = running ? expectedCount(run, history.value) : null
     const length = formatRunDuration(runDurationMs(run, now.value))
-    const attention = run.status === 'failed' || run.status === 'partial'
     return {
       id: run.id,
-      domId: cardId(run),
       props: {
         name: run.shopName,
         tone: runTone(run.status),
         label: runLabel(run.status),
         running,
-        attention,
         count: formatCount(run.products_found),
         unit: running
           ? expected
@@ -136,36 +151,8 @@ function cardFor(run: ScrapeRunRow) {
         message: runMessage(run),
       },
     }
-}
-
-// A SECTION PER COUNTRY, with no country treated as the main one. Twenty-two
-// cards in one grid were a wall, and nine of them were titled "Lidl"; under a
-// country heading each card is one of a handful, and "Lidl" needs no suffix.
-const sections = computed(() =>
-  groupByCountry(latest.value).map((section) => ({
-    code: section.code,
-    name: section.name,
-    cards: section.runs.map(cardFor),
-  })),
+  }),
 )
-
-// What broke, named once at the top. The cards stay in their countries; this is
-// only so that one failure is not a card somebody has to find among twenty-two.
-const attention = computed(() =>
-  needsAttention(latest.value).map((run) => ({
-    id: cardId(run),
-    label: `${run.shopName} (${countryName(run.country)})`,
-  })),
-)
-
-// A button, not an anchor: the router's scrollBehavior sends every navigation
-// to the top, and a hash change is a navigation to it.
-function goTo(id: string) {
-  const card = document.getElementById(id)
-  if (!card) return
-  card.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  card.focus({ preventScroll: true })
-}
 
 // The message gets the room: it is the only column whose content is a sentence,
 // and the one a failed row is read for.
@@ -193,7 +180,17 @@ function asRun(row: unknown): ScrapeRunRow {
       :fetched-at="runs.fetchedAt.value"
       :busy="runs.fetching.value || stats.fetching.value"
       @refresh="refresh"
-    />
+    >
+      <template #tools>
+        <!-- One country is no choice at all, so the control waits for a second. -->
+        <SegmentedControl
+          v-if="segments.length > 2"
+          v-model="country"
+          :segments="segments"
+          aria-label="Country"
+        />
+      </template>
+    </PageHeader>
 
     <PanelCard v-if="!configured" title="Scrapers">
       <StateBlock
@@ -211,46 +208,18 @@ function asRun(row: unknown): ScrapeRunRow {
       </ul>
       <StateBlock v-else-if="loadError" state="error" title="Could not read the runs" :message="loadError" />
       <StateBlock
-        v-else-if="!sections.length"
+        v-else-if="!shops.length"
         state="empty"
         title="No runs yet"
         message="No scraper has recorded a run. The nightly job writes one row per shop when it starts."
       />
 
-      <template v-else>
-        <p v-if="attention.length" class="attention" role="status">
-          <span class="attention__count">
-            {{ attention.length }} {{ attention.length === 1 ? 'needs' : 'need' }} attention:
-          </span>
-          <template v-for="(item, i) in attention" :key="item.id">
-            <button type="button" class="attention__link" @click="goTo(item.id)">{{ item.label }}</button><span
-              v-if="i < attention.length - 1"
-              class="attention__sep"
-              >, </span
-            >
-          </template>
-        </p>
-
-        <!-- One card per shop, from its newest run, under the country it sells in.
-             The count is the headline because it is the one number that answers
-             both questions this page exists for: is it moving, and did it read
-             the whole shop. -->
-        <section v-for="section in sections" :key="section.code" class="country">
-          <h3 class="country__title">
-            {{ section.name }}
-            <span class="country__count">· {{ section.cards.length }}</span>
-          </h3>
-          <ul class="shops" :aria-label="`Each shop's newest run in ${section.name}`">
-            <ShopRunCard
-              v-for="card in section.cards"
-              :id="card.domId"
-              :key="card.id"
-              tabindex="-1"
-              v-bind="card.props"
-            />
-          </ul>
-        </section>
-      </template>
+      <!-- One card per shop, from its newest run. The count is the headline
+           because it is the one number that answers both questions this page
+           exists for: is it moving, and did it read the whole shop. -->
+      <ul v-else class="shops" aria-label="Each shop's newest run">
+        <ShopRunCard v-for="shop in shops" :key="shop.id" v-bind="shop.props" />
+      </ul>
 
       <!-- One line of prose rather than five more big numbers: context for the
            cards, not a second headline. It says when it was counted, because
@@ -267,7 +236,7 @@ function asRun(row: unknown): ScrapeRunRow {
       <PanelCard title="History" :note="`The last ${RUN_HISTORY_LIMIT} runs, newest first.`" :busy="polling" flush>
         <DataTable
           :columns="columns"
-          :rows="history"
+          :rows="shown"
           row-key="id"
           :loading="runs.loading.value"
           :error="loadError"
@@ -308,57 +277,15 @@ function asRun(row: unknown): ScrapeRunRow {
 </template>
 
 <style scoped>
-.attention {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--status-bad-bg);
-  color: var(--status-bad);
-  font-size: var(--text-sm);
-}
-
-.attention__count {
-  font-weight: var(--weight-semibold);
-}
-
-.attention__link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.country {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.country__title {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
-  color: var(--text-primary);
-}
-
-.country__count {
-  font-weight: var(--weight-regular);
-  color: var(--text-secondary);
-}
-
-/* Cards rather than full-width rows: a country's shops read side by side, so a
-   count that is a tenth of its neighbour's is visible without reading a number.
-   auto-fill, not auto-fit, so a country with one shop gets a card, not a
-   banner: the cards line up in the same columns from one country to the next. */
+/* Cards rather than full-width rows: four shops read side by side, so a count
+   that is a tenth of its neighbour's is visible without reading a number.
+   auto-fit, not auto-fill, so four shops stretch across the page. */
 .shops {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   gap: var(--space-3);
 }
 
