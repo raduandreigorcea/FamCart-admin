@@ -277,15 +277,20 @@ function asRun(row: unknown): ScrapeRunRow {
 </template>
 
 <style scoped>
-/* Cards rather than full-width rows: four shops read side by side, so a count
-   that is a tenth of its neighbour's is visible without reading a number.
-   auto-fit, not auto-fill, so four shops stretch across the page. */
+/* Cards rather than full-width rows: shops read side by side, so a count that is
+   a tenth of its neighbour's is visible without reading a number.
+
+   auto-fill, not auto-fit. auto-fit collapses the empty tracks and hands their
+   room to the cards, which was fine for four shops and turns one shop -- a
+   country chosen in the selector -- into a banner the width of the page. With
+   auto-fill the empty tracks keep their room, so a card is the same size whether
+   it has twenty-one neighbours or none. */
 .shops {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
   gap: var(--space-3);
 }
 
