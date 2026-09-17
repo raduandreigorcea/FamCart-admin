@@ -311,6 +311,19 @@ describe('the scrapers page', () => {
     expect(text).toContain('Counted')
   })
 
+  // Between the cards and the history it split the page in two; the cards are
+  // the history's newest rows, so nothing sits between them.
+  it('puts the totals above the cards, so nothing separates the cards from the history', async () => {
+    state.stats = {
+      counted_at: new Date().toISOString(),
+      products: 1, listings: 1, unavailable: 0, identifiers: 0,
+      with_barcode: 0, with_price: 0, earned: 0, orphans: 0, retailers: [],
+    }
+    const html = (await mountPage()).html()
+    expect(html.indexOf('class="totals"')).toBeLessThan(html.indexOf('class="shops"'))
+    expect(html.indexOf('class="shops"')).toBeLessThan(html.indexOf('class="history"'))
+  })
+
   it('says the catalog is not connected, instead of an empty page', async () => {
     state.configured = false
     const wrapper = await mountPage()
