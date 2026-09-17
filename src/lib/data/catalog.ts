@@ -242,6 +242,8 @@ export async function deleteCatalogProduct(id: string, signal: AbortSignal): Pro
 /** One retailer's scrape health, from catalog_stats(). */
 export interface RetailerHealth {
   slug: string
+  /** What the shop calls itself (catalog 020). Absent from an older catalog. */
+  name?: string | null
   country: string
   enabled: boolean
   /** From the cached count (catalog 020): null until counted, or for a shop
@@ -261,6 +263,8 @@ export interface RetailerHealth {
     marked_unavailable: number
     error_count: number
     error: string | null
+    /** The run's last sign of life (catalog 022), null before one was reported. */
+    last_alive_at?: string | null
   } | null
   previous_valid: number | null
   /** This run's valid count against the last completed one's. */
@@ -292,6 +296,8 @@ export interface CatalogStats {
    * been migrated yet does not send it.
    */
   countries?: Record<string, CountryCounts>
+  /** The catalog database's size in bytes, read live. Absent from an older catalog. */
+  database_size?: number
 }
 
 export interface CountryCounts {
