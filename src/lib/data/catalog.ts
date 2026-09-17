@@ -286,6 +286,20 @@ export interface CatalogStats {
   /** Products no shop currently lists: created by hand, or dropped everywhere. */
   orphans: number
   retailers: RetailerHealth[]
+  /**
+   * The same counts for one country, keyed by market code (catalog 020). A
+   * country with no listings is absent. Optional because a catalog that has not
+   * been migrated yet does not send it.
+   */
+  countries?: Record<string, CountryCounts>
+}
+
+export interface CountryCounts {
+  /** A product two shops in the country both sell counts once. */
+  products: number
+  listings: number
+  unavailable: number
+  with_barcode: number
 }
 
 /**

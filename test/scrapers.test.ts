@@ -48,6 +48,7 @@ const {
   runMessage,
   ALL_COUNTRIES,
   countriesIn,
+  byUrgency,
   inCountry,
   countryName,
   RUN_HISTORY_LIMIT,
@@ -164,6 +165,23 @@ describe('inCountry', () => {
     const runs = await fetchScrapeRuns(signal())
     expect(inCountry(runs, 'IT').map((r) => r.id)).toEqual(['b'])
     expect(inCountry(runs, ALL_COUNTRIES).map((r) => r.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('byUrgency', () => {
+  // With every country on show there is room for one row, so what makes the row
+  // is decided here: what broke, then what is moving, then the rest as it came.
+  it('puts failed and refused runs first, running next, the rest in their order', async () => {
+    answer.data = [
+      row({ id: 'done1', status: 'completed' }),
+      row({ id: 'run1', status: 'running', retailer: { slug: 'a', name: 'A', country: 'RO' } }),
+      row({ id: 'fail', status: 'failed', retailer: { slug: 'b', name: 'B', country: 'RO' } }),
+      row({ id: 'done2', status: 'completed', retailer: { slug: 'c', name: 'C', country: 'RO' } }),
+      row({ id: 'part', status: 'partial', retailer: { slug: 'd', name: 'D', country: 'RO' } }),
+    ]
+    expect(byUrgency(await fetchScrapeRuns(signal())).map((r) => r.id)).toEqual([
+      'fail', 'part', 'run1', 'done1', 'done2',
+    ])
   })
 })
 
