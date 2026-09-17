@@ -60,8 +60,8 @@ function run(over: Record<string, unknown> = {}) {
   }
 }
 
-async function mountPage(options: { attachTo?: Element } = {}) {
-  const wrapper = mount(ScrapersView, { global: { stubs }, ...options })
+async function mountPage() {
+  const wrapper = mount(ScrapersView, { global: { stubs } })
   await flushPromises()
   return wrapper
 }
@@ -124,47 +124,55 @@ describe('the scrapers page', () => {
     expect(wrapper.findAll('.shop')).toHaveLength(2)
   })
 
-  // Twenty-two cards in one grid were a wall. A section per country, and no
-  // country treated as the main one -- Romania is sorted like the rest.
-  it('puts each shop under its country, the countries in order of their names', async () => {
+  // Twenty-two cards in one grid. The selector cuts it to one country's handful,
+  // and the history below says the same thing as the cards.
+  it('shows one country\'s shops when that country is chosen', async () => {
     state.runs = [
       run({ id: '1', shop: 'lidl-it', country: 'IT' }),
-      run({ id: '2', shop: 'lidl-be', country: 'BE' }),
-      run({ id: '3', shop: 'lidl', country: 'RO' }),
-      run({ id: '4', shop: 'hofer', shopName: 'Hofer', country: 'AT' }),
+      run({ id: '2', shop: 'lidl-at', country: 'AT' }),
+      run({ id: '3', shop: 'hofer', shopName: 'Hofer', country: 'AT' }),
     ]
     const wrapper = await mountPage()
-    const titles = wrapper.findAll('.country__title').map((t) => t.text())
-    expect(titles).toEqual(['Austria · 1', 'Belgium · 1', 'Italy · 1', 'Romania · 1'])
+    expect(wrapper.findAll('.shop')).toHaveLength(3)
+
+    await wrapper.find('[role="radio"][title="Austria"]').trigger('click')
+    expect(wrapper.findAll('.shop')).toHaveLength(2)
+    expect(wrapper.find('.history').attributes('data-rows')).toBe('2')
+
+    await wrapper.find('[role="radio"][title="Every country"]').trigger('click')
+    expect(wrapper.findAll('.shop')).toHaveLength(3)
   })
 
-  it('names what broke at the top, with the country, and leaves its card in place', async () => {
+  it('offers All and each country that has a run, by code', async () => {
     state.runs = [
-      run({ id: 'be', shop: 'lidl-be', country: 'BE', status: 'failed', error: 'crawl ended early' }),
-      run({ id: 'it', shop: 'lidl-it', country: 'IT' }),
+      run({ id: '1', shop: 'lidl-it', country: 'IT' }),
+      run({ id: '2', shop: 'lidl', country: 'RO' }),
+    ]
+    const labels = (await mountPage()).findAll('[role="radio"]').map((b) => b.text())
+    expect(labels).toEqual(['All', 'IT', 'RO'])
+  })
+
+  it('offers no choice while every shop is in one country', async () => {
+    state.runs = [run({ id: '1' }), run({ id: '2', shop: 'auchan', shopName: 'Auchan' })]
+    expect((await mountPage()).find('[role="radiogroup"]').exists()).toBe(false)
+  })
+
+  it('goes back to every country when the chosen one has no runs left', async () => {
+    vi.useFakeTimers()
+    state.runs = [
+      run({ id: '1', shop: 'lidl-it', country: 'IT' }),
+      run({ id: '2', shop: 'lidl', country: 'RO' }),
+      run({ id: '3', shop: 'lidl-at', country: 'AT' }),
     ]
     const wrapper = await mountPage()
-    expect(wrapper.find('.attention').text()).toContain('1 needs attention')
-    expect(wrapper.find('.attention').text()).toContain('Lidl (Belgium)')
-    expect(wrapper.find('#shop-be').exists()).toBe(true)
-    expect(wrapper.find('#shop-be').classes()).toContain('shop--attention')
-  })
+    await wrapper.find('[role="radio"][title="Italy"]').trigger('click')
+    expect(wrapper.findAll('.shop')).toHaveLength(1)
 
-  it('says nothing at the top when nothing broke', async () => {
-    state.runs = [run({ status: 'running', finished_at: null })]
-    expect((await mountPage()).find('.attention').exists()).toBe(false)
-  })
-
-  it('takes you to the card of a shop named at the top', async () => {
-    state.runs = [run({ id: 'be', shop: 'lidl-be', country: 'BE', status: 'failed' })]
-    const wrapper = await mountPage({ attachTo: document.body })
-    const card = document.getElementById('shop-be')!
-    const scrolled = vi.fn()
-    card.scrollIntoView = scrolled
-    await wrapper.find('.attention__link').trigger('click')
-    expect(scrolled).toHaveBeenCalled()
-    expect(document.activeElement).toBe(card)
-    wrapper.unmount()
+    state.runs = [run({ id: '2', shop: 'lidl', country: 'RO' }), run({ id: '3', shop: 'lidl-at', country: 'AT' })]
+    await vi.advanceTimersByTimeAsync(30_000)
+    await flushPromises()
+    expect(wrapper.findAll('.shop')).toHaveLength(2)
+    expect(wrapper.find('[role="radio"][aria-checked="true"]').text()).toBe('All')
   })
 
   it('lists every run it read in the history', async () => {
