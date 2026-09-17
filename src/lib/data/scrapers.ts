@@ -1,4 +1,5 @@
 import { getCatalogSupabase } from '../supabase'
+import { formatCount } from '../format'
 import { queryError } from './errors'
 import { CatalogNotConfigured } from './catalog'
 
@@ -22,6 +23,11 @@ export interface ScrapeRunRow {
   shop: string
   /** What the shop calls itself -- "Mega Image", not "mega-image". Display. */
   shopName: string
+  /**
+   * Where the shop sells, as the catalog's market code. Not decoration: nine
+   * shops are called "Lidl", and without it they are nine identical rows.
+   */
+  country: string
   status: RunStatus
   started_at: string
   finished_at: string | null
@@ -34,19 +40,51 @@ export interface ScrapeRunRow {
   products_created: number
   marked_unavailable: number
   error: string | null
+  /**
+   * Pages the scraper has read, whether or not they held a product to import
+   * (catalog 022). The number that moves while products_found cannot.
+   */
+  pages_read: number
+  /**
+   * When the scraper last heard back from the shop. Reported once a minute
+   * while answers arrive, so a stale value means it stopped hearing back. Null
+   * on a run from a scraper that predates the report.
+   */
+  last_alive_at: string | null
+  /**
+   * How far the crawl is through its OWN plan, in its own unit (catalog 022):
+   * sitemap "pages", Carrefour "departments", Auchan "categories". Null until
+   * the scraper reports one, and on runs from before it could.
+   */
+  progress_done: number | null
+  progress_total: number | null
+  progress_unit: string | null
+  /**
+   * What the run counted along the way (catalog run.ts): rejections, and --
+   * since 2026-09-17 -- what it REMOVED as outside groceries. Null or without
+   * those keys on older runs.
+   */
+  stats: { purged_listings?: number; purged_products?: number; excluded?: number; deliberate?: boolean } | null
 }
 
-/** Enough for a week of four shops a night, with failures and retries. */
-export const RUN_HISTORY_LIMIT = 50
+/**
+ * Enough for a week of twenty-two shops a night, with failures and retries.
+ *
+ * It was 50 when four shops ran, and 50 is two nights now: a shop whose job
+ * stayed queued would fall out of the rows and vanish from the page as if it had
+ * never existed, which is the one state this page must not hide.
+ */
+export const RUN_HISTORY_LIMIT = 200
 
 const COLUMNS =
   'id, status, started_at, finished_at, products_found, products_valid, products_rejected, ' +
   'inserted, updated, unchanged, products_created, marked_unavailable, error, ' +
-  'retailer:catalog_retailers(slug, name)'
+  'pages_read, last_alive_at, progress_done, progress_total, progress_unit, stats, ' +
+  'retailer:catalog_retailers(slug, name, country)'
 
-type Retailer = { slug: string; name: string | null }
+type Retailer = { slug: string; name: string | null; country: string | null }
 
-type RawRun = Omit<ScrapeRunRow, 'shop' | 'shopName'> & {
+type RawRun = Omit<ScrapeRunRow, 'shop' | 'shopName' | 'country'> & {
   retailer: Retailer | Retailer[] | null
 }
 
@@ -70,6 +108,7 @@ export async function fetchScrapeRuns(signal: AbortSignal): Promise<ScrapeRunRow
       ...run,
       shop: shop?.slug ?? 'unknown',
       shopName: shop?.name || shop?.slug || 'Unknown shop',
+      country: shop?.country ?? '',
     }
   })
 }
@@ -90,18 +129,104 @@ export function formatRunDuration(ms: number): string {
   return rest ? `${hours} h ${rest} min` : `${hours} h`
 }
 
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
+
 /**
- * Each shop's newest run, in the order the shops last started.
- *
- * Relies on the rows arriving newest first, which fetchScrapeRuns guarantees.
+ * A market code as a person reads it: "GB" is "United Kingdom". English, like
+ * every other word on the dashboard. Anything that is not a region code comes
+ * back as it was rather than as a guess.
  */
-export function latestPerShop(runs: ScrapeRunRow[]): ScrapeRunRow[] {
-  const seen = new Set<string>()
-  return runs.filter((run) => {
-    if (seen.has(run.shop)) return false
-    seen.add(run.shop)
-    return true
-  })
+export function countryName(code: string): string {
+  if (!code) return 'Unknown country'
+  try {
+    return regionNames.of(code) ?? code
+  } catch {
+    return code
+  }
+}
+
+/** The selector's "every country" value. Not a market code, so it cannot collide. */
+export const ALL_COUNTRIES = 'all'
+
+/**
+ * The countries the selector offers: each one that has a run in the rows at
+ * hand, once, by code. Only those, because a country with no run yet would be a
+ * button that empties the page and says nothing about why.
+ */
+export function countriesIn(runs: ScrapeRunRow[]): string[] {
+  return [...new Set(runs.map((run) => run.country).filter(Boolean))].sort()
+}
+
+/**
+ * How long a running scraper has been silent before the page says so.
+ *
+ * The scraper reports once a minute while any answer arrives, and the slowest
+ * shop takes ~3.5 s a page, so ten silent minutes is ten missed reports -- not a
+ * slow page, and not a slow database. Long enough that a stall in the catalog
+ * instance (seconds, see RETRY_DELAYS_MS in the catalog) never trips it.
+ */
+export const STALE_AFTER_MS = 10 * 60_000
+
+/** How long since the shop was last heard from, or null if it never reported. */
+export function quietFor(run: Pick<ScrapeRunRow, 'last_alive_at'>, now = Date.now()): number | null {
+  if (!run.last_alive_at) return null
+  return Math.max(0, now - Date.parse(run.last_alive_at))
+}
+
+/**
+ * A run that says it is running and has not heard from its shop in a while.
+ *
+ * Never a run with no sign of life at all: that is a scraper older than the
+ * report, and calling it stalled would be an alarm about a deploy.
+ */
+export function isStalled(run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'>, now = Date.now()): boolean {
+  if (run.status !== 'running') return false
+  const quiet = quietFor(run, now)
+  return quiet !== null && quiet > STALE_AFTER_MS
+}
+
+/**
+ * What a run's status pill says, for the card and the history table alike.
+ *
+ * One place, because the table is where a shop that did not make the card row
+ * is read, and a stalled run that the card calls "No sign of life" must not be
+ * "Running" one screen further down.
+ */
+/** A partial run that was partial on purpose (catalog run.ts, stats.deliberate). */
+export function isDeliberate(run: { status: string; stats?: { deliberate?: boolean } | null }): boolean {
+  return run.status === 'partial' && run.stats?.deliberate === true
+}
+
+export function runPill(
+  run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'> & { stats?: ScrapeRunRow['stats'] },
+  now = Date.now(),
+): { tone: 'good' | 'warn' | 'bad' | 'live'; label: string; busy: boolean } {
+  if (isStalled(run, now)) return { tone: 'warn', label: 'No sign of life', busy: false }
+  // Partial ON PURPOSE -- Carrefour's nightly groceries-only pass, a slice, a
+  // removals-only run -- is a run that did what it was asked. Only a run the
+  // database refused to sweep is partial for a reason somebody should read.
+  if (isDeliberate(run)) return { tone: 'good', label: 'Done', busy: false }
+  return { tone: runTone(run.status), label: runLabel(run.status), busy: run.status === 'running' }
+}
+
+/** How many runs the Scrapers page draws as cards: one row of its grid. */
+export const CARD_COUNT = 5
+
+/**
+ * The newest runs as cards, everything else as history, and never a run in both.
+ *
+ * Runs, not shops: a shop that ran twice lately is on two cards. A card per shop
+ * was tried and read wrong -- Romania has four shops and dozens of runs, and
+ * showed four cards over a long history. Takes the rows newest first, as
+ * fetchScrapeRuns returns them.
+ */
+export function splitCards(runs: ScrapeRunRow[]): { cards: ScrapeRunRow[]; history: ScrapeRunRow[] } {
+  return { cards: runs.slice(0, CARD_COUNT), history: runs.slice(CARD_COUNT) }
+}
+
+/** One country's runs, or every run for ALL_COUNTRIES. */
+export function inCountry(runs: ScrapeRunRow[], country: string): ScrapeRunRow[] {
+  return country === ALL_COUNTRIES ? runs : runs.filter((run) => run.country === country)
 }
 
 /** How long a run took, or for a running one, how long it has been going. */
@@ -148,11 +273,52 @@ export function expectedCount(run: ScrapeRunRow, runs: ScrapeRunRow[]): number |
 }
 
 /**
+ * Listings the run removed as outside groceries. A removals-only run imports
+ * nothing, so this is the one number that says what it did.
+ */
+export function removedCount(run: Pick<ScrapeRunRow, 'stats'>): number {
+  const n = run.stats?.purged_listings
+  return typeof n === 'number' && n > 0 ? n : 0
+}
+
+/**
+ * What a running card's bar measures, and how to say it: the scraper's own plan
+ * when it reported one, else the same shop's last completed run, else nothing.
+ *
+ * The plan comes first because it is the truth, where the last run is a guess
+ * about it -- and because it is the only one a first run, or Carrefour, which
+ * never completes, can have.
+ */
+export function runProgress(
+  run: ScrapeRunRow,
+  runs: ScrapeRunRow[],
+): { value: number; max: number; label: string } | null {
+  if (run.status !== 'running') return null
+  if (run.progress_total && run.progress_total > 0 && run.progress_done !== null) {
+    const unit = run.progress_unit || 'steps'
+    return {
+      value: run.progress_done,
+      max: run.progress_total,
+      label: `${formatCount(run.progress_done)} of ${formatCount(run.progress_total)} ${unit}`,
+    }
+  }
+  const expected = expectedCount(run, runs)
+  if (expected) {
+    return { value: run.products_found, max: expected, label: `of about ${formatCount(expected)} products` }
+  }
+  return null
+}
+
+/**
  * What a run said, readable. The importer prefixes every failure with the shop's
  * slug, which the page already shows beside it, so that half is dropped.
  */
 export function runMessage(run: Pick<ScrapeRunRow, 'shop' | 'error'>): string | null {
   if (!run.error) return null
+  // The catalog's reaper (007) writes a whole sentence explaining how it knows,
+  // and a card has two lines. What it means is short: the job was killed before
+  // it could close its own run -- in practice, the nightly time limit.
+  if (run.error.startsWith('abandoned:')) return 'Killed before it could finish'
   const prefix = `import failed for ${run.shop}: `
   const text = run.error.startsWith(prefix)
     ? `Import failed: ${run.error.slice(prefix.length)}`

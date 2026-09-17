@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, type PropType } from 'vue'
 import StatusPill from './StatusPill.vue'
+import CountryCode from './CountryCode.vue'
 import type { Tone } from '../lib/uiTypes'
 import { formatCount } from '../lib/format'
 
@@ -31,6 +32,10 @@ type CardTone = Exclude<Tone, 'accent'>
 
 const props = defineProps({
   name: { type: String, default: '' },
+  /** Market code, shown beside the name: nine shops are called Lidl. */
+  country: { type: String, default: '' },
+  /** A line under the country's name on hover, e.g. how many shops it has. */
+  countryNote: { type: String, default: '' },
   tone: { type: String as PropType<CardTone>, default: 'idle' },
   label: { type: String, default: '' },
   /** The pill's dot becomes a spinner. */
@@ -52,6 +57,14 @@ const props = defineProps({
   facts: { type: Array as PropType<ShopFact[]>, default: () => [] },
   /** What the run said. The one sentence on the card worth reading. */
   message: { type: String as PropType<string | null>, default: null },
+  /** What the bar measures, said under it: "1,200 of 3,568 departments". */
+  progressLabel: { type: String, default: '' },
+  /**
+   * A bar that says only "working": a run with no plan reported and no earlier
+   * run to compare with. It still moves, and a card with no bar read as a run
+   * that was going nowhere.
+   */
+  indeterminate: { type: Boolean, default: false },
   /** Draws the card's shape with nothing in it. */
   loading: { type: Boolean, default: false },
 })
@@ -82,7 +95,10 @@ const percent = computed(() =>
     :class="[`shop--${tone}`, { 'shop--attention': attention, 'shop--running': running }]"
   >
     <div class="shop__head">
-      <h4 class="shop__name">{{ name }}</h4>
+      <h4 class="shop__name">
+        {{ name }}
+        <CountryCode v-if="country" :code="country" :note="countryNote" />
+      </h4>
       <StatusPill :tone="tone" :label="label" :busy="running" />
     </div>
 
@@ -106,10 +122,19 @@ const percent = computed(() =>
       :aria-valuenow="progress.value"
       aria-valuemin="0"
       :aria-valuemax="progress.max"
-      :aria-label="`${name}: ${percent}% of what its last full run read`"
+      :aria-label="`${name}: ${percent}%${progressLabel ? `, ${progressLabel}` : ''}`"
     >
       <span class="shop__bar" :style="{ width: `${percent}%` }"></span>
     </div>
+    <div
+      v-else-if="indeterminate"
+      class="shop__progress shop__progress--indeterminate"
+      role="progressbar"
+      :aria-label="`${name}: working, nothing to measure against yet`"
+    >
+      <span class="shop__bar"></span>
+    </div>
+    <p v-if="progress && percent !== null && progressLabel" class="shop__plan u-num">{{ progressLabel }}</p>
 
     <p v-if="when" class="shop__when" :title="whenTitle || undefined">{{ when }}</p>
 
@@ -147,12 +172,14 @@ const percent = computed(() =>
 .shop--warn { --edge: var(--status-warn-edge); --tint: var(--status-warn-bg); --ink: var(--status-warn); }
 .shop--bad { --edge: var(--status-bad); --tint: var(--status-bad-bg); --ink: var(--status-bad); }
 
-/* The edge says what state a shop is in; the wash is for the two states that
-   are worth a second look from across the page: somebody has to act, or it is
-   happening right now. A finished shop stays an ordinary card. */
-.shop--attention,
-.shop--running {
+/* Every state washes the card in its own tint, so no one state reads as the odd
+   card out. A shop somebody has to act on gets a stronger wash. */
+.shop {
   background: color-mix(in srgb, var(--tint) 40%, var(--bg-surface));
+}
+
+.shop--attention {
+  background: color-mix(in srgb, var(--tint) 70%, var(--bg-surface));
 }
 
 .shop__head {
@@ -224,6 +251,31 @@ const percent = computed(() =>
   border-radius: inherit;
   background: var(--status-live);
   transition: width 0.6s ease;
+}
+
+/* A third of the track, sliding, for a run with nothing to measure against. */
+.shop__progress--indeterminate .shop__bar {
+  width: 33%;
+  animation: shop-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes shop-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shop__progress--indeterminate .shop__bar {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
+
+.shop__plan {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
 }
 
 .shop__facts {

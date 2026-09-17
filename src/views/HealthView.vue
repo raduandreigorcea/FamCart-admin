@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref, watch, type Ref } from 'vue'
 import UserChip from '../components/UserChip.vue'
 import AppSpinner from '../components/AppSpinner.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -25,6 +25,18 @@ import {
   type TableHealth,
 } from '../lib/data/health'
 import { fetchCatalogStats, catalogConfigured, type RetailerHealth } from '../lib/data/catalog'
+import {
+  PIPELINES,
+  SCRAPE_WINDOW_MS,
+  checkPipelines,
+  checkServices,
+  checkSite,
+  probeCheck,
+  scrapersCheck,
+  shopLabel,
+  type Check,
+} from '../lib/data/checks'
+import { isDeliberate, isStalled } from '../lib/data/scrapers'
 import { appTarget, catalogTarget, clerkIssuer } from '../lib/supabase'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange, sinceIso } from '../lib/timeRange'
 import type { AdminEventRow } from '../lib/data/types'
@@ -33,7 +45,6 @@ import {
   formatBytes,
   formatCount,
   formatDateTime,
-  formatDuration,
   formatRelative,
   humanizeKind,
 } from '../lib/format'
@@ -77,6 +88,13 @@ const events = useQuery(
 )
 const limits = useQuery((signal) => fetchRateLimits(signal))
 
+// Everything outside the two databases that must be working: the live site,
+// the services, the pipelines. Each check reports its own failure as a line, so
+// none of these queries is expected to throw; if one does, its lines say so.
+const site = useQuery((signal) => checkSite(signal))
+const services = useQuery((signal) => checkServices(signal))
+const pipelines = useQuery((signal) => checkPipelines(signal))
+
 /** Fetching again over data already on screen: a spinner in the panel head,
  *  where a first load gets a skeleton in the body instead. */
 function refreshing(query: { fetching: Ref<boolean>; loading: Ref<boolean> }): boolean {
@@ -91,15 +109,34 @@ function refreshing(query: { fetching: Ref<boolean>; loading: Ref<boolean> }): b
 const catalogOn = catalogConfigured()
 const scrapes = useQuery((signal) => fetchCatalogStats(signal), { enabled: () => catalogConfigured() })
 
-/** A sentence in the banner. `to` is where its detail lives, when that is
- *  another page. */
-type Issue = { tone: 'bad' | 'warn'; text: string; to?: string }
+/**
+ * A sentence in the banner, and where its detail is -- as close to the thing as
+ * there is a place for. `to` is a page of this dashboard, `href` somewhere else
+ * (a GitHub run), `anchor` a panel further down this page.
+ */
+type Issue = { tone: 'bad' | 'warn'; text: string; to?: string; href?: string; anchor?: string }
 
-/** catalog_stats carries only the slug. Good enough for a name: "mega-image"
- *  reads as "mega image", and the banner capitalises the sentence. */
-function shopName(slug: string): string {
-  return slug.replace(/-/g, ' ')
+/** The panels a sentence can point at, further down this page. */
+const CONNECTION_PANEL = 'health-connection'
+const EVENTS_PANEL = 'health-events'
+
+/**
+ * Scroll to a panel on this page. A button rather than an anchor: the router's
+ * scrollBehavior sends every navigation to the top, a hash change included.
+ */
+function goTo(id: string) {
+  const panel = document.getElementById(id)
+  if (!panel) return
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+
+/** The Scrapers page on this shop's country, with its run marked when known. */
+function scrapersLink(shop: RetailerHealth): string {
+  const query = new URLSearchParams({ country: shop.country.toUpperCase() })
+  if (shop.last_run?.id) query.set('run', shop.last_run.id)
+  return `/scrapers?${query.toString()}`
+}
+
 
 /**
  * What is wrong with a shop, in one sentence, or null when nothing is.
@@ -110,14 +147,27 @@ function shopName(slug: string): string {
  * nobody switched on.
  */
 function shopIssue(shop: RetailerHealth): Issue | null {
-  const name = shopName(shop.slug)
+  // "Lidl BE": nine shops are Lidl, so the country is part of the name.
+  const name = shopLabel(shop)
+  const to = scrapersLink(shop)
   const run = shop.last_run
-  if (!run) return shop.enabled ? { tone: 'warn', text: `${name} has never been scraped`, to: '/scrapers' } : null
-  if (run.status === 'failed') return { tone: 'bad', text: `${name} failed its last run`, to: '/scrapers' }
-  if (run.status === 'partial') return { tone: 'warn', text: `${name} refused to sweep`, to: '/scrapers' }
+  if (!run) return shop.enabled ? { tone: 'warn', text: `${name} has never been scraped`, to } : null
+  if (run.status === 'failed') return { tone: 'bad', text: `${name} failed its last run`, to }
+  // Partial on purpose -- Carrefour's nightly groceries-only pass -- is fine.
+  if (run.status === 'partial' && isDeliberate(run)) return null
+  if (run.status === 'partial') return { tone: 'warn', text: `${name} refused to sweep`, to }
+  // A crawl that stopped hearing back from its shop (catalog 022) is as dead as
+  // a failed one, and says nothing on its own.
+  if (isStalled({ status: run.status, last_alive_at: run.last_alive_at ?? null })) {
+    return { tone: 'bad', text: `${name} has gone quiet`, to }
+  }
   if (run.status === 'running') return null
+  // The nightly job never reached it. Quiet, like every failure this banner is for.
+  if (Date.now() - Date.parse(run.started_at) > SCRAPE_WINDOW_MS) {
+    return { tone: 'bad', text: `${name} has not run in over a day`, to }
+  }
   if ((shop.delta ?? 0) < 0) {
-    return { tone: 'warn', text: `${name} found ${formatCount(-(shop.delta ?? 0))} fewer products than last time`, to: '/scrapers' }
+    return { tone: 'warn', text: `${name} found ${formatCount(-(shop.delta ?? 0))} fewer products than last time`, to }
   }
   return null
 }
@@ -134,7 +184,62 @@ const rangeSegments = TIME_RANGES.map((r) => ({ value: r.key, label: r.label, ti
 
 // All of them, so the spinner runs until the last one lands and the header
 // reports the stalest panel rather than the freshest.
-const page = useQueryGroup([probes, health, digest, events, limits, scrapes])
+const page = useQueryGroup([probes, health, digest, events, limits, scrapes, site, services, pipelines])
+
+// ─── the checks ──────────────────────────────────────────────────────────────
+// One line for each thing that must be working. A line still out is "Checking",
+// and a check that could not be made says so in amber: silence is never a pass.
+
+function pending(key: string, label: string): Check {
+  return { key, label, tone: 'idle', detail: 'Checking' }
+}
+
+function notChecked(key: string, label: string, error: Error): Check {
+  return { key, label, tone: 'warn', detail: `Not checked: ${describeError(error).detail}` }
+}
+
+const SERVICE_LINES: [string, string][] = [
+  ['service-sentry', 'Sentry'],
+  ['service-onesignal', 'OneSignal'],
+  ['service-clerk', 'Clerk'],
+]
+
+const checks = computed<Check[]>(() => {
+  const out: Check[] = []
+
+  if (probes.loading.value) {
+    out.push(pending('probe-app', 'App database'))
+    if (catalogOn) out.push(pending('probe-catalog', 'Catalog project'))
+  } else if (reachability.value === 'unknown') {
+    out.push({ key: 'probes', label: 'Databases', tone: 'warn', detail: 'Not measured' })
+  } else {
+    out.push(...(probes.data.value ?? []).map(probeCheck))
+  }
+
+  if (site.error.value) out.push(notChecked('site', 'Live site', site.error.value))
+  else out.push(site.data.value ?? pending('site', 'Live site'))
+
+  const servicesError = services.error.value
+  if (servicesError) out.push(...SERVICE_LINES.map(([k, l]) => notChecked(k, l, servicesError)))
+  else out.push(...(services.data.value ?? SERVICE_LINES.map(([k, l]) => pending(k, l))))
+
+  if (catalogOn) {
+    if (scrapes.error.value) out.push(notChecked('scrapers', 'Scrapers', scrapes.error.value))
+    else if (scrapes.loading.value) out.push(pending('scrapers', 'Scrapers'))
+    else out.push(scrapersCheck(scrapes.data.value?.retailers ?? null))
+  }
+
+  const pipelinesError = pipelines.error.value
+  if (pipelinesError) out.push(...PIPELINES.map((p) => notChecked(p.key, p.label, pipelinesError)))
+  else out.push(...(pipelines.data.value ?? PIPELINES.map((p) => pending(p.key, p.label))))
+
+  return out
+})
+
+/** An external link, as opposed to a page of this dashboard. */
+function isExternal(href: string | undefined): boolean {
+  return !!href && /^https?:/.test(href)
+}
 
 const kindOptions = computed(() => [
   { value: null, label: 'Every kind' },
@@ -190,6 +295,17 @@ const limitRows = computed<RateLimitRowWithId[]>(() =>
     // without inventing an index-based one that shifts as rows age out.
     id: `${row.actor}:${row.kind}:${row.window_start}`,
   })),
+)
+
+// A refresh can leave fewer counters than the page being shown starts at,
+// which drew a short or empty page. Step back to the last page that exists.
+watch(
+  () => limitRows.value.length,
+  (total) => {
+    if (limitOffset.value >= total) {
+      limitOffset.value = Math.max(0, Math.floor((total - 1) / LIMIT_PAGE) * LIMIT_PAGE)
+    }
+  },
 )
 
 const errorEvents = computed(
@@ -249,23 +365,48 @@ const newestMigration = computed(() =>
 // "checking", never as health -- the same rule reachabilityOf() enforces.
 
 const checking = computed(
-  () => probes.loading.value || health.loading.value || digest.loading.value || (catalogOn && scrapes.loading.value),
+  () =>
+    probes.loading.value ||
+    health.loading.value ||
+    digest.loading.value ||
+    (catalogOn && scrapes.loading.value) ||
+    site.loading.value ||
+    services.loading.value ||
+    pipelines.loading.value,
 )
 
 const issues = computed<Issue[]>(() => {
   const out: Issue[] = []
   for (const probe of probes.data.value ?? []) {
-    if (!probe.ok) out.push({ tone: 'bad', text: `${probe.label} is not answering` })
+    if (!probe.ok) out.push({ tone: 'bad', text: `${probe.label} is not answering`, anchor: CONNECTION_PANEL })
   }
   if (!probes.loading.value && reachability.value === 'unknown') {
-    out.push({ tone: 'warn', text: 'Reachability could not be measured' })
+    out.push({ tone: 'warn', text: 'Reachability could not be measured', anchor: CONNECTION_PANEL })
   }
-  if (health.error.value) out.push({ tone: 'bad', text: 'The database did not report on itself' })
+  if (health.error.value) {
+    out.push({ tone: 'bad', text: 'The database did not report on itself', anchor: CONNECTION_PANEL })
+  }
   if (scrapes.error.value) out.push({ tone: 'warn', text: 'The scrapers could not be read' })
   out.push(...shopIssues.value)
+  // The checks the lines above do not already cover: the databases and the
+  // scrapers each have their own sentences, so only the rest is added here.
+  for (const check of checks.value) {
+    if (check.key.startsWith('probe') || check.key === 'scrapers') continue
+    if (check.tone !== 'bad' && check.tone !== 'warn') continue
+    out.push({
+      tone: check.tone,
+      text: `${check.label}: ${check.detail}`,
+      to: check.href && !isExternal(check.href) ? check.href : undefined,
+      href: isExternal(check.href) ? check.href : undefined,
+    })
+  }
   if (errorEvents.value > 0) {
     const n = errorEvents.value
-    out.push({ tone: 'warn', text: `${formatCount(n)} failed or denied ${n === 1 ? 'event' : 'events'} in the last ${range.value.label}` })
+    out.push({
+      tone: 'warn',
+      text: `${formatCount(n)} failed or denied ${n === 1 ? 'event' : 'events'} in the last ${range.value.label}`,
+      anchor: EVENTS_PANEL,
+    })
   }
   return out
 })
@@ -284,7 +425,7 @@ const headline = computed(() => {
 
 const allClear = computed(() =>
   catalogOn
-    ? `Both projects answer, every shop's last run held up, and nothing was denied in the last ${range.value.label}.`
+    ? `Both projects, the site, the services and the pipelines answer, every shop's last run held up, and nothing was denied in the last ${range.value.label}.`
     : `The database answers, and nothing was denied in the last ${range.value.label}.`,
 )
 </script>
@@ -323,6 +464,10 @@ const allClear = computed(() =>
         <ul v-if="issues.length" class="status__issues">
           <li v-for="issue in issues" :key="issue.text" :class="`status__issue--${issue.tone}`">
             <RouterLink v-if="issue.to" :to="issue.to" class="status__link">{{ issue.text }}</RouterLink>
+            <a v-else-if="issue.href" :href="issue.href" target="_blank" rel="noopener" class="status__link">{{ issue.text }}</a>
+            <button v-else-if="issue.anchor" type="button" class="status__link status__jump" @click="goTo(issue.anchor)">
+              {{ issue.text }}
+            </button>
             <template v-else>{{ issue.text }}</template>
           </li>
         </ul>
@@ -331,8 +476,10 @@ const allClear = computed(() =>
       </div>
     </section>
 
-    <div class="grid">
-      <div class="span-3">
+    <!-- Five tiles, so their own row of five rather than the twelve-column grid,
+         which does not divide by five. -->
+    <div class="tiles">
+      <div>
         <StatTile
           label="API"
           :value="slowest === null ? null : Math.round(slowest)"
@@ -341,16 +488,27 @@ const allClear = computed(() =>
           polarity="down-good"
         />
       </div>
-      <div class="span-3">
+      <!-- Two databases, two sizes. It was one tile, and it was the app's: the
+           catalog, by far the larger, was not measured anywhere. -->
+      <div>
         <StatTile
-          label="Database size"
+          label="App database"
           :value="health.data.value?.database_size ?? null"
           format="bytes"
           :hint="health.data.value ? `Across ${formatCount(tableRows.length)} tables` : ''"
           :loading="health.loading.value"
         />
       </div>
-      <div class="span-3">
+      <div>
+        <StatTile
+          label="Catalog database"
+          :value="scrapes.data.value?.database_size ?? null"
+          format="bytes"
+          :hint="catalogOn ? 'Products, listings and runs' : 'Not configured'"
+          :loading="catalogOn && scrapes.loading.value"
+        />
+      </div>
+      <div>
         <StatTile
           label="Connections"
           :value="health.data.value?.connections.total ?? null"
@@ -358,7 +516,7 @@ const allClear = computed(() =>
           :loading="health.loading.value"
         />
       </div>
-      <div class="span-3">
+      <div>
         <StatTile
           label="Errors logged"
           :value="errorEvents"
@@ -369,32 +527,40 @@ const allClear = computed(() =>
       </div>
     </div>
 
+    <PanelCard title="Checks" note="Each thing that must be working, checked when the page opened." :busy="page.busy.value">
+      <ul class="checks">
+        <li v-for="check in checks" :key="check.key" class="check">
+          <StatusPill
+            :tone="check.tone"
+            :label="check.tone === 'good' ? 'OK' : check.tone === 'live' ? 'Running' : check.tone === 'idle' ? 'Checking' : check.tone === 'warn' ? 'Look' : 'Failing'"
+            :busy="check.tone === 'idle' || check.tone === 'live'"
+          />
+          <span class="check__label">{{ check.label }}</span>
+          <a v-if="isExternal(check.href)" class="check__detail" :href="check.href" target="_blank" rel="noopener">{{ check.detail }}</a>
+          <RouterLink v-else-if="check.href" class="check__detail" :to="check.href">{{ check.detail }}</RouterLink>
+          <span v-else class="check__detail">{{ check.detail }}</span>
+        </li>
+      </ul>
+    </PanelCard>
+
     <div class="grid">
       <div class="span-6">
         <PanelCard
+          :id="CONNECTION_PANEL"
           title="Connection"
           note="Measured from this browser, the way the app reaches the projects."
           :busy="refreshing(probes)"
           fill
         >
-          <StateBlock v-if="probes.loading.value" state="loading" :lines="2" compact />
-          <!-- The probe itself failed, so nothing was measured. Saying so beats
-               rendering an empty list, which reads as "no problems found". -->
+          <!-- Whether each project answers is a line in Checks above. What stays
+               here is what only the database can say about itself. -->
           <StateBlock
-            v-else-if="reachability === 'unknown'"
+            v-if="!probes.loading.value && reachability === 'unknown'"
             state="error"
             title="Reachability was not measured"
             :message="probesError"
             compact
           />
-          <ul v-else class="probes">
-            <li v-for="probe in probes.data.value ?? []" :key="probe.target" class="probe">
-              <StatusPill :tone="probe.ok ? 'good' : 'bad'" :label="probe.ok ? 'Answering' : 'Failing'" />
-              <span class="probe__name">{{ probe.label }}</span>
-              <span class="probe__ms u-num">{{ formatDuration(probe.latencyMs) }}</span>
-              <span v-if="!probe.ok" class="probe__detail">{{ probe.detail }}</span>
-            </li>
-          </ul>
 
           <p v-if="health.data.value" class="conn">
             {{ formatCount(health.data.value.connections.active) }} active and
@@ -404,33 +570,29 @@ const allClear = computed(() =>
 
           <!-- Static configuration, so it stays useful even when the probe could
                not run -- that is precisely when you want to check which project
-               and issuer the failing request was aimed at. Closed by default
-               because it is only ever read then. -->
-          <details class="more">
-            <summary class="more__summary">Configuration</summary>
-            <dl class="config">
-              <div>
-                <dt>App database</dt>
-                <dd class="u-mono">{{ target.label }}</dd>
-              </div>
-              <div>
-                <dt>Catalog project</dt>
-                <dd class="u-mono">{{ catalog.configured ? catalog.label : 'not configured' }}</dd>
-              </div>
-              <div>
-                <dt>Clerk issuer</dt>
-                <dd class="u-mono">{{ issuer || 'unknown' }}</dd>
-              </div>
-              <div>
-                <dt>Postgres</dt>
-                <dd class="u-mono">{{ health.data.value?.server_version || '--' }}</dd>
-              </div>
-              <div>
-                <dt>Server time</dt>
-                <dd>{{ health.data.value ? formatDateTime(health.data.value.server_time) : '--' }}</dd>
-              </div>
-            </dl>
-          </details>
+               and issuer the failing request was aimed at. -->
+          <dl class="config">
+            <div>
+              <dt>App database</dt>
+              <dd class="u-mono">{{ target.label }}</dd>
+            </div>
+            <div>
+              <dt>Catalog project</dt>
+              <dd class="u-mono">{{ catalog.configured ? catalog.label : 'not configured' }}</dd>
+            </div>
+            <div>
+              <dt>Clerk issuer</dt>
+              <dd class="u-mono">{{ issuer || 'unknown' }}</dd>
+            </div>
+            <div>
+              <dt>Postgres</dt>
+              <dd class="u-mono">{{ health.data.value?.server_version || '--' }}</dd>
+            </div>
+            <div>
+              <dt>Server time</dt>
+              <dd>{{ health.data.value ? formatDateTime(health.data.value.server_time) : '--' }}</dd>
+            </div>
+          </dl>
         </PanelCard>
       </div>
 
@@ -461,6 +623,7 @@ const allClear = computed(() =>
     </div>
 
     <PanelCard
+      :id="EVENTS_PANEL"
       title="Recent events"
       :note="`The audit trail: ${formatCount(errorEvents)} errors and ${formatCount(warnEvents)} warnings in the last ${range.label}.`"
       :busy="refreshing(events)"
@@ -628,15 +791,12 @@ const allClear = computed(() =>
           fill
         >
           <StateBlock v-if="health.loading.value" state="loading" :lines="2" compact />
-          <details v-else-if="migrations.length" class="more more--flat">
-            <summary class="more__summary">Show all</summary>
-            <ul class="migrations">
-              <li v-for="m in migrations" :key="m.version" class="migrations__row">
-                <span class="u-mono migrations__version">{{ m.version }}</span>
-                <span class="migrations__name u-truncate">{{ m.name }}</span>
-              </li>
-            </ul>
-          </details>
+          <ul v-else-if="migrations.length" class="migrations">
+            <li v-for="m in migrations" :key="m.version" class="migrations__row">
+              <span class="u-mono migrations__version">{{ m.version }}</span>
+              <span class="migrations__name u-truncate">{{ m.name }}</span>
+            </li>
+          </ul>
         </PanelCard>
       </div>
     </div>
@@ -644,6 +804,58 @@ const allClear = computed(() =>
 </template>
 
 <style scoped>
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 1100px) {
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Two columns of lines: ten checks in one column is a scroll for no reason. */
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-6);
+}
+
+@media (max-width: 1100px) {
+  .checks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 6.5rem 9rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.check__label {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.check__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+a.check__detail:hover {
+  color: var(--color-primary);
+}
+
 /* ── the banner ───────────────────────────────────────────────────────────── */
 
 .status {
@@ -746,6 +958,16 @@ const allClear = computed(() =>
   text-underline-offset: 3px;
 }
 
+/* A jump to a panel on this page, dressed as the links beside it. */
+.status__jump {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .status__link:hover {
   text-decoration-thickness: 2px;
 }
@@ -753,74 +975,16 @@ const allClear = computed(() =>
 
 /* ── connection ───────────────────────────────────────────────────────────── */
 
-.probes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.probe {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  column-gap: var(--space-3);
-}
-
-.probe__name {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--text-primary);
-}
-
-.probe__ms {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text-secondary);
-}
-
-.probe__detail {
-  grid-column: 2 / -1;
-  font-size: var(--text-xs);
-  color: var(--status-bad);
-}
-
 .conn {
   margin: var(--space-4) 0 0;
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
-.more {
-  margin-top: var(--space-4);
+.config {
+  margin: var(--space-4) 0 0;
   padding-top: var(--space-3);
   border-top: var(--border-width-thin) solid var(--border-light);
-}
-
-.more--flat {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-}
-
-.more__summary {
-  cursor: pointer;
-  width: fit-content;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-primary);
-  border-radius: var(--radius-xs);
-}
-
-.more__summary:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-
-.config {
-  margin: var(--space-3) 0 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: var(--space-3);
@@ -901,10 +1065,8 @@ const allClear = computed(() =>
 
 .migrations {
   list-style: none;
-  margin: var(--space-3) 0 0;
+  margin: 0;
   padding: 0;
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 .migrations__row {

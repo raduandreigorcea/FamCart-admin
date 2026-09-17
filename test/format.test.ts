@@ -5,6 +5,7 @@ import {
   formatCount,
   formatDate,
   formatDateTime,
+  formatClock,
   formatDuration,
   formatPercent,
   formatRelative,
@@ -156,5 +157,25 @@ describe('initialOf', () => {
   it('uppercases and ignores leading whitespace', () => {
     expect(initialOf('  pat')).toBe('P')
     expect(initialOf('Ștefan')).toBe('Ș')
+  })
+})
+
+describe('formatClock', () => {
+  // A nightly run is read by its hour. The date only matters when it is not
+  // today's, and then it is said, so yesterday's 06:11 never passes for today's.
+  const now = new Date(2026, 8, 17, 10, 0).getTime()
+
+  it('is the hour alone for a time today', () => {
+    expect(formatClock(new Date(2026, 8, 17, 6, 11), now)).toBe('06:11')
+  })
+
+  it('carries the day for any other day', () => {
+    // August, not yesterday: ICU writes September as "Sep" or "Sept" depending
+    // on its version, and the test is about the day being said, not the spelling.
+    expect(formatClock(new Date(2026, 7, 16, 23, 5), now)).toBe('16 Aug 23:05')
+  })
+
+  it('is the placeholder for nothing', () => {
+    expect(formatClock(null, now)).toBe('--')
   })
 })

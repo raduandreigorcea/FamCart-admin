@@ -41,11 +41,22 @@ vi.mock('../src/lib/supabase', () => ({
 
 const {
   fetchScrapeRuns,
-  latestPerShop,
   runDurationMs,
   formatRunDuration,
   expectedCount,
+  runProgress,
+  removedCount,
   runMessage,
+  ALL_COUNTRIES,
+  countriesIn,
+  runPill,
+  splitCards,
+  CARD_COUNT,
+  STALE_AFTER_MS,
+  quietFor,
+  isStalled,
+  inCountry,
+  countryName,
   RUN_HISTORY_LIMIT,
 } = await import('../src/lib/data/scrapers')
 const { CatalogNotConfigured } = await import('../src/lib/data/catalog')
@@ -67,7 +78,13 @@ function row(over: Record<string, unknown> = {}) {
     products_created: 0,
     marked_unavailable: 0,
     error: null,
-    retailer: { slug: 'lidl', name: 'Lidl' },
+    pages_read: 0,
+    last_alive_at: null,
+    progress_done: null,
+    progress_total: null,
+    progress_unit: null,
+    stats: null,
+    retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' },
     ...over,
   }
 }
@@ -82,7 +99,7 @@ describe('fetchScrapeRuns', () => {
   it('asks for the newest runs first, with the shop they belong to', async () => {
     await fetchScrapeRuns(signal())
     expect(calls.table).toBe('catalog_scrape_runs')
-    expect(calls.select).toContain('catalog_retailers(slug, name)')
+    expect(calls.select).toContain('catalog_retailers(slug, name, country)')
     expect(calls.order).toEqual(['started_at', { ascending: false }])
     expect(calls.limit).toBe(RUN_HISTORY_LIMIT)
   })
@@ -92,6 +109,14 @@ describe('fetchScrapeRuns', () => {
     const [run] = await fetchScrapeRuns(signal())
     expect(run.shop).toBe('mega-image')
     expect(run.shopName).toBe('Mega Image')
+  })
+
+  // Nine shops are called "Lidl". Without the country the page would list nine
+  // identical names and nobody could tell Belgium failing from Italy finishing.
+  it('carries the country each shop sells in', async () => {
+    answer.data = [row({ retailer: { slug: 'lidl-be', name: 'Lidl', country: 'BE' } })]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(run.country).toBe('BE')
   })
 
   it('falls back to the slug when a shop has no name', async () => {
@@ -113,16 +138,195 @@ describe('fetchScrapeRuns', () => {
   })
 })
 
-describe('latestPerShop', () => {
-  it('keeps each shop’s newest run, in the order the shops last ran', async () => {
+describe('countriesIn', () => {
+  const shop = (slug: string, country: string) =>
+    row({ id: slug, retailer: { slug, name: 'Lidl', country } })
+
+  // The selector offers what the page can show, no more: a country with no run
+  // yet would be a button that empties the page.
+  it('is each country that has a run, once, by code', async () => {
+    answer.data = [shop('lidl', 'RO'), shop('lidl-it', 'IT'), shop('lidl-at', 'AT'), shop('hofer', 'AT')]
+    expect(countriesIn(await fetchScrapeRuns(signal()))).toEqual(['AT', 'IT', 'RO'])
+  })
+
+  it('leaves out a run whose shop has no country', async () => {
+    answer.data = [shop('lidl', 'RO'), shop('mystery', '')]
+    expect(countriesIn(await fetchScrapeRuns(signal()))).toEqual(['RO'])
+  })
+})
+
+describe('inCountry', () => {
+  it('keeps one country\'s runs, and all of them for ALL_COUNTRIES', async () => {
     answer.data = [
-      row({ id: 'c2', retailer: { slug: 'carrefour' }, started_at: '2026-09-13T08:16:15Z' }),
-      row({ id: 'a2', retailer: { slug: 'auchan' }, started_at: '2026-09-13T08:15:58Z' }),
-      row({ id: 'l2', retailer: { slug: 'lidl' }, started_at: '2026-09-13T06:17:56Z' }),
-      row({ id: 'c1', retailer: { slug: 'carrefour' }, started_at: '2026-09-12T09:03:18Z' }),
+      row({ id: 'a', retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' } }),
+      row({ id: 'b', retailer: { slug: 'lidl-it', name: 'Lidl', country: 'IT' } }),
     ]
     const runs = await fetchScrapeRuns(signal())
-    expect(latestPerShop(runs).map((r) => r.id)).toEqual(['c2', 'a2', 'l2'])
+    expect(inCountry(runs, 'IT').map((r) => r.id)).toEqual(['b'])
+    expect(inCountry(runs, ALL_COUNTRIES).map((r) => r.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('splitCards', () => {
+  const at = (id: string, slug: string, started: string) =>
+    row({ id, started_at: started, retailer: { slug, name: slug, country: 'RO' } })
+
+  // Newest first, as the rows arrive from fetchScrapeRuns.
+  const runs = () => [
+    at('a2', 'a', '2026-09-17T09:00:00Z'),
+    at('b1', 'b', '2026-09-17T08:00:00Z'),
+    at('a1', 'a', '2026-09-17T07:00:00Z'),
+    at('c1', 'c', '2026-09-17T06:00:00Z'),
+    at('d1', 'd', '2026-09-17T05:00:00Z'),
+    at('e1', 'e', '2026-09-17T04:00:00Z'),
+    at('f1', 'f', '2026-09-17T03:00:00Z'),
+  ]
+
+  // The newest runs, whatever their shop: a shop that ran twice lately is on two
+  // cards. That is the point -- a country with four shops still shows five runs.
+  it('puts the five newest runs on the cards, whatever their shop, and the rest in the history', async () => {
+    answer.data = runs()
+    const { cards, history } = splitCards(await fetchScrapeRuns(signal()))
+    expect(CARD_COUNT).toBe(5)
+    expect(cards.map((r) => r.id)).toEqual(['a2', 'b1', 'a1', 'c1', 'd1'])
+    expect(history.map((r) => r.id)).toEqual(['e1', 'f1'])
+  })
+
+  it('shows every run on a card when there are fewer than five', async () => {
+    answer.data = runs().slice(0, 2)
+    const { cards, history } = splitCards(await fetchScrapeRuns(signal()))
+    expect(cards.map((r) => r.id)).toEqual(['a2', 'b1'])
+    expect(history).toEqual([])
+  })
+})
+
+describe('the sign of life', () => {
+  const now = Date.parse('2026-09-17T10:00:00Z')
+  const running = (lastAlive: string | null) =>
+    row({ status: 'running', finished_at: null, started_at: '2026-09-17T08:00:00Z', last_alive_at: lastAlive })
+
+  it('asks for the pages read and when the shop was last heard from', async () => {
+    await fetchScrapeRuns(signal())
+    expect(calls.select).toContain('pages_read')
+    expect(calls.select).toContain('last_alive_at')
+    expect(calls.select).toContain('progress_done, progress_total, progress_unit')
+  })
+
+  it('measures the quiet from the last sign of life', async () => {
+    answer.data = [running('2026-09-17T09:59:40Z')]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(quietFor(run, now)).toBe(20_000)
+  })
+
+  // A run from a scraper that predates the sign of life has none, and saying it
+  // is stalled would be an alarm about the deploy, not about the shop.
+  it('says nothing about a run that never reported one', async () => {
+    answer.data = [running(null)]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(quietFor(run, now)).toBeNull()
+    expect(isStalled(run, now)).toBe(false)
+  })
+
+  it('calls a running run stalled once the shop has been silent too long', async () => {
+    answer.data = [
+      running(new Date(now - STALE_AFTER_MS + 1000).toISOString()),
+      running(new Date(now - STALE_AFTER_MS - 1000).toISOString()),
+    ]
+    const [fresh, silent] = await fetchScrapeRuns(signal())
+    expect(isStalled(fresh, now)).toBe(false)
+    expect(isStalled(silent, now)).toBe(true)
+  })
+
+  // The card and the history table must agree, and the table is where a shop
+  // that is not on the row is read -- so both take their pill from here.
+  it('gives a stalled run its own pill, and every other run its status', async () => {
+    answer.data = [
+      running(new Date(now - STALE_AFTER_MS - 1000).toISOString()),
+      running(new Date(now - 1000).toISOString()),
+      row({ status: 'failed' }),
+    ]
+    const [silent, alive, failed] = await fetchScrapeRuns(signal())
+    expect(runPill(silent, now)).toEqual({ tone: 'warn', label: 'No sign of life', busy: false })
+    expect(runPill(alive, now)).toEqual({ tone: 'live', label: 'Running', busy: true })
+    expect(runPill(failed, now)).toEqual({ tone: 'bad', label: 'Failed', busy: false })
+  })
+
+  // A run partial on purpose -- Carrefour's nightly groceries-only pass, a slice,
+  // a removals-only run -- is not a run that refused to sweep.
+  it('gives a deliberate partial run a finished pill, and a refused one a warning', async () => {
+    answer.data = [
+      row({ id: 'planned', status: 'partial', stats: { deliberate: true } }),
+      row({ id: 'refused', status: 'partial', stats: { rejections: {} } }),
+    ]
+    const [planned, refused] = await fetchScrapeRuns(signal())
+    expect(runPill(planned, now)).toEqual({ tone: 'good', label: 'Done', busy: false })
+    expect(runPill(refused, now)).toEqual({ tone: 'warn', label: 'Refused to sweep', busy: false })
+  })
+
+  it('never calls a finished run stalled, however old its last sign', async () => {
+    answer.data = [row({ status: 'completed', last_alive_at: '2026-09-01T00:00:00Z' })]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(isStalled(run, now)).toBe(false)
+  })
+})
+
+describe('countryName', () => {
+  it('says the country in English, as the rest of the dashboard does', () => {
+    expect(countryName('GB')).toBe('United Kingdom')
+    expect(countryName('RO')).toBe('Romania')
+  })
+
+  it('falls back to what it was given when it is not a country code', () => {
+    expect(countryName('')).toBe('Unknown country')
+    expect(countryName('??')).toBe('??')
+  })
+})
+
+describe('removedCount', () => {
+  // A removals-only run imports nothing and removes thousands; the history must
+  // be able to say so.
+  it('reads the listings a run removed out of its stats', async () => {
+    answer.data = [row({ stats: { rejections: {}, purged_listings: 1234 } }), row({ id: 'old', stats: { rejections: {} } }), row({ id: 'none' })]
+    const [removed, older, none] = await fetchScrapeRuns(signal())
+    expect(removedCount(removed)).toBe(1234)
+    expect(removedCount(older)).toBe(0)
+    expect(removedCount(none)).toBe(0)
+  })
+
+  it('asks for the stats', async () => {
+    await fetchScrapeRuns(signal())
+    expect(calls.select).toContain('stats')
+  })
+})
+
+describe('runProgress', () => {
+  const running = (over: Record<string, unknown> = {}) =>
+    row({ id: 'now', status: 'running', finished_at: null, started_at: '2026-09-17T08:00:00Z', products_found: 400, ...over })
+  const done = row({ id: 'before', status: 'completed', started_at: '2026-09-16T08:00:00Z', products_found: 800 })
+
+  // The scraper's own plan is the truth; the last run is a guess about it.
+  it('prefers the plan the scraper reported, in its own unit', async () => {
+    answer.data = [running({ progress_done: 30, progress_total: 3568, progress_unit: 'departments' }), done]
+    const [now, ...rest] = await fetchScrapeRuns(signal())
+    expect(runProgress(now, [now, ...rest])).toEqual({ value: 30, max: 3568, label: '30 of 3,568 departments' })
+  })
+
+  it('falls back to what the last completed run read', async () => {
+    answer.data = [running(), done]
+    const [now, ...rest] = await fetchScrapeRuns(signal())
+    expect(runProgress(now, [now, ...rest])).toEqual({ value: 400, max: 800, label: 'of about 800 products' })
+  })
+
+  it('has nothing to measure a first run by that reported no plan', async () => {
+    answer.data = [running()]
+    const [now] = await fetchScrapeRuns(signal())
+    expect(runProgress(now, [now])).toBeNull()
+  })
+
+  it('draws nothing for a finished run', async () => {
+    answer.data = [done]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(runProgress(run, [run])).toBeNull()
   })
 })
 
@@ -152,9 +356,18 @@ describe('runMessage', () => {
     )
   })
 
+  // The catalog's reaper (007) explains itself at length, and the card has two
+  // lines. What happened, in words that fit: the job never got to close the run.
+  it('says an abandoned run was killed, in words that fit a card', () => {
+    expect(runMessage({
+      shop: 'carrefour',
+      error: 'abandoned: no result was ever recorded, so the process died without closing it',
+    })).toBe('Killed before it could finish')
+  })
+
   it('leaves any other message whole, capitalised', () => {
-    expect(runMessage({ shop: 'carrefour', error: 'abandoned: no result was ever recorded' })).toBe(
-      'Abandoned: no result was ever recorded',
+    expect(runMessage({ shop: 'lidl-be', error: 'crawl ended early: circuit opened' })).toBe(
+      'Crawl ended early: circuit opened',
     )
     expect(runMessage({ shop: 'lidl', error: null })).toBeNull()
   })

@@ -46,7 +46,9 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
       :title="segment.title"
       @click="emit('update:modelValue', segment.value)"
     >
-      {{ segment.label }}
+      <!-- A caller can draw a segment its own way -- a country code with a hover
+           card -- as long as what it draws is not interactive itself. -->
+      <slot name="segment" :segment="segment">{{ segment.label }}</slot>
     </button>
     </span>
   </span>

@@ -242,6 +242,8 @@ export async function deleteCatalogProduct(id: string, signal: AbortSignal): Pro
 /** One retailer's scrape health, from catalog_stats(). */
 export interface RetailerHealth {
   slug: string
+  /** What the shop calls itself (catalog 020). Absent from an older catalog. */
+  name?: string | null
   country: string
   enabled: boolean
   /** From the cached count (catalog 020): null until counted, or for a shop
@@ -249,6 +251,8 @@ export interface RetailerHealth {
   listings: number | null
   available: number | null
   last_run: {
+    /** The run's id (catalog 020), so a page can link to that run. */
+    id?: string
     status: 'running' | 'completed' | 'partial' | 'failed'
     started_at: string
     finished_at: string | null
@@ -261,6 +265,10 @@ export interface RetailerHealth {
     marked_unavailable: number
     error_count: number
     error: string | null
+    /** The run's last sign of life (catalog 022), null before one was reported. */
+    last_alive_at?: string | null
+    /** What the run counted; `deliberate` marks a partial run that meant to be. */
+    stats?: { deliberate?: boolean } | null
   } | null
   previous_valid: number | null
   /** This run's valid count against the last completed one's. */
@@ -286,6 +294,22 @@ export interface CatalogStats {
   /** Products no shop currently lists: created by hand, or dropped everywhere. */
   orphans: number
   retailers: RetailerHealth[]
+  /**
+   * The same counts for one country, keyed by market code (catalog 020). A
+   * country with no listings is absent. Optional because a catalog that has not
+   * been migrated yet does not send it.
+   */
+  countries?: Record<string, CountryCounts>
+  /** The catalog database's size in bytes, read live. Absent from an older catalog. */
+  database_size?: number
+}
+
+export interface CountryCounts {
+  /** A product two shops in the country both sell counts once. */
+  products: number
+  listings: number
+  unavailable: number
+  with_barcode: number
 }
 
 /**
