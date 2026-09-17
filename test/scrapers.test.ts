@@ -45,6 +45,7 @@ const {
   formatRunDuration,
   expectedCount,
   runProgress,
+  removedCount,
   runMessage,
   ALL_COUNTRIES,
   countriesIn,
@@ -82,6 +83,7 @@ function row(over: Record<string, unknown> = {}) {
     progress_done: null,
     progress_total: null,
     progress_unit: null,
+    stats: null,
     retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' },
     ...over,
   }
@@ -265,6 +267,23 @@ describe('countryName', () => {
   it('falls back to what it was given when it is not a country code', () => {
     expect(countryName('')).toBe('Unknown country')
     expect(countryName('??')).toBe('??')
+  })
+})
+
+describe('removedCount', () => {
+  // A removals-only run imports nothing and removes thousands; the history must
+  // be able to say so.
+  it('reads the listings a run removed out of its stats', async () => {
+    answer.data = [row({ stats: { rejections: {}, purged_listings: 1234 } }), row({ id: 'old', stats: { rejections: {} } }), row({ id: 'none' })]
+    const [removed, older, none] = await fetchScrapeRuns(signal())
+    expect(removedCount(removed)).toBe(1234)
+    expect(removedCount(older)).toBe(0)
+    expect(removedCount(none)).toBe(0)
+  })
+
+  it('asks for the stats', async () => {
+    await fetchScrapeRuns(signal())
+    expect(calls.select).toContain('stats')
   })
 })
 

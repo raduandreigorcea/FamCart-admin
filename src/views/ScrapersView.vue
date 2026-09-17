@@ -22,6 +22,7 @@ import {
   formatRunDuration,
   inCountry,
   runProgress,
+  removedCount,
   splitCards,
   runDurationMs,
   runMessage,
@@ -210,7 +211,9 @@ const shops = computed(() =>
             ? [{ label: 'Pages', value: formatCount(run.pages_read), title: 'Pages read so far, products or not' }]
             : []),
           { label: 'New', value: formatCount(run.products_created) },
-          { label: 'Updated', value: formatCount(run.updated) },
+          // Removed, not Updated: a card holds four facts, and what a run
+          // deleted says more than how many prices moved.
+          { label: 'Removed', value: formatCount(removedCount(run)), title: 'Listings removed as outside groceries' },
           { label: 'Gone', value: formatCount(run.marked_unavailable), title: 'Listings this run marked as no longer sold' },
         ],
         message: stalled && quiet !== null
@@ -251,7 +254,8 @@ const columns: Column<ScrapeRunRow>[] = [
   { key: 'products_found', label: 'Read', numeric: true, width: '8%' },
   { key: 'products_created', label: 'New', numeric: true, width: '6%' },
   { key: 'marked_unavailable', label: 'Marked gone', numeric: true, width: '9%' },
-  { key: 'error', label: 'What it said', width: '26%' },
+  { key: 'removed', label: 'Removed', numeric: true, width: '8%' },
+  { key: 'error', label: 'What it said', width: '18%' },
 ]
 
 function asRun(row: unknown): ScrapeRunRow {
@@ -374,6 +378,9 @@ function asRun(row: unknown): ScrapeRunRow {
           </template>
           <template #cell-products_created="{ row }">
             {{ formatCount(asRun(row).products_created) }}
+          </template>
+          <template #cell-removed="{ row }">
+            {{ formatCount(removedCount(asRun(row))) }}
           </template>
           <template #cell-marked_unavailable="{ row }">
             {{ formatCount(asRun(row).marked_unavailable) }}

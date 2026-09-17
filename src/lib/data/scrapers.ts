@@ -59,6 +59,12 @@ export interface ScrapeRunRow {
   progress_done: number | null
   progress_total: number | null
   progress_unit: string | null
+  /**
+   * What the run counted along the way (catalog run.ts): rejections, and --
+   * since 2026-09-17 -- what it REMOVED as outside groceries. Null or without
+   * those keys on older runs.
+   */
+  stats: { purged_listings?: number; purged_products?: number; excluded?: number } | null
 }
 
 /**
@@ -73,7 +79,7 @@ export const RUN_HISTORY_LIMIT = 200
 const COLUMNS =
   'id, status, started_at, finished_at, products_found, products_valid, products_rejected, ' +
   'inserted, updated, unchanged, products_created, marked_unavailable, error, ' +
-  'pages_read, last_alive_at, progress_done, progress_total, progress_unit, ' +
+  'pages_read, last_alive_at, progress_done, progress_total, progress_unit, stats, ' +
   'retailer:catalog_retailers(slug, name, country)'
 
 type Retailer = { slug: string; name: string | null; country: string | null }
@@ -255,6 +261,15 @@ export function expectedCount(run: ScrapeRunRow, runs: ScrapeRunRow[]): number |
       r.products_found > 0,
   )
   return previous ? previous.products_found : null
+}
+
+/**
+ * Listings the run removed as outside groceries. A removals-only run imports
+ * nothing, so this is the one number that says what it did.
+ */
+export function removedCount(run: Pick<ScrapeRunRow, 'stats'>): number {
+  const n = run.stats?.purged_listings
+  return typeof n === 'number' && n > 0 ? n : 0
 }
 
 /**
