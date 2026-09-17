@@ -43,6 +43,7 @@ function run(over: Record<string, unknown> = {}) {
     id: 'run-1',
     shop: 'lidl',
     shopName: 'Lidl',
+    country: 'RO',
     status: 'completed',
     started_at: '2026-09-13T06:17:56Z',
     finished_at: '2026-09-13T06:25:38Z',
@@ -113,14 +114,39 @@ describe('the scrapers page', () => {
     expect(text).toContain('Gateway Timeout')
   })
 
-  it('gives each shop one card, from its newest run', async () => {
+  it('gives each shop one row, from its newest run', async () => {
     state.runs = [
       run({ id: 'c2', shop: 'carrefour', status: 'failed' }),
       run({ id: 'l', shop: 'lidl' }),
       run({ id: 'c1', shop: 'carrefour', status: 'completed' }),
     ]
     const wrapper = await mountPage()
-    expect(wrapper.findAll('.shop')).toHaveLength(2)
+    expect(wrapper.findAll('.shop-row')).toHaveLength(2)
+  })
+
+  // Twenty-two cards was a wall. The groups are what make one table readable:
+  // what broke first, then home, then everything abroad.
+  it('draws what broke first, then Romania, then the shops abroad', async () => {
+    state.runs = [
+      run({ id: '1', shop: 'lidl-it', country: 'IT' }),
+      run({ id: '2', shop: 'lidl-be', country: 'BE', status: 'failed', error: 'crawl ended early' }),
+      run({ id: '3', shop: 'lidl', country: 'RO' }),
+    ]
+    const wrapper = await mountPage()
+    const headings = wrapper.findAll('.shop-group').map((g) => g.text())
+    expect(headings).toEqual(['Needs attention', 'Romania', 'Abroad'])
+    const firstRow = wrapper.findAll('.shop-row')[0]
+    expect(firstRow.text()).toContain('BE')
+    expect(firstRow.text()).toContain('Crawl ended early')
+  })
+
+  it('names the country beside a shop, so nine Lidls are nine different rows', async () => {
+    state.runs = [
+      run({ id: '1', shop: 'lidl-it', country: 'IT' }),
+      run({ id: '2', shop: 'lidl-at', country: 'AT' }),
+    ]
+    const countries = (await mountPage()).findAll('.shop-row__country').map((c) => c.text())
+    expect(countries).toEqual(['AT', 'IT'])
   })
 
   it('lists every run it read in the history', async () => {
@@ -142,7 +168,7 @@ describe('the scrapers page', () => {
     expect(state.fetches).toBe(2)
   })
 
-  it('shows the catalog totals under the cards, and says when they were counted', async () => {
+  it('shows the catalog totals under the shops, and says when they were counted', async () => {
     // Counted on a schedule rather than live, so a number without its age would
     // read as current when it can be a quarter of an hour behind the cards.
     state.stats = {

@@ -22,6 +22,11 @@ export interface ScrapeRunRow {
   shop: string
   /** What the shop calls itself -- "Mega Image", not "mega-image". Display. */
   shopName: string
+  /**
+   * Where the shop sells, as the catalog's market code. Not decoration: nine
+   * shops are called "Lidl", and without it they are nine identical rows.
+   */
+  country: string
   status: RunStatus
   started_at: string
   finished_at: string | null
@@ -36,17 +41,23 @@ export interface ScrapeRunRow {
   error: string | null
 }
 
-/** Enough for a week of four shops a night, with failures and retries. */
-export const RUN_HISTORY_LIMIT = 50
+/**
+ * Enough for a week of twenty-two shops a night, with failures and retries.
+ *
+ * It was 50 when four shops ran, and 50 is two nights now: a shop whose job
+ * stayed queued would fall out of the rows and vanish from the page as if it had
+ * never existed, which is the one state this page must not hide.
+ */
+export const RUN_HISTORY_LIMIT = 200
 
 const COLUMNS =
   'id, status, started_at, finished_at, products_found, products_valid, products_rejected, ' +
   'inserted, updated, unchanged, products_created, marked_unavailable, error, ' +
-  'retailer:catalog_retailers(slug, name)'
+  'retailer:catalog_retailers(slug, name, country)'
 
-type Retailer = { slug: string; name: string | null }
+type Retailer = { slug: string; name: string | null; country: string | null }
 
-type RawRun = Omit<ScrapeRunRow, 'shop' | 'shopName'> & {
+type RawRun = Omit<ScrapeRunRow, 'shop' | 'shopName' | 'country'> & {
   retailer: Retailer | Retailer[] | null
 }
 
@@ -70,6 +81,7 @@ export async function fetchScrapeRuns(signal: AbortSignal): Promise<ScrapeRunRow
       ...run,
       shop: shop?.slug ?? 'unknown',
       shopName: shop?.name || shop?.slug || 'Unknown shop',
+      country: shop?.country ?? '',
     }
   })
 }
@@ -102,6 +114,47 @@ export function latestPerShop(runs: ScrapeRunRow[]): ScrapeRunRow[] {
     seen.add(run.shop)
     return true
   })
+}
+
+/** The shops read first and watched most. Every other country is "abroad". */
+export const HOME_COUNTRY = 'RO'
+
+export type ShopGroupKey = 'attention' | 'home' | 'abroad'
+
+export interface ShopGroup {
+  key: ShopGroupKey
+  runs: ScrapeRunRow[]
+}
+
+/**
+ * One row per shop, in the three groups the page draws.
+ *
+ * WHAT GOES FIRST IS WHAT BROKE. With twenty-two shops a failure sorted by
+ * country is a row among twenty-two; lifted out of its country it is the first
+ * thing on the page, which is what somebody opening it at breakfast came for.
+ * `partial` counts: it imported what it read and refused to sweep, which is a
+ * shop somebody should look at. `running` does not -- it is the normal state of
+ * half the page for half the morning.
+ *
+ * Takes one run per shop (see latestPerShop). Empty groups are left out, so the
+ * page never draws a heading with nothing under it.
+ */
+export function groupShops(runs: ScrapeRunRow[]): ShopGroup[] {
+  const byName = (a: ScrapeRunRow, b: ScrapeRunRow) =>
+    a.shopName.localeCompare(b.shopName) || a.shop.localeCompare(b.shop)
+  const attention = runs.filter((r) => r.status === 'failed' || r.status === 'partial')
+  const rest = runs.filter((r) => !attention.includes(r))
+  const groups: ShopGroup[] = [
+    { key: 'attention', runs: attention },
+    { key: 'home', runs: rest.filter((r) => r.country === HOME_COUNTRY).sort(byName) },
+    {
+      key: 'abroad',
+      runs: rest
+        .filter((r) => r.country !== HOME_COUNTRY)
+        .sort((a, b) => a.country.localeCompare(b.country) || byName(a, b)),
+    },
+  ]
+  return groups.filter((g) => g.runs.length > 0)
 }
 
 /** How long a run took, or for a running one, how long it has been going. */
