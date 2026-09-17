@@ -240,6 +240,26 @@ function asRun(row: unknown): ScrapeRunRow {
     </PanelCard>
 
     <template v-else>
+      <!-- One line of prose rather than five more big numbers: context for the
+           runs, not a second headline. It says when it was counted, because
+           unlike the runs it is not live.
+
+           ABOVE THE CARDS, not between them and the history. There it cut the
+           page in two, and the cards read as a separate thing from the table
+           when they are its newest five rows. -->
+      <ul
+        v-if="stats.data.value && catalogTotals.length"
+        class="totals"
+        :aria-label="country === ALL_COUNTRIES ? 'The catalog as a whole' : `The catalog in ${countryName(country)}`"
+      >
+        <li v-for="t in catalogTotals" :key="t.label" :title="formatCount(t.value)">
+          <span class="totals__value u-num">{{ formatCompact(t.value) }}</span> {{ t.label }}
+        </li>
+        <li class="totals__when" :title="stats.data.value.counted_at ? formatDateTime(stats.data.value.counted_at) : ''">
+          {{ stats.data.value.counted_at ? `Counted ${formatRelative(stats.data.value.counted_at)}` : 'Not counted yet' }}
+        </li>
+      </ul>
+
       <!-- The cards' own shape while the first read is out, so the page does not
            jump from three grey lines to a row of cards. -->
       <ul v-if="runs.loading.value" class="shops" aria-busy="true" aria-label="Loading the runs">
@@ -258,22 +278,6 @@ function asRun(row: unknown): ScrapeRunRow {
            exists for: is it moving, and did it read the whole shop. -->
       <ul v-else class="shops" aria-label="The newest runs">
         <ShopRunCard v-for="shop in shops" :key="shop.id" v-bind="shop.props" />
-      </ul>
-
-      <!-- One line of prose rather than five more big numbers: context for the
-           cards, not a second headline. It says when it was counted, because
-           unlike the cards it is not live. -->
-      <ul
-        v-if="stats.data.value && catalogTotals.length"
-        class="totals"
-        :aria-label="country === ALL_COUNTRIES ? 'The catalog as a whole' : `The catalog in ${countryName(country)}`"
-      >
-        <li v-for="t in catalogTotals" :key="t.label" :title="formatCount(t.value)">
-          <span class="totals__value u-num">{{ formatCompact(t.value) }}</span> {{ t.label }}
-        </li>
-        <li class="totals__when" :title="stats.data.value.counted_at ? formatDateTime(stats.data.value.counted_at) : ''">
-          {{ stats.data.value.counted_at ? `Counted ${formatRelative(stats.data.value.counted_at)}` : 'Not counted yet' }}
-        </li>
       </ul>
 
       <PanelCard title="History" :note="`Older runs, newest first, from the last ${RUN_HISTORY_LIMIT}.`" :busy="polling" flush>
