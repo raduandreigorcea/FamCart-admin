@@ -147,12 +147,14 @@ const percent = computed(() =>
 .shop--warn { --edge: var(--status-warn-edge); --tint: var(--status-warn-bg); --ink: var(--status-warn); }
 .shop--bad { --edge: var(--status-bad); --tint: var(--status-bad-bg); --ink: var(--status-bad); }
 
-/* The edge says what state a shop is in; the wash is for the two states that
-   are worth a second look from across the page: somebody has to act, or it is
-   happening right now. A finished shop stays an ordinary card. */
-.shop--attention,
-.shop--running {
+/* Every state washes the card in its own tint, so no one state reads as the odd
+   card out. A shop somebody has to act on gets a stronger wash. */
+.shop {
   background: color-mix(in srgb, var(--tint) 40%, var(--bg-surface));
+}
+
+.shop--attention {
+  background: color-mix(in srgb, var(--tint) 70%, var(--bg-surface));
 }
 
 .shop__head {

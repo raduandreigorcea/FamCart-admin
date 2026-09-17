@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref, watch, type Ref } from 'vue'
 import UserChip from '../components/UserChip.vue'
 import AppSpinner from '../components/AppSpinner.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -190,6 +190,17 @@ const limitRows = computed<RateLimitRowWithId[]>(() =>
     // without inventing an index-based one that shifts as rows age out.
     id: `${row.actor}:${row.kind}:${row.window_start}`,
   })),
+)
+
+// A refresh can leave fewer counters than the page being shown starts at,
+// which drew a short or empty page. Step back to the last page that exists.
+watch(
+  () => limitRows.value.length,
+  (total) => {
+    if (limitOffset.value >= total) {
+      limitOffset.value = Math.max(0, Math.floor((total - 1) / LIMIT_PAGE) * LIMIT_PAGE)
+    }
+  },
 )
 
 const errorEvents = computed(
@@ -404,33 +415,29 @@ const allClear = computed(() =>
 
           <!-- Static configuration, so it stays useful even when the probe could
                not run -- that is precisely when you want to check which project
-               and issuer the failing request was aimed at. Closed by default
-               because it is only ever read then. -->
-          <details class="more">
-            <summary class="more__summary">Configuration</summary>
-            <dl class="config">
-              <div>
-                <dt>App database</dt>
-                <dd class="u-mono">{{ target.label }}</dd>
-              </div>
-              <div>
-                <dt>Catalog project</dt>
-                <dd class="u-mono">{{ catalog.configured ? catalog.label : 'not configured' }}</dd>
-              </div>
-              <div>
-                <dt>Clerk issuer</dt>
-                <dd class="u-mono">{{ issuer || 'unknown' }}</dd>
-              </div>
-              <div>
-                <dt>Postgres</dt>
-                <dd class="u-mono">{{ health.data.value?.server_version || '--' }}</dd>
-              </div>
-              <div>
-                <dt>Server time</dt>
-                <dd>{{ health.data.value ? formatDateTime(health.data.value.server_time) : '--' }}</dd>
-              </div>
-            </dl>
-          </details>
+               and issuer the failing request was aimed at. -->
+          <dl class="config">
+            <div>
+              <dt>App database</dt>
+              <dd class="u-mono">{{ target.label }}</dd>
+            </div>
+            <div>
+              <dt>Catalog project</dt>
+              <dd class="u-mono">{{ catalog.configured ? catalog.label : 'not configured' }}</dd>
+            </div>
+            <div>
+              <dt>Clerk issuer</dt>
+              <dd class="u-mono">{{ issuer || 'unknown' }}</dd>
+            </div>
+            <div>
+              <dt>Postgres</dt>
+              <dd class="u-mono">{{ health.data.value?.server_version || '--' }}</dd>
+            </div>
+            <div>
+              <dt>Server time</dt>
+              <dd>{{ health.data.value ? formatDateTime(health.data.value.server_time) : '--' }}</dd>
+            </div>
+          </dl>
         </PanelCard>
       </div>
 
@@ -628,15 +635,12 @@ const allClear = computed(() =>
           fill
         >
           <StateBlock v-if="health.loading.value" state="loading" :lines="2" compact />
-          <details v-else-if="migrations.length" class="more more--flat">
-            <summary class="more__summary">Show all</summary>
-            <ul class="migrations">
-              <li v-for="m in migrations" :key="m.version" class="migrations__row">
-                <span class="u-mono migrations__version">{{ m.version }}</span>
-                <span class="migrations__name u-truncate">{{ m.name }}</span>
-              </li>
-            </ul>
-          </details>
+          <ul v-else-if="migrations.length" class="migrations">
+            <li v-for="m in migrations" :key="m.version" class="migrations__row">
+              <span class="u-mono migrations__version">{{ m.version }}</span>
+              <span class="migrations__name u-truncate">{{ m.name }}</span>
+            </li>
+          </ul>
         </PanelCard>
       </div>
     </div>
@@ -793,34 +797,10 @@ const allClear = computed(() =>
   color: var(--text-secondary);
 }
 
-.more {
-  margin-top: var(--space-4);
+.config {
+  margin: var(--space-4) 0 0;
   padding-top: var(--space-3);
   border-top: var(--border-width-thin) solid var(--border-light);
-}
-
-.more--flat {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-}
-
-.more__summary {
-  cursor: pointer;
-  width: fit-content;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-primary);
-  border-radius: var(--radius-xs);
-}
-
-.more__summary:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-
-.config {
-  margin: var(--space-3) 0 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: var(--space-3);
@@ -901,10 +881,8 @@ const allClear = computed(() =>
 
 .migrations {
   list-style: none;
-  margin: var(--space-3) 0 0;
+  margin: 0;
   padding: 0;
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 .migrations__row {
