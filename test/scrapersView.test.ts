@@ -56,6 +56,8 @@ function run(over: Record<string, unknown> = {}) {
     products_created: 0,
     marked_unavailable: 0,
     error: null,
+    pages_read: 0,
+    last_alive_at: null,
     ...over,
   }
 }
@@ -220,6 +222,47 @@ describe('the scrapers page', () => {
     expect(text).toContain('230')
     expect(text).not.toContain('90k')
     expect(text).not.toContain('sold nowhere')
+  })
+
+  // "Is it doing anything?" A running card says how many pages it has read and
+  // when the shop last answered, apart from what it has imported.
+  it('shows a running shop\'s pages and its last sign of life', async () => {
+    state.runs = [
+      run({
+        status: 'running',
+        finished_at: null,
+        started_at: new Date(Date.now() - 3_600_000).toISOString(),
+        products_found: 0,
+        pages_read: 12430,
+        last_alive_at: new Date(Date.now() - 20_000).toISOString(),
+      }),
+    ]
+    const text = (await mountPage()).text()
+    expect(text).toContain('12,430')
+    expect(text).toContain('alive')
+    expect(text).toContain('Running')
+  })
+
+  it('says a running shop has gone quiet, and puts it first', async () => {
+    state.runs = [
+      run({ id: 'ok', shop: 'lidl' }),
+      run({
+        id: 'quiet',
+        shop: 'carrefour',
+        shopName: 'Carrefour',
+        status: 'running',
+        finished_at: null,
+        started_at: new Date(Date.now() - 3_600_000).toISOString(),
+        pages_read: 900,
+        last_alive_at: new Date(Date.now() - 14 * 60_000).toISOString(),
+      }),
+    ]
+    const wrapper = await mountPage()
+    const first = wrapper.findAll('.shop')[0]
+    expect(first.text()).toContain('Carrefour')
+    expect(first.text()).toContain('No sign of life')
+    expect(first.text()).toContain('14 min')
+    expect(first.classes()).toContain('shop--attention')
   })
 
   it('lists every run it read in the history', async () => {

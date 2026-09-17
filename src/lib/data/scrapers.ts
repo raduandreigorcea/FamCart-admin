@@ -39,6 +39,17 @@ export interface ScrapeRunRow {
   products_created: number
   marked_unavailable: number
   error: string | null
+  /**
+   * Pages the scraper has read, whether or not they held a product to import
+   * (catalog 022). The number that moves while products_found cannot.
+   */
+  pages_read: number
+  /**
+   * When the scraper last heard back from the shop. Reported once a minute
+   * while answers arrive, so a stale value means it stopped hearing back. Null
+   * on a run from a scraper that predates the report.
+   */
+  last_alive_at: string | null
 }
 
 /**
@@ -53,6 +64,7 @@ export const RUN_HISTORY_LIMIT = 200
 const COLUMNS =
   'id, status, started_at, finished_at, products_found, products_valid, products_rejected, ' +
   'inserted, updated, unchanged, products_created, marked_unavailable, error, ' +
+  'pages_read, last_alive_at, ' +
   'retailer:catalog_retailers(slug, name, country)'
 
 type Retailer = { slug: string; name: string | null; country: string | null }
@@ -145,16 +157,48 @@ export function countriesIn(runs: ScrapeRunRow[]): string[] {
 }
 
 /**
- * The same runs, most urgent first: failed or refused to sweep, then running,
- * then the rest in the order they came. Stable within each band.
+ * How long a running scraper has been silent before the page says so.
+ *
+ * The scraper reports once a minute while any answer arrives, and the slowest
+ * shop takes ~3.5 s a page, so ten silent minutes is ten missed reports -- not a
+ * slow page, and not a slow database. Long enough that a stall in the catalog
+ * instance (seconds, see RETRY_DELAYS_MS in the catalog) never trips it.
+ */
+export const STALE_AFTER_MS = 10 * 60_000
+
+/** How long since the shop was last heard from, or null if it never reported. */
+export function quietFor(run: Pick<ScrapeRunRow, 'last_alive_at'>, now = Date.now()): number | null {
+  if (!run.last_alive_at) return null
+  return Math.max(0, now - Date.parse(run.last_alive_at))
+}
+
+/**
+ * A run that says it is running and has not heard from its shop in a while.
+ *
+ * Never a run with no sign of life at all: that is a scraper older than the
+ * report, and calling it stalled would be an alarm about a deploy.
+ */
+export function isStalled(run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'>, now = Date.now()): boolean {
+  if (run.status !== 'running') return false
+  const quiet = quietFor(run, now)
+  return quiet !== null && quiet > STALE_AFTER_MS
+}
+
+/**
+ * The same runs, most urgent first: failed, refused to sweep or stalled, then
+ * running, then the rest in the order they came. Stable within each band.
  *
  * With every country on show the page has room for one row of cards, so this is
  * what decides which shops make it -- and a shop that broke must never be the
  * one left out.
  */
-export function byUrgency(runs: ScrapeRunRow[]): ScrapeRunRow[] {
+export function byUrgency(runs: ScrapeRunRow[], now = Date.now()): ScrapeRunRow[] {
   const band = (run: ScrapeRunRow) =>
-    run.status === 'failed' || run.status === 'partial' ? 0 : run.status === 'running' ? 1 : 2
+    run.status === 'failed' || run.status === 'partial' || isStalled(run, now)
+      ? 0
+      : run.status === 'running'
+        ? 1
+        : 2
   return runs
     .map((run, index) => ({ run, index }))
     .sort((a, b) => band(a.run) - band(b.run) || a.index - b.index)

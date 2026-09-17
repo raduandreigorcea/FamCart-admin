@@ -13,6 +13,8 @@ import {
   ALL_COUNTRIES,
   RUN_HISTORY_LIMIT,
   byUrgency,
+  isStalled,
+  quietFor,
   countriesIn,
   countryName,
   expectedCount,
@@ -139,17 +141,23 @@ const polling = computed(() => runs.fetching.value && !runs.loading.value)
 
 // Everything a card needs, worked out once per refresh rather than per binding.
 const shops = computed(() =>
-  byUrgency(latestPerShop(shown.value)).map((run) => {
+  byUrgency(latestPerShop(shown.value), now.value).map((run) => {
     const running = run.status === 'running'
     const expected = running ? expectedCount(run, history.value) : null
     const length = formatRunDuration(runDurationMs(run, now.value))
+    // Is it doing anything? Pages move while the imported count cannot, and the
+    // last answer from the shop says whether it is still being answered at all.
+    const quiet = running ? quietFor(run, now.value) : null
+    const stalled = isStalled(run, now.value)
+    const alive = quiet === null ? '' : ` · alive ${formatRunDuration(quiet)} ago`
     return {
       id: run.id,
       props: {
         name: run.shopName,
-        tone: runTone(run.status),
-        label: runLabel(run.status),
-        running,
+        tone: stalled ? 'warn' : runTone(run.status),
+        label: stalled ? 'No sign of life' : runLabel(run.status),
+        running: running && !stalled,
+        attention: stalled,
         count: formatCount(run.products_found),
         unit: running
           ? expected
@@ -158,15 +166,20 @@ const shops = computed(() =>
           : 'products read',
         progress: expected ? { value: run.products_found, max: expected } : null,
         when: running
-          ? `Running for ${length}`
+          ? `Running for ${length}${alive}`
           : `Started ${formatRelative(run.started_at, now.value)}, took ${length}`,
         whenTitle: formatDateTime(run.started_at),
         facts: [
+          ...(running
+            ? [{ label: 'Pages', value: formatCount(run.pages_read), title: 'Pages read so far, products or not' }]
+            : []),
           { label: 'New', value: formatCount(run.products_created) },
           { label: 'Updated', value: formatCount(run.updated) },
           { label: 'Gone', value: formatCount(run.marked_unavailable), title: 'Listings this run marked as no longer sold' },
         ],
-        message: runMessage(run),
+        message: stalled && quiet !== null
+          ? `Nothing heard from the shop for ${formatRunDuration(quiet)}. The job may have been killed, or the shop stopped answering.`
+          : runMessage(run),
       },
     }
   }),
