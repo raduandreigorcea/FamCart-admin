@@ -116,14 +116,14 @@ describe('the scrapers page', () => {
     expect(text).toContain('Gateway Timeout')
   })
 
-  it('gives each shop one card, from its newest run', async () => {
+  it('gives each of the newest runs a card, a shop run twice included', async () => {
     state.runs = [
       run({ id: 'c2', shop: 'carrefour', status: 'failed' }),
       run({ id: 'l', shop: 'lidl' }),
       run({ id: 'c1', shop: 'carrefour', status: 'completed' }),
     ]
     const wrapper = await mountPage()
-    expect(wrapper.findAll('.shop')).toHaveLength(2)
+    expect(wrapper.findAll('.shop')).toHaveLength(3)
   })
 
   // Twenty-two cards in one grid. The selector cuts it to one country's handful,
@@ -275,11 +275,12 @@ describe('the scrapers page', () => {
     expect(card.classes()).toContain('shop--attention')
   })
 
-  it('keeps a shop\'s older runs in the history', async () => {
-    state.runs = [run({ id: 'a' }), run({ id: 'b' }), run({ id: 'c' })]
+  // Romania has four shops and dozens of runs; its cards are its five newest runs,
+  // not its four shops.
+  it('fills the five cards from one shop\'s runs when that is what is newest', async () => {
+    state.runs = [1, 2, 3, 4, 5, 6, 7].map((n) => run({ id: `r${n}` }))
     const wrapper = await mountPage()
-    // One shop: its newest run is the card, the other two are history.
-    expect(wrapper.findAll('.shop')).toHaveLength(1)
+    expect(wrapper.findAll('.shop')).toHaveLength(5)
     expect(wrapper.find('.history').attributes('data-rows')).toBe('2')
   })
 

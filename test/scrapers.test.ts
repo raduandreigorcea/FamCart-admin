@@ -41,7 +41,6 @@ vi.mock('../src/lib/supabase', () => ({
 
 const {
   fetchScrapeRuns,
-  latestPerShop,
   runDurationMs,
   formatRunDuration,
   expectedCount,
@@ -133,19 +132,6 @@ describe('fetchScrapeRuns', () => {
   })
 })
 
-describe('latestPerShop', () => {
-  it('keeps each shop’s newest run, in the order the shops last ran', async () => {
-    answer.data = [
-      row({ id: 'c2', retailer: { slug: 'carrefour' }, started_at: '2026-09-13T08:16:15Z' }),
-      row({ id: 'a2', retailer: { slug: 'auchan' }, started_at: '2026-09-13T08:15:58Z' }),
-      row({ id: 'l2', retailer: { slug: 'lidl' }, started_at: '2026-09-13T06:17:56Z' }),
-      row({ id: 'c1', retailer: { slug: 'carrefour' }, started_at: '2026-09-12T09:03:18Z' }),
-    ]
-    const runs = await fetchScrapeRuns(signal())
-    expect(latestPerShop(runs).map((r) => r.id)).toEqual(['c2', 'a2', 'l2'])
-  })
-})
-
 describe('countriesIn', () => {
   const shop = (slug: string, country: string) =>
     row({ id: slug, retailer: { slug, name: 'Lidl', country } })
@@ -190,16 +176,17 @@ describe('splitCards', () => {
     at('f1', 'f', '2026-09-17T03:00:00Z'),
   ]
 
-  it('puts the newest runs on the cards, one per shop, and the rest in the history', async () => {
+  // The newest runs, whatever their shop: a shop that ran twice lately is on two
+  // cards. That is the point -- a country with four shops still shows five runs.
+  it('puts the five newest runs on the cards, whatever their shop, and the rest in the history', async () => {
     answer.data = runs()
     const { cards, history } = splitCards(await fetchScrapeRuns(signal()))
     expect(CARD_COUNT).toBe(5)
-    // a1 is shop a's older run: a is already on a card, so a1 waits in the history.
-    expect(cards.map((r) => r.id)).toEqual(['a2', 'b1', 'c1', 'd1', 'e1'])
-    expect(history.map((r) => r.id)).toEqual(['a1', 'f1'])
+    expect(cards.map((r) => r.id)).toEqual(['a2', 'b1', 'a1', 'c1', 'd1'])
+    expect(history.map((r) => r.id)).toEqual(['e1', 'f1'])
   })
 
-  it('shows every run on a card when there are fewer than five shops', async () => {
+  it('shows every run on a card when there are fewer than five', async () => {
     answer.data = runs().slice(0, 2)
     const { cards, history } = splitCards(await fetchScrapeRuns(signal()))
     expect(cards.map((r) => r.id)).toEqual(['a2', 'b1'])
