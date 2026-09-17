@@ -46,7 +46,9 @@ const {
   formatRunDuration,
   expectedCount,
   runMessage,
-  groupShops,
+  groupByCountry,
+  needsAttention,
+  countryName,
   RUN_HISTORY_LIMIT,
 } = await import('../src/lib/data/scrapers')
 const { CatalogNotConfigured } = await import('../src/lib/data/catalog')
@@ -135,45 +137,58 @@ describe('latestPerShop', () => {
   })
 })
 
-describe('groupShops', () => {
-  const shop = (slug: string, country: string, status = 'completed', name = 'Lidl') =>
+describe('groupByCountry', () => {
+  const shop = (slug: string, country: string, name = 'Lidl', status = 'completed') =>
     row({ id: slug, status, retailer: { slug, name, country } })
 
-  // Twenty-two shops is a wall. What somebody opens this page for is the one
-  // that broke, so it is lifted out of its country and put first.
-  it('puts every shop that failed or refused to sweep first, whatever its country', async () => {
+  // No country is special, Romania included: a section per country, in the
+  // order a person scans a list of countries, which is by name.
+  it('gives each country its own section, ordered by the country\'s name', async () => {
     answer.data = [
       shop('lidl', 'RO'),
-      shop('lidl-be', 'BE', 'failed'),
-      shop('auchan', 'RO', 'partial', 'Auchan'),
-      shop('lidl-it', 'IT'),
-    ]
-    const groups = groupShops(await fetchScrapeRuns(signal()))
-    expect(groups.map((g) => g.key)).toEqual(['attention', 'home', 'abroad'])
-    expect(groups[0].runs.map((r) => r.shop)).toEqual(['lidl-be', 'auchan'])
-    expect(groups[1].runs.map((r) => r.shop)).toEqual(['lidl'])
-    expect(groups[2].runs.map((r) => r.shop)).toEqual(['lidl-it'])
-  })
-
-  it('keeps a running shop in its country: running is not a problem', async () => {
-    answer.data = [shop('lidl-de', 'DE', 'running')]
-    const groups = groupShops(await fetchScrapeRuns(signal()))
-    expect(groups.map((g) => g.key)).toEqual(['abroad'])
-  })
-
-  it('orders the shops abroad by country, then by name', async () => {
-    answer.data = [
-      shop('mpreis', 'AT', 'completed', 'MPreis'),
-      shop('lidl-it', 'IT'),
-      shop('hofer', 'AT', 'completed', 'Hofer'),
+      shop('lidl-de', 'DE'),
+      shop('hofer', 'AT', 'Hofer'),
       shop('lidl-at', 'AT'),
     ]
-    const [abroad] = groupShops(await fetchScrapeRuns(signal()))
-    expect(abroad.runs.map((r) => r.shop)).toEqual(['hofer', 'lidl-at', 'mpreis', 'lidl-it'])
+    const sections = groupByCountry(await fetchScrapeRuns(signal()))
+    expect(sections.map((s) => s.name)).toEqual(['Austria', 'Germany', 'Romania'])
+    expect(sections[0].runs.map((r) => r.shop)).toEqual(['hofer', 'lidl-at'])
   })
 
-  it('leaves out a group with nothing in it', () => {
-    expect(groupShops([])).toEqual([])
+  // A failure is not lifted out of its country; the page names it separately.
+  it('keeps a failed shop in its own country', async () => {
+    answer.data = [shop('lidl-be', 'BE', 'Lidl', 'failed')]
+    const [belgium] = groupByCountry(await fetchScrapeRuns(signal()))
+    expect(belgium.code).toBe('BE')
+    expect(belgium.runs).toHaveLength(1)
+  })
+
+  it('draws nothing for no runs', () => {
+    expect(groupByCountry([])).toEqual([])
+  })
+})
+
+describe('needsAttention', () => {
+  it('is the shops that failed or refused to sweep, never the running ones', async () => {
+    answer.data = [
+      row({ id: 'a', status: 'failed', retailer: { slug: 'lidl-be', name: 'Lidl', country: 'BE' } }),
+      row({ id: 'b', status: 'partial', retailer: { slug: 'auchan', name: 'Auchan', country: 'RO' } }),
+      row({ id: 'c', status: 'running', retailer: { slug: 'lidl-es', name: 'Lidl', country: 'ES' } }),
+      row({ id: 'd', status: 'completed', retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' } }),
+    ]
+    expect(needsAttention(await fetchScrapeRuns(signal())).map((r) => r.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('countryName', () => {
+  it('says the country in English, as the rest of the dashboard does', () => {
+    expect(countryName('GB')).toBe('United Kingdom')
+    expect(countryName('RO')).toBe('Romania')
+  })
+
+  it('falls back to what it was given when it is not a country code', () => {
+    expect(countryName('')).toBe('Unknown country')
+    expect(countryName('??')).toBe('??')
   })
 })
 
