@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import ShopRunCard from '../components/ShopRunCard.vue'
@@ -86,7 +87,14 @@ const history = computed(() => runs.data.value ?? [])
 // one country's handful, the way the time range does on Health. Kept for as long
 // as the page is open, like that one, and not remembered: the page should open
 // on every shop, since "nothing is wrong" is a claim about all of them.
-const country = ref<string>(ALL_COUNTRIES)
+//
+// A link can name the country and a run -- the Health banner's "Lidl BE failed"
+// is /scrapers?country=BE&run=<id> -- and the page opens there with that run
+// marked. A country with no runs is dropped by the watch below, like any other.
+const route = useRoute()
+const queryText = (value: unknown): string | null => (typeof value === 'string' && value ? value : null)
+const country = ref<string>(queryText(route.query.country)?.toUpperCase() ?? ALL_COUNTRIES)
+const focusRun = computed(() => queryText(route.query.run))
 
 // Only the countries that have a run, so no button empties the page. Codes
 // rather than names, because eleven country names do not fit in one control;
@@ -193,6 +201,25 @@ const shops = computed(() =>
   }),
 )
 
+// Bring the linked run into view once the rows have arrived, and once only: the
+// page polls, and pulling the reader back every thirty seconds would be worse
+// than not scrolling at all.
+let scrolledTo: string | null = null
+watch(
+  [() => runs.data.value, focusRun],
+  async () => {
+    const id = focusRun.value
+    if (!id || id === scrolledTo || !runs.data.value) return
+    await nextTick()
+    const target =
+      document.getElementById(`run-${id}`) ?? document.querySelector<HTMLElement>('.table__row--selected')
+    if (!target) return
+    scrolledTo = id
+    target.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  },
+  { immediate: true },
+)
+
 // The message gets the room: it is the only column whose content is a sentence,
 // and the one a failed row is read for.
 const columns: Column<ScrapeRunRow>[] = [
@@ -277,13 +304,20 @@ function asRun(row: unknown): ScrapeRunRow {
            because it is the one number that answers both questions this page
            exists for: is it moving, and did it read the whole shop. -->
       <ul v-else class="shops" aria-label="The newest runs">
-        <ShopRunCard v-for="shop in shops" :key="shop.id" v-bind="shop.props" />
+        <ShopRunCard
+          v-for="shop in shops"
+          :id="`run-${shop.id}`"
+          :key="shop.id"
+          :class="{ 'shop--focus': shop.id === focusRun }"
+          v-bind="shop.props"
+        />
       </ul>
 
       <PanelCard title="History" :note="`Older runs, newest first, from the last ${RUN_HISTORY_LIMIT}.`" :busy="polling" flush>
         <DataTable
           :columns="columns"
           :rows="split.history"
+          :selected-key="focusRun"
           row-key="id"
           :loading="runs.loading.value"
           :error="loadError"
@@ -334,6 +368,13 @@ function asRun(row: unknown): ScrapeRunRow {
    row exactly. Below a width where five would crush them the grid falls back to
    as many as fit -- the dashboard is a desktop tool, but a narrowed window
    should not break it. */
+/* The run a link came for. An outline, not a new tint: the card's own state
+   colour still has to read. */
+.shop--focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .shops {
   list-style: none;
   margin: 0;

@@ -109,9 +109,33 @@ function refreshing(query: { fetching: Ref<boolean>; loading: Ref<boolean> }): b
 const catalogOn = catalogConfigured()
 const scrapes = useQuery((signal) => fetchCatalogStats(signal), { enabled: () => catalogConfigured() })
 
-/** A sentence in the banner. `to` is where its detail lives, when that is
- *  another page. */
-type Issue = { tone: 'bad' | 'warn'; text: string; to?: string }
+/**
+ * A sentence in the banner, and where its detail is -- as close to the thing as
+ * there is a place for. `to` is a page of this dashboard, `href` somewhere else
+ * (a GitHub run), `anchor` a panel further down this page.
+ */
+type Issue = { tone: 'bad' | 'warn'; text: string; to?: string; href?: string; anchor?: string }
+
+/** The panels a sentence can point at, further down this page. */
+const CONNECTION_PANEL = 'health-connection'
+const EVENTS_PANEL = 'health-events'
+
+/**
+ * Scroll to a panel on this page. A button rather than an anchor: the router's
+ * scrollBehavior sends every navigation to the top, a hash change included.
+ */
+function goTo(id: string) {
+  const panel = document.getElementById(id)
+  if (!panel) return
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+/** The Scrapers page on this shop's country, with its run marked when known. */
+function scrapersLink(shop: RetailerHealth): string {
+  const query = new URLSearchParams({ country: shop.country.toUpperCase() })
+  if (shop.last_run?.id) query.set('run', shop.last_run.id)
+  return `/scrapers?${query.toString()}`
+}
 
 
 /**
@@ -125,22 +149,23 @@ type Issue = { tone: 'bad' | 'warn'; text: string; to?: string }
 function shopIssue(shop: RetailerHealth): Issue | null {
   // "Lidl BE": nine shops are Lidl, so the country is part of the name.
   const name = shopLabel(shop)
+  const to = scrapersLink(shop)
   const run = shop.last_run
-  if (!run) return shop.enabled ? { tone: 'warn', text: `${name} has never been scraped`, to: '/scrapers' } : null
-  if (run.status === 'failed') return { tone: 'bad', text: `${name} failed its last run`, to: '/scrapers' }
-  if (run.status === 'partial') return { tone: 'warn', text: `${name} refused to sweep`, to: '/scrapers' }
+  if (!run) return shop.enabled ? { tone: 'warn', text: `${name} has never been scraped`, to } : null
+  if (run.status === 'failed') return { tone: 'bad', text: `${name} failed its last run`, to }
+  if (run.status === 'partial') return { tone: 'warn', text: `${name} refused to sweep`, to }
   // A crawl that stopped hearing back from its shop (catalog 022) is as dead as
   // a failed one, and says nothing on its own.
   if (isStalled({ status: run.status, last_alive_at: run.last_alive_at ?? null })) {
-    return { tone: 'bad', text: `${name} has gone quiet`, to: '/scrapers' }
+    return { tone: 'bad', text: `${name} has gone quiet`, to }
   }
   if (run.status === 'running') return null
   // The nightly job never reached it. Quiet, like every failure this banner is for.
   if (Date.now() - Date.parse(run.started_at) > SCRAPE_WINDOW_MS) {
-    return { tone: 'bad', text: `${name} has not run in over a day`, to: '/scrapers' }
+    return { tone: 'bad', text: `${name} has not run in over a day`, to }
   }
   if ((shop.delta ?? 0) < 0) {
-    return { tone: 'warn', text: `${name} found ${formatCount(-(shop.delta ?? 0))} fewer products than last time`, to: '/scrapers' }
+    return { tone: 'warn', text: `${name} found ${formatCount(-(shop.delta ?? 0))} fewer products than last time`, to }
   }
   return null
 }
@@ -351,12 +376,14 @@ const checking = computed(
 const issues = computed<Issue[]>(() => {
   const out: Issue[] = []
   for (const probe of probes.data.value ?? []) {
-    if (!probe.ok) out.push({ tone: 'bad', text: `${probe.label} is not answering` })
+    if (!probe.ok) out.push({ tone: 'bad', text: `${probe.label} is not answering`, anchor: CONNECTION_PANEL })
   }
   if (!probes.loading.value && reachability.value === 'unknown') {
-    out.push({ tone: 'warn', text: 'Reachability could not be measured' })
+    out.push({ tone: 'warn', text: 'Reachability could not be measured', anchor: CONNECTION_PANEL })
   }
-  if (health.error.value) out.push({ tone: 'bad', text: 'The database did not report on itself' })
+  if (health.error.value) {
+    out.push({ tone: 'bad', text: 'The database did not report on itself', anchor: CONNECTION_PANEL })
+  }
   if (scrapes.error.value) out.push({ tone: 'warn', text: 'The scrapers could not be read' })
   out.push(...shopIssues.value)
   // The checks the lines above do not already cover: the databases and the
@@ -368,11 +395,16 @@ const issues = computed<Issue[]>(() => {
       tone: check.tone,
       text: `${check.label}: ${check.detail}`,
       to: check.href && !isExternal(check.href) ? check.href : undefined,
+      href: isExternal(check.href) ? check.href : undefined,
     })
   }
   if (errorEvents.value > 0) {
     const n = errorEvents.value
-    out.push({ tone: 'warn', text: `${formatCount(n)} failed or denied ${n === 1 ? 'event' : 'events'} in the last ${range.value.label}` })
+    out.push({
+      tone: 'warn',
+      text: `${formatCount(n)} failed or denied ${n === 1 ? 'event' : 'events'} in the last ${range.value.label}`,
+      anchor: EVENTS_PANEL,
+    })
   }
   return out
 })
@@ -430,6 +462,10 @@ const allClear = computed(() =>
         <ul v-if="issues.length" class="status__issues">
           <li v-for="issue in issues" :key="issue.text" :class="`status__issue--${issue.tone}`">
             <RouterLink v-if="issue.to" :to="issue.to" class="status__link">{{ issue.text }}</RouterLink>
+            <a v-else-if="issue.href" :href="issue.href" target="_blank" rel="noopener" class="status__link">{{ issue.text }}</a>
+            <button v-else-if="issue.anchor" type="button" class="status__link status__jump" @click="goTo(issue.anchor)">
+              {{ issue.text }}
+            </button>
             <template v-else>{{ issue.text }}</template>
           </li>
         </ul>
@@ -508,6 +544,7 @@ const allClear = computed(() =>
     <div class="grid">
       <div class="span-6">
         <PanelCard
+          :id="CONNECTION_PANEL"
           title="Connection"
           note="Measured from this browser, the way the app reaches the projects."
           :busy="refreshing(probes)"
@@ -584,6 +621,7 @@ const allClear = computed(() =>
     </div>
 
     <PanelCard
+      :id="EVENTS_PANEL"
       title="Recent events"
       :note="`The audit trail: ${formatCount(errorEvents)} errors and ${formatCount(warnEvents)} warnings in the last ${range.label}.`"
       :busy="refreshing(events)"
@@ -916,6 +954,16 @@ a.check__detail:hover {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
+}
+
+/* A jump to a panel on this page, dressed as the links beside it. */
+.status__jump {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .status__link:hover {

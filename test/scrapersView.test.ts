@@ -11,7 +11,19 @@ import type { Component } from 'vue'
 // the page is left, since a timer that outlives its page keeps querying a small
 // database for nobody.
 
-const state = vi.hoisted(() => ({ runs: [] as unknown[], configured: true, fetches: 0, stats: null as unknown }))
+const state = vi.hoisted(() => ({
+  runs: [] as unknown[],
+  configured: true,
+  fetches: 0,
+  stats: null as unknown,
+  query: {} as Record<string, string>,
+}))
+
+// The page reads ?country= and ?run= from the route: the Health banner links
+// straight to a shop's run.
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: state.query }),
+}))
 
 vi.mock('../src/lib/data/catalog', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/data/catalog')>()),
@@ -69,6 +81,7 @@ async function mountPage() {
 }
 
 beforeEach(() => {
+  state.query = {}
   state.configured = true
   state.fetches = 0
   state.runs = [run()]
@@ -282,6 +295,30 @@ describe('the scrapers page', () => {
     const wrapper = await mountPage()
     expect(wrapper.findAll('.shop')).toHaveLength(5)
     expect(wrapper.find('.history').attributes('data-rows')).toBe('2')
+  })
+
+  // From the Health banner: "Lidl BE failed" opens Belgium with that run marked.
+  it('opens on the country in the link, and marks the run it names', async () => {
+    state.query = { country: 'be', run: 'be-old' }
+    state.runs = [
+      run({ id: 'it-1', shop: 'lidl-it', country: 'IT' }),
+      run({ id: 'be-new', shop: 'lidl-be', country: 'BE' }),
+      run({ id: 'ro-1', shop: 'lidl', country: 'RO' }),
+    ]
+    const wrapper = await mountPage()
+    expect(wrapper.find('[role="radio"][aria-checked="true"]').text()).toBe('BE')
+    expect(wrapper.findAll('.shop')).toHaveLength(1)
+
+    state.runs = [...state.runs, run({ id: 'be-old', shop: 'lidl-be', country: 'BE', status: 'failed' })]
+    const again = await mountPage()
+    expect(again.find('#run-be-old').classes()).toContain('shop--focus')
+  })
+
+  it('ignores a country in the link that has no runs', async () => {
+    state.query = { country: 'FR' }
+    state.runs = [run({ id: '1', country: 'IT' }), run({ id: '2', shop: 'x', country: 'RO' })]
+    const wrapper = await mountPage()
+    expect(wrapper.find('[role="radio"][aria-checked="true"]').text()).toBe('All')
   })
 
   it('asks again every 30 seconds, and stops when the page is left', async () => {
