@@ -84,6 +84,27 @@ export function formatDateTime(value: string | Date | null | undefined): string 
   return date ? dateTime.format(date) : '--'
 }
 
+const clockTime = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+const clockDay = new Intl.DateTimeFormat(LOCALE, { day: '2-digit', month: 'short' })
+
+/**
+ * "06:11" for a time today, "16 Sep 23:05" for any other day.
+ *
+ * How a nightly run is read: by its hour. The day is said only when it is not
+ * today's, so yesterday's 06:11 can never pass for this morning's.
+ */
+export function formatClock(value: string | Date | null | undefined, now = Date.now()): string {
+  const date = toDate(value)
+  if (!date) return '--'
+  const today = new Date(now)
+  const sameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  const time = clockTime.format(date)
+  return sameDay ? time : `${clockDay.format(date)} ${time}`
+}
+
 export function formatDate(value: string | Date | null | undefined): string {
   const date = toDate(value)
   return date ? dateOnly.format(date) : '--'

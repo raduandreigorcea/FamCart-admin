@@ -139,7 +139,8 @@ describe('the scrapers page', () => {
 
     await wrapper.find('[role="radio"][title="Austria"]').trigger('click')
     expect(wrapper.findAll('.shop')).toHaveLength(2)
-    expect(wrapper.find('.history').attributes('data-rows')).toBe('2')
+    // Both of Austria's runs are cards, so nothing is left for its history.
+    expect(wrapper.find('.history').attributes('data-rows')).toBe('0')
 
     await wrapper.find('[role="radio"][title="Every country"]').trigger('click')
     expect(wrapper.findAll('.shop')).toHaveLength(3)
@@ -177,33 +178,41 @@ describe('the scrapers page', () => {
     expect(wrapper.find('[role="radio"][aria-checked="true"]').text()).toBe('All')
   })
 
-  // Every country at once is a wall of cards. It gets one row, as many as fit --
-  // five, the grid's column count, since the test DOM lays nothing out -- and
-  // says how many it left.
-  // In the order they started, newest first, like the history under them: a
-  // shop left off the row is still in that table, failure and all.
-  it('shows one row of the newest cards for every country, and how many it left out', async () => {
+  // The five newest runs are cards; everything older is the history, and a run
+  // is in one or the other, never both.
+  it('shows the five newest runs as cards and the rest in the history', async () => {
     state.runs = [
-      run({ id: '1', shop: 's1', shopName: 'One', country: 'RO' }),
-      run({ id: '2', shop: 's2', shopName: 'Two', country: 'RO' }),
-      run({ id: '3', shop: 's3', shopName: 'Three', country: 'IT' }),
-      run({ id: '4', shop: 's4', shopName: 'Four', country: 'IT' }),
-      run({ id: '5', shop: 's5', shopName: 'Five', country: 'AT' }),
-      run({ id: '6', shop: 's6', shopName: 'Six', country: 'AT', status: 'failed' }),
+      run({ id: '1', shop: 's1', shopName: 'One', started_at: '2026-09-17T06:06:00Z' }),
+      run({ id: '2', shop: 's2', shopName: 'Two', started_at: '2026-09-17T06:05:00Z' }),
+      run({ id: '3', shop: 's3', shopName: 'Three', started_at: '2026-09-17T06:04:00Z' }),
+      run({ id: '4', shop: 's4', shopName: 'Four', started_at: '2026-09-17T06:03:00Z' }),
+      run({ id: '5', shop: 's5', shopName: 'Five', started_at: '2026-09-17T06:02:00Z' }),
+      run({ id: '6', shop: 's6', shopName: 'Six', started_at: '2026-09-17T06:01:00Z' }),
+      run({ id: '7', shop: 's1', shopName: 'One', started_at: '2026-09-16T06:00:00Z' }),
     ]
     const wrapper = await mountPage()
     const names = wrapper.findAll('.shop__name').map((n) => n.text())
     expect(names).toEqual(['One', 'Two', 'Three', 'Four', 'Five'])
-    expect(wrapper.find('.shops__more').text()).toContain('+1 more')
+    expect(wrapper.find('.history').attributes('data-rows')).toBe('2')
   })
 
-  it('shows every card of a chosen country, however many', async () => {
-    state.runs = [1, 2, 3, 4, 5, 6].map((n) => run({ id: `a${n}`, shop: `at${n}`, country: 'AT' }))
-      .concat(run({ id: 'r', shop: 'lidl', country: 'RO' }))
+  it('does the same inside a chosen country', async () => {
+    state.runs = [1, 2, 3, 4, 5, 6]
+      .map((n) => run({ id: `a${n}`, shop: `at${n}`, country: 'AT', started_at: `2026-09-17T0${9 - n}:00:00Z` }))
+      .concat(run({ id: 'r', shop: 'lidl', country: 'RO', started_at: '2026-09-17T09:30:00Z' }))
     const wrapper = await mountPage()
     await wrapper.find('[role="radio"][title="Austria"]').trigger('click')
-    expect(wrapper.findAll('.shop')).toHaveLength(6)
-    expect(wrapper.find('.shops__more').exists()).toBe(false)
+    expect(wrapper.findAll('.shop')).toHaveLength(5)
+    expect(wrapper.find('.history').attributes('data-rows')).toBe('1')
+  })
+
+  it('says the hour a run started on its card', async () => {
+    const started = new Date()
+    started.setHours(6, 11, 0, 0)
+    state.runs = [run({ started_at: started.toISOString(), finished_at: new Date(started.getTime() + 300_000).toISOString() })]
+    const text = (await mountPage()).find('.shop').text()
+    expect(text).toContain('Started 06:11')
+    expect(text).toContain('took 5 min')
   })
 
   it('counts the chosen country in the totals line, and drops what is global only', async () => {
@@ -266,10 +275,12 @@ describe('the scrapers page', () => {
     expect(card.classes()).toContain('shop--attention')
   })
 
-  it('lists every run it read in the history', async () => {
+  it('keeps a shop\'s older runs in the history', async () => {
     state.runs = [run({ id: 'a' }), run({ id: 'b' }), run({ id: 'c' })]
     const wrapper = await mountPage()
-    expect(wrapper.find('.history').attributes('data-rows')).toBe('3')
+    // One shop: its newest run is the card, the other two are history.
+    expect(wrapper.findAll('.shop')).toHaveLength(1)
+    expect(wrapper.find('.history').attributes('data-rows')).toBe('2')
   })
 
   it('asks again every 30 seconds, and stops when the page is left', async () => {

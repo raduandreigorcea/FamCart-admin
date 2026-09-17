@@ -199,6 +199,23 @@ export function runPill(
   return { tone: runTone(run.status), label: runLabel(run.status), busy: run.status === 'running' }
 }
 
+/** How many runs the Scrapers page draws as cards: one row of its grid. */
+export const CARD_COUNT = 5
+
+/**
+ * The newest runs as cards, everything else as history, and never a run in both.
+ *
+ * One card per shop: a shop run twice recently -- a retry, a manual run -- shows
+ * its newest run on the card and keeps the older one in the history, so the row
+ * never holds the same shop twice. Takes the rows newest first, as
+ * fetchScrapeRuns returns them.
+ */
+export function splitCards(runs: ScrapeRunRow[]): { cards: ScrapeRunRow[]; history: ScrapeRunRow[] } {
+  const cards = latestPerShop(runs).slice(0, CARD_COUNT)
+  const onCards = new Set(cards.map((run) => run.id))
+  return { cards, history: runs.filter((run) => !onCards.has(run.id)) }
+}
+
 /** One country's runs, or every run for ALL_COUNTRIES. */
 export function inCountry(runs: ScrapeRunRow[], country: string): ScrapeRunRow[] {
   return country === ALL_COUNTRIES ? runs : runs.filter((run) => run.country === country)

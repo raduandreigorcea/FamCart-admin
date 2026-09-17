@@ -49,6 +49,8 @@ const {
   ALL_COUNTRIES,
   countriesIn,
   runPill,
+  splitCards,
+  CARD_COUNT,
   STALE_AFTER_MS,
   quietFor,
   isStalled,
@@ -170,6 +172,38 @@ describe('inCountry', () => {
     const runs = await fetchScrapeRuns(signal())
     expect(inCountry(runs, 'IT').map((r) => r.id)).toEqual(['b'])
     expect(inCountry(runs, ALL_COUNTRIES).map((r) => r.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('splitCards', () => {
+  const at = (id: string, slug: string, started: string) =>
+    row({ id, started_at: started, retailer: { slug, name: slug, country: 'RO' } })
+
+  // Newest first, as the rows arrive from fetchScrapeRuns.
+  const runs = () => [
+    at('a2', 'a', '2026-09-17T09:00:00Z'),
+    at('b1', 'b', '2026-09-17T08:00:00Z'),
+    at('a1', 'a', '2026-09-17T07:00:00Z'),
+    at('c1', 'c', '2026-09-17T06:00:00Z'),
+    at('d1', 'd', '2026-09-17T05:00:00Z'),
+    at('e1', 'e', '2026-09-17T04:00:00Z'),
+    at('f1', 'f', '2026-09-17T03:00:00Z'),
+  ]
+
+  it('puts the newest runs on the cards, one per shop, and the rest in the history', async () => {
+    answer.data = runs()
+    const { cards, history } = splitCards(await fetchScrapeRuns(signal()))
+    expect(CARD_COUNT).toBe(5)
+    // a1 is shop a's older run: a is already on a card, so a1 waits in the history.
+    expect(cards.map((r) => r.id)).toEqual(['a2', 'b1', 'c1', 'd1', 'e1'])
+    expect(history.map((r) => r.id)).toEqual(['a1', 'f1'])
+  })
+
+  it('shows every run on a card when there are fewer than five shops', async () => {
+    answer.data = runs().slice(0, 2)
+    const { cards, history } = splitCards(await fetchScrapeRuns(signal()))
+    expect(cards.map((r) => r.id)).toEqual(['a2', 'b1'])
+    expect(history).toEqual([])
   })
 })
 
