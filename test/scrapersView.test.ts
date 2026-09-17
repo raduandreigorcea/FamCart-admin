@@ -73,6 +73,7 @@ function run(over: Record<string, unknown> = {}) {
     progress_done: null,
     progress_total: null,
     progress_unit: null,
+    stats: null,
     ...over,
   }
 }
@@ -319,6 +320,13 @@ describe('the scrapers page', () => {
     state.runs = [run({ status: 'running', finished_at: null, started_at: new Date().toISOString() })]
     const bar = (await mountPage()).find('[role="progressbar"]')
     expect(bar.classes()).toContain('shop__progress--indeterminate')
+  })
+
+  it('shows what a run removed on its card', async () => {
+    state.runs = [run({ stats: { rejections: {}, purged_listings: 14210 } })]
+    const facts = (await mountPage()).find('.shop__facts').text()
+    expect(facts).toContain('Removed')
+    expect(facts).toContain('14,210')
   })
 
   it('says a running shop has gone quiet', async () => {
