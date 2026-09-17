@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper, type DOMWrapper } from '@vue/test-utils'
 import type { Component } from 'vue'
 
 // The Scrapers page: is a shop being read right now, how far has it got, and
@@ -72,6 +72,14 @@ function run(over: Record<string, unknown> = {}) {
     last_alive_at: null,
     ...over,
   }
+}
+
+/** A country segment by its code, or 'All'. Found by text: the codes carry a
+ *  hover card rather than a native title. */
+function radio(wrapper: VueWrapper, label: string): DOMWrapper<Element> {
+  return wrapper
+    .findAll('[role="radio"]')
+    .find((r) => (r.find('.code').exists() ? r.find('.code').text() : r.text()) === label)!
 }
 
 async function mountPage() {
@@ -150,12 +158,12 @@ describe('the scrapers page', () => {
     const wrapper = await mountPage()
     expect(wrapper.findAll('.shop')).toHaveLength(3)
 
-    await wrapper.find('[role="radio"][title="Austria"]').trigger('click')
+    await radio(wrapper, 'AT').trigger('click')
     expect(wrapper.findAll('.shop')).toHaveLength(2)
     // Both of Austria's runs are cards, so nothing is left for its history.
     expect(wrapper.find('.history').attributes('data-rows')).toBe('0')
 
-    await wrapper.find('[role="radio"][title="Every country"]').trigger('click')
+    await radio(wrapper, 'All').trigger('click')
     expect(wrapper.findAll('.shop')).toHaveLength(3)
   })
 
@@ -164,8 +172,29 @@ describe('the scrapers page', () => {
       run({ id: '1', shop: 'lidl-it', country: 'IT' }),
       run({ id: '2', shop: 'lidl', country: 'RO' }),
     ]
-    const labels = (await mountPage()).findAll('[role="radio"]').map((b) => b.text())
+    const labels = (await mountPage())
+      .findAll('[role="radio"]')
+      .map((b) => (b.find('.code').exists() ? b.find('.code').text() : b.text()))
     expect(labels).toEqual(['All', 'IT', 'RO'])
+  })
+
+  // The codes in the selector are the terse values the hover card is for: CH is
+  // Switzerland, not Czechia. The card replaces the native title, so a code has
+  // one tooltip, not two -- and a screen reader still hears the country's name.
+  it('shows the full country name on hover over its code in the selector', async () => {
+    vi.useFakeTimers()
+    state.runs = [
+      run({ id: '1', shop: 'lidl-ch', country: 'CH' }),
+      run({ id: '2', shop: 'lidl', country: 'RO' }),
+    ]
+    const wrapper = await mountPage()
+    const ch = wrapper.findAll('[role="radio"]').find((r) => r.text().startsWith('CH'))!
+    expect(ch.attributes('title')).toBeUndefined()
+    expect(ch.text()).toContain('Switzerland')
+    await ch.find('.hover').trigger('mouseenter')
+    await vi.advanceTimersByTimeAsync(400)
+    expect(document.querySelector('.hover__card')?.textContent).toContain('Switzerland')
+    wrapper.unmount()
   })
 
   it('offers no choice while every shop is in one country', async () => {
@@ -181,7 +210,7 @@ describe('the scrapers page', () => {
       run({ id: '3', shop: 'lidl-at', country: 'AT' }),
     ]
     const wrapper = await mountPage()
-    await wrapper.find('[role="radio"][title="Italy"]').trigger('click')
+    await radio(wrapper, 'IT').trigger('click')
     expect(wrapper.findAll('.shop')).toHaveLength(1)
 
     state.runs = [run({ id: '2', shop: 'lidl', country: 'RO' }), run({ id: '3', shop: 'lidl-at', country: 'AT' })]
@@ -215,7 +244,7 @@ describe('the scrapers page', () => {
       .map((n) => run({ id: `a${n}`, shop: `at${n}`, country: 'AT', started_at: `2026-09-17T0${9 - n}:00:00Z` }))
       .concat(run({ id: 'r', shop: 'lidl', country: 'RO', started_at: '2026-09-17T09:30:00Z' }))
     const wrapper = await mountPage()
-    await wrapper.find('[role="radio"][title="Austria"]').trigger('click')
+    await radio(wrapper, 'AT').trigger('click')
     expect(wrapper.findAll('.shop')).toHaveLength(5)
     expect(wrapper.find('.history').attributes('data-rows')).toBe('1')
   })
@@ -241,7 +270,7 @@ describe('the scrapers page', () => {
     expect(wrapper.find('.totals').text()).toContain('90k')
     expect(wrapper.find('.totals').text()).toContain('sold nowhere')
 
-    await wrapper.find('[role="radio"][title="Italy"]').trigger('click')
+    await radio(wrapper, 'IT').trigger('click')
     const text = wrapper.find('.totals').text()
     expect(text).toContain('225')
     expect(text).toContain('230')
@@ -307,7 +336,7 @@ describe('the scrapers page', () => {
       run({ id: 'ro-1', shop: 'lidl', country: 'RO' }),
     ]
     const wrapper = await mountPage()
-    expect(wrapper.find('[role="radio"][aria-checked="true"]').text()).toBe('BE')
+    expect(wrapper.find('[role="radio"][aria-checked="true"] .code').text()).toBe('BE')
     expect(wrapper.findAll('.shop')).toHaveLength(1)
 
     state.runs = [...state.runs, run({ id: 'be-old', shop: 'lidl-be', country: 'BE', status: 'failed' })]

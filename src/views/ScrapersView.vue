@@ -98,11 +98,12 @@ const country = ref<string>(queryText(route.query.country)?.toUpperCase() ?? ALL
 const focusRun = computed(() => queryText(route.query.run))
 
 // Only the countries that have a run, so no button empties the page. Codes
-// rather than names, because eleven country names do not fit in one control;
-// the name is in the tooltip.
+// rather than names, because eleven country names do not fit in one control.
+// The name is a hover card on the code (see the template), not a native title:
+// one tooltip per code, not two.
 const segments = computed<Segment[]>(() => [
   { value: ALL_COUNTRIES, label: 'All', title: 'Every country' },
-  ...countriesIn(history.value).map((code) => ({ value: code, label: code, title: countryName(code) })),
+  ...countriesIn(history.value).map((code) => ({ value: code, label: code })),
 ])
 
 // A refresh can take away the country on show -- its runs aged out of the rows.
@@ -274,7 +275,17 @@ function asRun(row: unknown): ScrapeRunRow {
           v-model="country"
           :segments="segments"
           aria-label="Country"
-        />
+        >
+          <template #segment="{ segment }">
+            <CountryCode
+              v-if="segment.value !== ALL_COUNTRIES"
+              :code="segment.value"
+              :note="countryNote(segment.value)"
+              :focusable="false"
+            />
+            <template v-else>{{ segment.label }}</template>
+          </template>
+        </SegmentedControl>
       </template>
     </PageHeader>
 
