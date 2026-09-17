@@ -18,10 +18,10 @@ import {
   quietFor,
   countriesIn,
   countryName,
-  expectedCount,
   fetchScrapeRuns,
   formatRunDuration,
   inCountry,
+  runProgress,
   splitCards,
   runDurationMs,
   runMessage,
@@ -173,7 +173,7 @@ const split = computed(() => splitCards(shown.value))
 const shops = computed(() =>
   split.value.cards.map((run) => {
     const running = run.status === 'running'
-    const expected = running ? expectedCount(run, history.value) : null
+    const progress = runProgress(run, history.value)
     const length = formatRunDuration(runDurationMs(run, now.value))
     // Is it doing anything? Pages move while the imported count cannot, and the
     // last answer from the shop says whether it is still being answered at all.
@@ -195,12 +195,12 @@ const shops = computed(() =>
         running: pill.busy,
         attention: stalled,
         count: formatCount(run.products_found),
-        unit: running
-          ? expected
-            ? `of about ${formatCount(expected)} so far`
-            : 'products read so far'
-          : 'products read',
-        progress: expected ? { value: run.products_found, max: expected } : null,
+        unit: running ? 'products read so far' : 'products read',
+        progress: progress ? { value: progress.value, max: progress.max } : null,
+        progressLabel: progress?.label ?? '',
+        // Moving, with nothing to measure it by. Not for a run gone quiet: that
+        // one must not look busy.
+        indeterminate: running && !progress && !stalled,
         when: running
           ? `${started} · running for ${length}${alive}`
           : `${started} · took ${length}`,

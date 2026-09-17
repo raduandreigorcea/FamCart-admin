@@ -70,6 +70,9 @@ function run(over: Record<string, unknown> = {}) {
     error: null,
     pages_read: 0,
     last_alive_at: null,
+    progress_done: null,
+    progress_total: null,
+    progress_unit: null,
     ...over,
   }
 }
@@ -295,6 +298,27 @@ describe('the scrapers page', () => {
     expect(text).toContain('12,430')
     expect(text).toContain('alive')
     expect(text).toContain('Running')
+  })
+
+  // Carrefour never completes and a shop abroad has no first run behind it; the
+  // bar comes from what the scraper itself said it will read.
+  it('draws a running shop\'s bar from the plan the scraper reported', async () => {
+    state.runs = [
+      run({
+        shop: 'carrefour', shopName: 'Carrefour', status: 'running', finished_at: null,
+        started_at: new Date(Date.now() - 3_600_000).toISOString(),
+        progress_done: 1200, progress_total: 3568, progress_unit: 'departments',
+      }),
+    ]
+    const wrapper = await mountPage()
+    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('1200')
+    expect(wrapper.find('.shop__plan').text()).toBe('1,200 of 3,568 departments')
+  })
+
+  it('draws a working bar for a running shop with nothing to measure against', async () => {
+    state.runs = [run({ status: 'running', finished_at: null, started_at: new Date().toISOString() })]
+    const bar = (await mountPage()).find('[role="progressbar"]')
+    expect(bar.classes()).toContain('shop__progress--indeterminate')
   })
 
   it('says a running shop has gone quiet', async () => {

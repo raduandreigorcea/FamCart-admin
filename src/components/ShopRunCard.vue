@@ -57,6 +57,14 @@ const props = defineProps({
   facts: { type: Array as PropType<ShopFact[]>, default: () => [] },
   /** What the run said. The one sentence on the card worth reading. */
   message: { type: String as PropType<string | null>, default: null },
+  /** What the bar measures, said under it: "1,200 of 3,568 departments". */
+  progressLabel: { type: String, default: '' },
+  /**
+   * A bar that says only "working": a run with no plan reported and no earlier
+   * run to compare with. It still moves, and a card with no bar read as a run
+   * that was going nowhere.
+   */
+  indeterminate: { type: Boolean, default: false },
   /** Draws the card's shape with nothing in it. */
   loading: { type: Boolean, default: false },
 })
@@ -114,10 +122,19 @@ const percent = computed(() =>
       :aria-valuenow="progress.value"
       aria-valuemin="0"
       :aria-valuemax="progress.max"
-      :aria-label="`${name}: ${percent}% of what its last full run read`"
+      :aria-label="`${name}: ${percent}%${progressLabel ? `, ${progressLabel}` : ''}`"
     >
       <span class="shop__bar" :style="{ width: `${percent}%` }"></span>
     </div>
+    <div
+      v-else-if="indeterminate"
+      class="shop__progress shop__progress--indeterminate"
+      role="progressbar"
+      :aria-label="`${name}: working, nothing to measure against yet`"
+    >
+      <span class="shop__bar"></span>
+    </div>
+    <p v-if="progress && percent !== null && progressLabel" class="shop__plan u-num">{{ progressLabel }}</p>
 
     <p v-if="when" class="shop__when" :title="whenTitle || undefined">{{ when }}</p>
 
@@ -234,6 +251,31 @@ const percent = computed(() =>
   border-radius: inherit;
   background: var(--status-live);
   transition: width 0.6s ease;
+}
+
+/* A third of the track, sliding, for a run with nothing to measure against. */
+.shop__progress--indeterminate .shop__bar {
+  width: 33%;
+  animation: shop-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes shop-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shop__progress--indeterminate .shop__bar {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
+
+.shop__plan {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
 }
 
 .shop__facts {

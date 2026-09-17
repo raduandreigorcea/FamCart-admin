@@ -44,6 +44,7 @@ const {
   runDurationMs,
   formatRunDuration,
   expectedCount,
+  runProgress,
   runMessage,
   ALL_COUNTRIES,
   countriesIn,
@@ -78,6 +79,9 @@ function row(over: Record<string, unknown> = {}) {
     error: null,
     pages_read: 0,
     last_alive_at: null,
+    progress_done: null,
+    progress_total: null,
+    progress_unit: null,
     retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' },
     ...over,
   }
@@ -203,6 +207,7 @@ describe('the sign of life', () => {
     await fetchScrapeRuns(signal())
     expect(calls.select).toContain('pages_read')
     expect(calls.select).toContain('last_alive_at')
+    expect(calls.select).toContain('progress_done, progress_total, progress_unit')
   })
 
   it('measures the quiet from the last sign of life', async () => {
@@ -260,6 +265,37 @@ describe('countryName', () => {
   it('falls back to what it was given when it is not a country code', () => {
     expect(countryName('')).toBe('Unknown country')
     expect(countryName('??')).toBe('??')
+  })
+})
+
+describe('runProgress', () => {
+  const running = (over: Record<string, unknown> = {}) =>
+    row({ id: 'now', status: 'running', finished_at: null, started_at: '2026-09-17T08:00:00Z', products_found: 400, ...over })
+  const done = row({ id: 'before', status: 'completed', started_at: '2026-09-16T08:00:00Z', products_found: 800 })
+
+  // The scraper's own plan is the truth; the last run is a guess about it.
+  it('prefers the plan the scraper reported, in its own unit', async () => {
+    answer.data = [running({ progress_done: 30, progress_total: 3568, progress_unit: 'departments' }), done]
+    const [now, ...rest] = await fetchScrapeRuns(signal())
+    expect(runProgress(now, [now, ...rest])).toEqual({ value: 30, max: 3568, label: '30 of 3,568 departments' })
+  })
+
+  it('falls back to what the last completed run read', async () => {
+    answer.data = [running(), done]
+    const [now, ...rest] = await fetchScrapeRuns(signal())
+    expect(runProgress(now, [now, ...rest])).toEqual({ value: 400, max: 800, label: 'of about 800 products' })
+  })
+
+  it('has nothing to measure a first run by that reported no plan', async () => {
+    answer.data = [running()]
+    const [now] = await fetchScrapeRuns(signal())
+    expect(runProgress(now, [now])).toBeNull()
+  })
+
+  it('draws nothing for a finished run', async () => {
+    answer.data = [done]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(runProgress(run, [run])).toBeNull()
   })
 })
 

@@ -1,4 +1,5 @@
 import { getCatalogSupabase } from '../supabase'
+import { formatCount } from '../format'
 import { queryError } from './errors'
 import { CatalogNotConfigured } from './catalog'
 
@@ -50,6 +51,14 @@ export interface ScrapeRunRow {
    * on a run from a scraper that predates the report.
    */
   last_alive_at: string | null
+  /**
+   * How far the crawl is through its OWN plan, in its own unit (catalog 022):
+   * sitemap "pages", Carrefour "departments", Auchan "categories". Null until
+   * the scraper reports one, and on runs from before it could.
+   */
+  progress_done: number | null
+  progress_total: number | null
+  progress_unit: string | null
 }
 
 /**
@@ -64,7 +73,7 @@ export const RUN_HISTORY_LIMIT = 200
 const COLUMNS =
   'id, status, started_at, finished_at, products_found, products_valid, products_rejected, ' +
   'inserted, updated, unchanged, products_created, marked_unavailable, error, ' +
-  'pages_read, last_alive_at, ' +
+  'pages_read, last_alive_at, progress_done, progress_total, progress_unit, ' +
   'retailer:catalog_retailers(slug, name, country)'
 
 type Retailer = { slug: string; name: string | null; country: string | null }
@@ -246,6 +255,34 @@ export function expectedCount(run: ScrapeRunRow, runs: ScrapeRunRow[]): number |
       r.products_found > 0,
   )
   return previous ? previous.products_found : null
+}
+
+/**
+ * What a running card's bar measures, and how to say it: the scraper's own plan
+ * when it reported one, else the same shop's last completed run, else nothing.
+ *
+ * The plan comes first because it is the truth, where the last run is a guess
+ * about it -- and because it is the only one a first run, or Carrefour, which
+ * never completes, can have.
+ */
+export function runProgress(
+  run: ScrapeRunRow,
+  runs: ScrapeRunRow[],
+): { value: number; max: number; label: string } | null {
+  if (run.status !== 'running') return null
+  if (run.progress_total && run.progress_total > 0 && run.progress_done !== null) {
+    const unit = run.progress_unit || 'steps'
+    return {
+      value: run.progress_done,
+      max: run.progress_total,
+      label: `${formatCount(run.progress_done)} of ${formatCount(run.progress_total)} ${unit}`,
+    }
+  }
+  const expected = expectedCount(run, runs)
+  if (expected) {
+    return { value: run.products_found, max: expected, label: `of about ${formatCount(expected)} products` }
+  }
+  return null
 }
 
 /**
