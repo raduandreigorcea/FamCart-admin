@@ -114,20 +114,6 @@ export function formatRunDuration(ms: number): string {
   return rest ? `${hours} h ${rest} min` : `${hours} h`
 }
 
-/**
- * Each shop's newest run, in the order the shops last started.
- *
- * Relies on the rows arriving newest first, which fetchScrapeRuns guarantees.
- */
-export function latestPerShop(runs: ScrapeRunRow[]): ScrapeRunRow[] {
-  const seen = new Set<string>()
-  return runs.filter((run) => {
-    if (seen.has(run.shop)) return false
-    seen.add(run.shop)
-    return true
-  })
-}
-
 const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
 
 /**
@@ -205,15 +191,13 @@ export const CARD_COUNT = 5
 /**
  * The newest runs as cards, everything else as history, and never a run in both.
  *
- * One card per shop: a shop run twice recently -- a retry, a manual run -- shows
- * its newest run on the card and keeps the older one in the history, so the row
- * never holds the same shop twice. Takes the rows newest first, as
+ * Runs, not shops: a shop that ran twice lately is on two cards. A card per shop
+ * was tried and read wrong -- Romania has four shops and dozens of runs, and
+ * showed four cards over a long history. Takes the rows newest first, as
  * fetchScrapeRuns returns them.
  */
 export function splitCards(runs: ScrapeRunRow[]): { cards: ScrapeRunRow[]; history: ScrapeRunRow[] } {
-  const cards = latestPerShop(runs).slice(0, CARD_COUNT)
-  const onCards = new Set(cards.map((run) => run.id))
-  return { cards, history: runs.filter((run) => !onCards.has(run.id)) }
+  return { cards: runs.slice(0, CARD_COUNT), history: runs.slice(CARD_COUNT) }
 }
 
 /** One country's runs, or every run for ALL_COUNTRIES. */
