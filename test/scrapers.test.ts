@@ -46,6 +46,7 @@ const {
   formatRunDuration,
   expectedCount,
   runMessage,
+  groupShops,
   RUN_HISTORY_LIMIT,
 } = await import('../src/lib/data/scrapers')
 const { CatalogNotConfigured } = await import('../src/lib/data/catalog')
@@ -67,7 +68,7 @@ function row(over: Record<string, unknown> = {}) {
     products_created: 0,
     marked_unavailable: 0,
     error: null,
-    retailer: { slug: 'lidl', name: 'Lidl' },
+    retailer: { slug: 'lidl', name: 'Lidl', country: 'RO' },
     ...over,
   }
 }
@@ -82,7 +83,7 @@ describe('fetchScrapeRuns', () => {
   it('asks for the newest runs first, with the shop they belong to', async () => {
     await fetchScrapeRuns(signal())
     expect(calls.table).toBe('catalog_scrape_runs')
-    expect(calls.select).toContain('catalog_retailers(slug, name)')
+    expect(calls.select).toContain('catalog_retailers(slug, name, country)')
     expect(calls.order).toEqual(['started_at', { ascending: false }])
     expect(calls.limit).toBe(RUN_HISTORY_LIMIT)
   })
@@ -92,6 +93,14 @@ describe('fetchScrapeRuns', () => {
     const [run] = await fetchScrapeRuns(signal())
     expect(run.shop).toBe('mega-image')
     expect(run.shopName).toBe('Mega Image')
+  })
+
+  // Nine shops are called "Lidl". Without the country the page would list nine
+  // identical names and nobody could tell Belgium failing from Italy finishing.
+  it('carries the country each shop sells in', async () => {
+    answer.data = [row({ retailer: { slug: 'lidl-be', name: 'Lidl', country: 'BE' } })]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(run.country).toBe('BE')
   })
 
   it('falls back to the slug when a shop has no name', async () => {
@@ -123,6 +132,48 @@ describe('latestPerShop', () => {
     ]
     const runs = await fetchScrapeRuns(signal())
     expect(latestPerShop(runs).map((r) => r.id)).toEqual(['c2', 'a2', 'l2'])
+  })
+})
+
+describe('groupShops', () => {
+  const shop = (slug: string, country: string, status = 'completed', name = 'Lidl') =>
+    row({ id: slug, status, retailer: { slug, name, country } })
+
+  // Twenty-two shops is a wall. What somebody opens this page for is the one
+  // that broke, so it is lifted out of its country and put first.
+  it('puts every shop that failed or refused to sweep first, whatever its country', async () => {
+    answer.data = [
+      shop('lidl', 'RO'),
+      shop('lidl-be', 'BE', 'failed'),
+      shop('auchan', 'RO', 'partial', 'Auchan'),
+      shop('lidl-it', 'IT'),
+    ]
+    const groups = groupShops(await fetchScrapeRuns(signal()))
+    expect(groups.map((g) => g.key)).toEqual(['attention', 'home', 'abroad'])
+    expect(groups[0].runs.map((r) => r.shop)).toEqual(['lidl-be', 'auchan'])
+    expect(groups[1].runs.map((r) => r.shop)).toEqual(['lidl'])
+    expect(groups[2].runs.map((r) => r.shop)).toEqual(['lidl-it'])
+  })
+
+  it('keeps a running shop in its country: running is not a problem', async () => {
+    answer.data = [shop('lidl-de', 'DE', 'running')]
+    const groups = groupShops(await fetchScrapeRuns(signal()))
+    expect(groups.map((g) => g.key)).toEqual(['abroad'])
+  })
+
+  it('orders the shops abroad by country, then by name', async () => {
+    answer.data = [
+      shop('mpreis', 'AT', 'completed', 'MPreis'),
+      shop('lidl-it', 'IT'),
+      shop('hofer', 'AT', 'completed', 'Hofer'),
+      shop('lidl-at', 'AT'),
+    ]
+    const [abroad] = groupShops(await fetchScrapeRuns(signal()))
+    expect(abroad.runs.map((r) => r.shop)).toEqual(['hofer', 'lidl-at', 'mpreis', 'lidl-it'])
+  })
+
+  it('leaves out a group with nothing in it', () => {
+    expect(groupShops([])).toEqual([])
   })
 })
 
