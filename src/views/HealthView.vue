@@ -25,6 +25,18 @@ import {
   type TableHealth,
 } from '../lib/data/health'
 import { fetchCatalogStats, catalogConfigured, type RetailerHealth } from '../lib/data/catalog'
+import {
+  PIPELINES,
+  SCRAPE_WINDOW_MS,
+  checkPipelines,
+  checkServices,
+  checkSite,
+  probeCheck,
+  scrapersCheck,
+  shopLabel,
+  type Check,
+} from '../lib/data/checks'
+import { isStalled } from '../lib/data/scrapers'
 import { appTarget, catalogTarget, clerkIssuer } from '../lib/supabase'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange, sinceIso } from '../lib/timeRange'
 import type { AdminEventRow } from '../lib/data/types'
@@ -33,7 +45,6 @@ import {
   formatBytes,
   formatCount,
   formatDateTime,
-  formatDuration,
   formatRelative,
   humanizeKind,
 } from '../lib/format'
@@ -77,6 +88,13 @@ const events = useQuery(
 )
 const limits = useQuery((signal) => fetchRateLimits(signal))
 
+// Everything outside the two databases that must be working: the live site,
+// the services, the pipelines. Each check reports its own failure as a line, so
+// none of these queries is expected to throw; if one does, its lines say so.
+const site = useQuery((signal) => checkSite(signal))
+const services = useQuery((signal) => checkServices(signal))
+const pipelines = useQuery((signal) => checkPipelines(signal))
+
 /** Fetching again over data already on screen: a spinner in the panel head,
  *  where a first load gets a skeleton in the body instead. */
 function refreshing(query: { fetching: Ref<boolean>; loading: Ref<boolean> }): boolean {
@@ -95,11 +113,6 @@ const scrapes = useQuery((signal) => fetchCatalogStats(signal), { enabled: () =>
  *  another page. */
 type Issue = { tone: 'bad' | 'warn'; text: string; to?: string }
 
-/** catalog_stats carries only the slug. Good enough for a name: "mega-image"
- *  reads as "mega image", and the banner capitalises the sentence. */
-function shopName(slug: string): string {
-  return slug.replace(/-/g, ' ')
-}
 
 /**
  * What is wrong with a shop, in one sentence, or null when nothing is.
@@ -110,12 +123,22 @@ function shopName(slug: string): string {
  * nobody switched on.
  */
 function shopIssue(shop: RetailerHealth): Issue | null {
-  const name = shopName(shop.slug)
+  // "Lidl BE": nine shops are Lidl, so the country is part of the name.
+  const name = shopLabel(shop)
   const run = shop.last_run
   if (!run) return shop.enabled ? { tone: 'warn', text: `${name} has never been scraped`, to: '/scrapers' } : null
   if (run.status === 'failed') return { tone: 'bad', text: `${name} failed its last run`, to: '/scrapers' }
   if (run.status === 'partial') return { tone: 'warn', text: `${name} refused to sweep`, to: '/scrapers' }
+  // A crawl that stopped hearing back from its shop (catalog 022) is as dead as
+  // a failed one, and says nothing on its own.
+  if (isStalled({ status: run.status, last_alive_at: run.last_alive_at ?? null })) {
+    return { tone: 'bad', text: `${name} has gone quiet`, to: '/scrapers' }
+  }
   if (run.status === 'running') return null
+  // The nightly job never reached it. Quiet, like every failure this banner is for.
+  if (Date.now() - Date.parse(run.started_at) > SCRAPE_WINDOW_MS) {
+    return { tone: 'bad', text: `${name} has not run in over a day`, to: '/scrapers' }
+  }
   if ((shop.delta ?? 0) < 0) {
     return { tone: 'warn', text: `${name} found ${formatCount(-(shop.delta ?? 0))} fewer products than last time`, to: '/scrapers' }
   }
@@ -134,7 +157,62 @@ const rangeSegments = TIME_RANGES.map((r) => ({ value: r.key, label: r.label, ti
 
 // All of them, so the spinner runs until the last one lands and the header
 // reports the stalest panel rather than the freshest.
-const page = useQueryGroup([probes, health, digest, events, limits, scrapes])
+const page = useQueryGroup([probes, health, digest, events, limits, scrapes, site, services, pipelines])
+
+// ─── the checks ──────────────────────────────────────────────────────────────
+// One line for each thing that must be working. A line still out is "Checking",
+// and a check that could not be made says so in amber: silence is never a pass.
+
+function pending(key: string, label: string): Check {
+  return { key, label, tone: 'idle', detail: 'Checking' }
+}
+
+function notChecked(key: string, label: string, error: Error): Check {
+  return { key, label, tone: 'warn', detail: `Not checked: ${describeError(error).detail}` }
+}
+
+const SERVICE_LINES: [string, string][] = [
+  ['service-sentry', 'Sentry'],
+  ['service-onesignal', 'OneSignal'],
+  ['service-clerk', 'Clerk'],
+]
+
+const checks = computed<Check[]>(() => {
+  const out: Check[] = []
+
+  if (probes.loading.value) {
+    out.push(pending('probe-app', 'App database'))
+    if (catalogOn) out.push(pending('probe-catalog', 'Catalog project'))
+  } else if (reachability.value === 'unknown') {
+    out.push({ key: 'probes', label: 'Databases', tone: 'warn', detail: 'Not measured' })
+  } else {
+    out.push(...(probes.data.value ?? []).map(probeCheck))
+  }
+
+  if (site.error.value) out.push(notChecked('site', 'Live site', site.error.value))
+  else out.push(site.data.value ?? pending('site', 'Live site'))
+
+  const servicesError = services.error.value
+  if (servicesError) out.push(...SERVICE_LINES.map(([k, l]) => notChecked(k, l, servicesError)))
+  else out.push(...(services.data.value ?? SERVICE_LINES.map(([k, l]) => pending(k, l))))
+
+  if (catalogOn) {
+    if (scrapes.error.value) out.push(notChecked('scrapers', 'Scrapers', scrapes.error.value))
+    else if (scrapes.loading.value) out.push(pending('scrapers', 'Scrapers'))
+    else out.push(scrapersCheck(scrapes.data.value?.retailers ?? null))
+  }
+
+  const pipelinesError = pipelines.error.value
+  if (pipelinesError) out.push(...PIPELINES.map((p) => notChecked(p.key, p.label, pipelinesError)))
+  else out.push(...(pipelines.data.value ?? PIPELINES.map((p) => pending(p.key, p.label))))
+
+  return out
+})
+
+/** An external link, as opposed to a page of this dashboard. */
+function isExternal(href: string | undefined): boolean {
+  return !!href && /^https?:/.test(href)
+}
 
 const kindOptions = computed(() => [
   { value: null, label: 'Every kind' },
@@ -260,7 +338,14 @@ const newestMigration = computed(() =>
 // "checking", never as health -- the same rule reachabilityOf() enforces.
 
 const checking = computed(
-  () => probes.loading.value || health.loading.value || digest.loading.value || (catalogOn && scrapes.loading.value),
+  () =>
+    probes.loading.value ||
+    health.loading.value ||
+    digest.loading.value ||
+    (catalogOn && scrapes.loading.value) ||
+    site.loading.value ||
+    services.loading.value ||
+    pipelines.loading.value,
 )
 
 const issues = computed<Issue[]>(() => {
@@ -274,6 +359,17 @@ const issues = computed<Issue[]>(() => {
   if (health.error.value) out.push({ tone: 'bad', text: 'The database did not report on itself' })
   if (scrapes.error.value) out.push({ tone: 'warn', text: 'The scrapers could not be read' })
   out.push(...shopIssues.value)
+  // The checks the lines above do not already cover: the databases and the
+  // scrapers each have their own sentences, so only the rest is added here.
+  for (const check of checks.value) {
+    if (check.key.startsWith('probe') || check.key === 'scrapers') continue
+    if (check.tone !== 'bad' && check.tone !== 'warn') continue
+    out.push({
+      tone: check.tone,
+      text: `${check.label}: ${check.detail}`,
+      to: check.href && !isExternal(check.href) ? check.href : undefined,
+    })
+  }
   if (errorEvents.value > 0) {
     const n = errorEvents.value
     out.push({ tone: 'warn', text: `${formatCount(n)} failed or denied ${n === 1 ? 'event' : 'events'} in the last ${range.value.label}` })
@@ -295,7 +391,7 @@ const headline = computed(() => {
 
 const allClear = computed(() =>
   catalogOn
-    ? `Both projects answer, every shop's last run held up, and nothing was denied in the last ${range.value.label}.`
+    ? `Both projects, the site, the services and the pipelines answer, every shop's last run held up, and nothing was denied in the last ${range.value.label}.`
     : `The database answers, and nothing was denied in the last ${range.value.label}.`,
 )
 </script>
@@ -342,8 +438,10 @@ const allClear = computed(() =>
       </div>
     </section>
 
-    <div class="grid">
-      <div class="span-3">
+    <!-- Five tiles, so their own row of five rather than the twelve-column grid,
+         which does not divide by five. -->
+    <div class="tiles">
+      <div>
         <StatTile
           label="API"
           :value="slowest === null ? null : Math.round(slowest)"
@@ -352,16 +450,27 @@ const allClear = computed(() =>
           polarity="down-good"
         />
       </div>
-      <div class="span-3">
+      <!-- Two databases, two sizes. It was one tile, and it was the app's: the
+           catalog, by far the larger, was not measured anywhere. -->
+      <div>
         <StatTile
-          label="Database size"
+          label="App database"
           :value="health.data.value?.database_size ?? null"
           format="bytes"
           :hint="health.data.value ? `Across ${formatCount(tableRows.length)} tables` : ''"
           :loading="health.loading.value"
         />
       </div>
-      <div class="span-3">
+      <div>
+        <StatTile
+          label="Catalog database"
+          :value="scrapes.data.value?.database_size ?? null"
+          format="bytes"
+          :hint="catalogOn ? 'Products, listings and runs' : 'Not configured'"
+          :loading="catalogOn && scrapes.loading.value"
+        />
+      </div>
+      <div>
         <StatTile
           label="Connections"
           :value="health.data.value?.connections.total ?? null"
@@ -369,7 +478,7 @@ const allClear = computed(() =>
           :loading="health.loading.value"
         />
       </div>
-      <div class="span-3">
+      <div>
         <StatTile
           label="Errors logged"
           :value="errorEvents"
@@ -380,6 +489,22 @@ const allClear = computed(() =>
       </div>
     </div>
 
+    <PanelCard title="Checks" note="Each thing that must be working, checked when the page opened." :busy="page.busy.value">
+      <ul class="checks">
+        <li v-for="check in checks" :key="check.key" class="check">
+          <StatusPill
+            :tone="check.tone"
+            :label="check.tone === 'good' ? 'OK' : check.tone === 'live' ? 'Running' : check.tone === 'idle' ? 'Checking' : check.tone === 'warn' ? 'Look' : 'Failing'"
+            :busy="check.tone === 'idle' || check.tone === 'live'"
+          />
+          <span class="check__label">{{ check.label }}</span>
+          <a v-if="isExternal(check.href)" class="check__detail" :href="check.href" target="_blank" rel="noopener">{{ check.detail }}</a>
+          <RouterLink v-else-if="check.href" class="check__detail" :to="check.href">{{ check.detail }}</RouterLink>
+          <span v-else class="check__detail">{{ check.detail }}</span>
+        </li>
+      </ul>
+    </PanelCard>
+
     <div class="grid">
       <div class="span-6">
         <PanelCard
@@ -388,24 +513,15 @@ const allClear = computed(() =>
           :busy="refreshing(probes)"
           fill
         >
-          <StateBlock v-if="probes.loading.value" state="loading" :lines="2" compact />
-          <!-- The probe itself failed, so nothing was measured. Saying so beats
-               rendering an empty list, which reads as "no problems found". -->
+          <!-- Whether each project answers is a line in Checks above. What stays
+               here is what only the database can say about itself. -->
           <StateBlock
-            v-else-if="reachability === 'unknown'"
+            v-if="!probes.loading.value && reachability === 'unknown'"
             state="error"
             title="Reachability was not measured"
             :message="probesError"
             compact
           />
-          <ul v-else class="probes">
-            <li v-for="probe in probes.data.value ?? []" :key="probe.target" class="probe">
-              <StatusPill :tone="probe.ok ? 'good' : 'bad'" :label="probe.ok ? 'Answering' : 'Failing'" />
-              <span class="probe__name">{{ probe.label }}</span>
-              <span class="probe__ms u-num">{{ formatDuration(probe.latencyMs) }}</span>
-              <span v-if="!probe.ok" class="probe__detail">{{ probe.detail }}</span>
-            </li>
-          </ul>
 
           <p v-if="health.data.value" class="conn">
             {{ formatCount(health.data.value.connections.active) }} active and
@@ -648,6 +764,58 @@ const allClear = computed(() =>
 </template>
 
 <style scoped>
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 1100px) {
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Two columns of lines: ten checks in one column is a scroll for no reason. */
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-6);
+}
+
+@media (max-width: 1100px) {
+  .checks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.check {
+  display: grid;
+  grid-template-columns: 6.5rem 9rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.check__label {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.check__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+a.check__detail:hover {
+  color: var(--color-primary);
+}
+
 /* ── the banner ───────────────────────────────────────────────────────────── */
 
 .status {
@@ -756,40 +924,6 @@ const allClear = computed(() =>
 .status__issue--warn { color: var(--status-warn); }
 
 /* ── connection ───────────────────────────────────────────────────────────── */
-
-.probes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.probe {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  column-gap: var(--space-3);
-}
-
-.probe__name {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--text-primary);
-}
-
-.probe__ms {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  color: var(--text-secondary);
-}
-
-.probe__detail {
-  grid-column: 2 / -1;
-  font-size: var(--text-xs);
-  color: var(--status-bad);
-}
 
 .conn {
   margin: var(--space-4) 0 0;
