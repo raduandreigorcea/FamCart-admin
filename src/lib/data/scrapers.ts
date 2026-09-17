@@ -185,24 +185,18 @@ export function isStalled(run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'>, n
 }
 
 /**
- * The same runs, most urgent first: failed, refused to sweep or stalled, then
- * running, then the rest in the order they came. Stable within each band.
+ * What a run's status pill says, for the card and the history table alike.
  *
- * With every country on show the page has room for one row of cards, so this is
- * what decides which shops make it -- and a shop that broke must never be the
- * one left out.
+ * One place, because the table is where a shop that did not make the card row
+ * is read, and a stalled run that the card calls "No sign of life" must not be
+ * "Running" one screen further down.
  */
-export function byUrgency(runs: ScrapeRunRow[], now = Date.now()): ScrapeRunRow[] {
-  const band = (run: ScrapeRunRow) =>
-    run.status === 'failed' || run.status === 'partial' || isStalled(run, now)
-      ? 0
-      : run.status === 'running'
-        ? 1
-        : 2
-  return runs
-    .map((run, index) => ({ run, index }))
-    .sort((a, b) => band(a.run) - band(b.run) || a.index - b.index)
-    .map(({ run }) => run)
+export function runPill(
+  run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'>,
+  now = Date.now(),
+): { tone: 'good' | 'warn' | 'bad' | 'live'; label: string; busy: boolean } {
+  if (isStalled(run, now)) return { tone: 'warn', label: 'No sign of life', busy: false }
+  return { tone: runTone(run.status), label: runLabel(run.status), busy: run.status === 'running' }
 }
 
 /** One country's runs, or every run for ALL_COUNTRIES. */

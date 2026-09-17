@@ -48,7 +48,7 @@ const {
   runMessage,
   ALL_COUNTRIES,
   countriesIn,
-  byUrgency,
+  runPill,
   STALE_AFTER_MS,
   quietFor,
   isStalled,
@@ -173,23 +173,6 @@ describe('inCountry', () => {
   })
 })
 
-describe('byUrgency', () => {
-  // With every country on show there is room for one row, so what makes the row
-  // is decided here: what broke, then what is moving, then the rest as it came.
-  it('puts failed and refused runs first, running next, the rest in their order', async () => {
-    answer.data = [
-      row({ id: 'done1', status: 'completed' }),
-      row({ id: 'run1', status: 'running', retailer: { slug: 'a', name: 'A', country: 'RO' } }),
-      row({ id: 'fail', status: 'failed', retailer: { slug: 'b', name: 'B', country: 'RO' } }),
-      row({ id: 'done2', status: 'completed', retailer: { slug: 'c', name: 'C', country: 'RO' } }),
-      row({ id: 'part', status: 'partial', retailer: { slug: 'd', name: 'D', country: 'RO' } }),
-    ]
-    expect(byUrgency(await fetchScrapeRuns(signal())).map((r) => r.id)).toEqual([
-      'fail', 'part', 'run1', 'done1', 'done2',
-    ])
-  })
-})
-
 describe('the sign of life', () => {
   const now = Date.parse('2026-09-17T10:00:00Z')
   const running = (lastAlive: string | null) =>
@@ -224,6 +207,20 @@ describe('the sign of life', () => {
     const [fresh, silent] = await fetchScrapeRuns(signal())
     expect(isStalled(fresh, now)).toBe(false)
     expect(isStalled(silent, now)).toBe(true)
+  })
+
+  // The card and the history table must agree, and the table is where a shop
+  // that is not on the row is read -- so both take their pill from here.
+  it('gives a stalled run its own pill, and every other run its status', async () => {
+    answer.data = [
+      running(new Date(now - STALE_AFTER_MS - 1000).toISOString()),
+      running(new Date(now - 1000).toISOString()),
+      row({ status: 'failed' }),
+    ]
+    const [silent, alive, failed] = await fetchScrapeRuns(signal())
+    expect(runPill(silent, now)).toEqual({ tone: 'warn', label: 'No sign of life', busy: false })
+    expect(runPill(alive, now)).toEqual({ tone: 'live', label: 'Running', busy: true })
+    expect(runPill(failed, now)).toEqual({ tone: 'bad', label: 'Failed', busy: false })
   })
 
   it('never calls a finished run stalled, however old its last sign', async () => {
