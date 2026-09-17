@@ -36,7 +36,7 @@ import {
   shopLabel,
   type Check,
 } from '../lib/data/checks'
-import { isStalled } from '../lib/data/scrapers'
+import { isDeliberate, isStalled } from '../lib/data/scrapers'
 import { appTarget, catalogTarget, clerkIssuer } from '../lib/supabase'
 import { DEFAULT_RANGE, TIME_RANGES, resolveRange, sinceIso } from '../lib/timeRange'
 import type { AdminEventRow } from '../lib/data/types'
@@ -153,6 +153,8 @@ function shopIssue(shop: RetailerHealth): Issue | null {
   const run = shop.last_run
   if (!run) return shop.enabled ? { tone: 'warn', text: `${name} has never been scraped`, to } : null
   if (run.status === 'failed') return { tone: 'bad', text: `${name} failed its last run`, to }
+  // Partial on purpose -- Carrefour's nightly groceries-only pass -- is fine.
+  if (run.status === 'partial' && isDeliberate(run)) return null
   if (run.status === 'partial') return { tone: 'warn', text: `${name} refused to sweep`, to }
   // A crawl that stopped hearing back from its shop (catalog 022) is as dead as
   // a failed one, and says nothing on its own.

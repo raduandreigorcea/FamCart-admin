@@ -251,6 +251,18 @@ describe('the sign of life', () => {
     expect(runPill(failed, now)).toEqual({ tone: 'bad', label: 'Failed', busy: false })
   })
 
+  // A run partial on purpose -- Carrefour's nightly groceries-only pass, a slice,
+  // a removals-only run -- is not a run that refused to sweep.
+  it('gives a deliberate partial run a finished pill, and a refused one a warning', async () => {
+    answer.data = [
+      row({ id: 'planned', status: 'partial', stats: { deliberate: true } }),
+      row({ id: 'refused', status: 'partial', stats: { rejections: {} } }),
+    ]
+    const [planned, refused] = await fetchScrapeRuns(signal())
+    expect(runPill(planned, now)).toEqual({ tone: 'good', label: 'Done', busy: false })
+    expect(runPill(refused, now)).toEqual({ tone: 'warn', label: 'Refused to sweep', busy: false })
+  })
+
   it('never calls a finished run stalled, however old its last sign', async () => {
     answer.data = [row({ status: 'completed', last_alive_at: '2026-09-01T00:00:00Z' })]
     const [run] = await fetchScrapeRuns(signal())

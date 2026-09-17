@@ -267,6 +267,8 @@ export interface RetailerHealth {
     error: string | null
     /** The run's last sign of life (catalog 022), null before one was reported. */
     last_alive_at?: string | null
+    /** What the run counted; `deliberate` marks a partial run that meant to be. */
+    stats?: { deliberate?: boolean } | null
   } | null
   previous_valid: number | null
   /** This run's valid count against the last completed one's. */

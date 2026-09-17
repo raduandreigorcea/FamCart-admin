@@ -282,6 +282,11 @@ describe('scrapersCheck', () => {
     expect(check.detail).not.toContain('Lidl RO')
   })
 
+  it('is not bothered by a run partial on purpose', () => {
+    const check = scrapersCheck([shop('carrefour', 'RO', { status: 'partial', stats: { deliberate: true } })], NOW)
+    expect(check.tone).toBe('good')
+  })
+
   it('only warns for a run that refused to sweep', () => {
     const check = scrapersCheck([shop('auchan', 'RO', { status: 'partial' })], NOW)
     expect(check.tone).toBe('warn')
