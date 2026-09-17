@@ -60,8 +60,8 @@ function run(over: Record<string, unknown> = {}) {
   }
 }
 
-async function mountPage() {
-  const wrapper = mount(ScrapersView, { global: { stubs } })
+async function mountPage(options: { attachTo?: Element } = {}) {
+  const wrapper = mount(ScrapersView, { global: { stubs }, ...options })
   await flushPromises()
   return wrapper
 }
@@ -114,39 +114,57 @@ describe('the scrapers page', () => {
     expect(text).toContain('Gateway Timeout')
   })
 
-  it('gives each shop one row, from its newest run', async () => {
+  it('gives each shop one card, from its newest run', async () => {
     state.runs = [
       run({ id: 'c2', shop: 'carrefour', status: 'failed' }),
       run({ id: 'l', shop: 'lidl' }),
       run({ id: 'c1', shop: 'carrefour', status: 'completed' }),
     ]
     const wrapper = await mountPage()
-    expect(wrapper.findAll('.shop-row')).toHaveLength(2)
+    expect(wrapper.findAll('.shop')).toHaveLength(2)
   })
 
-  // Twenty-two cards was a wall. The groups are what make one table readable:
-  // what broke first, then home, then everything abroad.
-  it('draws what broke first, then Romania, then the shops abroad', async () => {
+  // Twenty-two cards in one grid were a wall. A section per country, and no
+  // country treated as the main one -- Romania is sorted like the rest.
+  it('puts each shop under its country, the countries in order of their names', async () => {
     state.runs = [
       run({ id: '1', shop: 'lidl-it', country: 'IT' }),
-      run({ id: '2', shop: 'lidl-be', country: 'BE', status: 'failed', error: 'crawl ended early' }),
+      run({ id: '2', shop: 'lidl-be', country: 'BE' }),
       run({ id: '3', shop: 'lidl', country: 'RO' }),
+      run({ id: '4', shop: 'hofer', shopName: 'Hofer', country: 'AT' }),
     ]
     const wrapper = await mountPage()
-    const headings = wrapper.findAll('.shop-group').map((g) => g.text())
-    expect(headings).toEqual(['Needs attention', 'Romania', 'Abroad'])
-    const firstRow = wrapper.findAll('.shop-row')[0]
-    expect(firstRow.text()).toContain('BE')
-    expect(firstRow.text()).toContain('Crawl ended early')
+    const titles = wrapper.findAll('.country__title').map((t) => t.text())
+    expect(titles).toEqual(['Austria · 1', 'Belgium · 1', 'Italy · 1', 'Romania · 1'])
   })
 
-  it('names the country beside a shop, so nine Lidls are nine different rows', async () => {
+  it('names what broke at the top, with the country, and leaves its card in place', async () => {
     state.runs = [
-      run({ id: '1', shop: 'lidl-it', country: 'IT' }),
-      run({ id: '2', shop: 'lidl-at', country: 'AT' }),
+      run({ id: 'be', shop: 'lidl-be', country: 'BE', status: 'failed', error: 'crawl ended early' }),
+      run({ id: 'it', shop: 'lidl-it', country: 'IT' }),
     ]
-    const countries = (await mountPage()).findAll('.shop-row__country').map((c) => c.text())
-    expect(countries).toEqual(['AT', 'IT'])
+    const wrapper = await mountPage()
+    expect(wrapper.find('.attention').text()).toContain('1 needs attention')
+    expect(wrapper.find('.attention').text()).toContain('Lidl (Belgium)')
+    expect(wrapper.find('#shop-be').exists()).toBe(true)
+    expect(wrapper.find('#shop-be').classes()).toContain('shop--attention')
+  })
+
+  it('says nothing at the top when nothing broke', async () => {
+    state.runs = [run({ status: 'running', finished_at: null })]
+    expect((await mountPage()).find('.attention').exists()).toBe(false)
+  })
+
+  it('takes you to the card of a shop named at the top', async () => {
+    state.runs = [run({ id: 'be', shop: 'lidl-be', country: 'BE', status: 'failed' })]
+    const wrapper = await mountPage({ attachTo: document.body })
+    const card = document.getElementById('shop-be')!
+    const scrolled = vi.fn()
+    card.scrollIntoView = scrolled
+    await wrapper.find('.attention__link').trigger('click')
+    expect(scrolled).toHaveBeenCalled()
+    expect(document.activeElement).toBe(card)
+    wrapper.unmount()
   })
 
   it('lists every run it read in the history', async () => {
@@ -168,7 +186,7 @@ describe('the scrapers page', () => {
     expect(state.fetches).toBe(2)
   })
 
-  it('shows the catalog totals under the shops, and says when they were counted', async () => {
+  it('shows the catalog totals under the cards, and says when they were counted', async () => {
     // Counted on a schedule rather than live, so a number without its age would
     // read as current when it can be a quarter of an hour behind the cards.
     state.stats = {
