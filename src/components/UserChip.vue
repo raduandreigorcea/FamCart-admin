@@ -2,6 +2,7 @@
 import { computed, type PropType } from 'vue'
 import { RouterLink } from 'vue-router'
 import UserAvatar from './UserAvatar.vue'
+import UserId from './UserId.vue'
 import { shortUserId } from '../lib/format'
 
 // A person, said the same way everywhere: their photo and their name, and a
@@ -46,7 +47,13 @@ const linked = computed(() => props.link && Boolean(to.value))
     :class="{ 'chip--link': linked }"
   >
     <UserAvatar :id="id" :src="src" :name="label" :size="size" />
-    <span class="chip__name u-truncate">{{ label }}</span>
+    <!-- No name, only an id: the one case where a reader cannot tell who this
+         is, so the person is a hover away. Not focusable of its own inside a
+         link, which is already the thing Tab stops on. -->
+    <span v-if="!name && id" class="chip__name u-truncate">
+      <UserId :id="id" :wraps="linked">{{ label }}</UserId>
+    </span>
+    <span v-else class="chip__name u-truncate">{{ label }}</span>
   </component>
 </template>
 

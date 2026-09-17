@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import ShopRunCard from '../components/ShopRunCard.vue'
+import CountryCode from '../components/CountryCode.vue'
 import StateBlock from '../components/StateBlock.vue'
 import StatusPill from '../components/StatusPill.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
@@ -112,6 +113,22 @@ watch(segments, (list) => {
 
 const shown = computed(() => inCountry(history.value, country.value))
 
+// "2 shops read" under a country's name on hover, counted from the runs at hand.
+const shopsByCountry = computed(() => {
+  const counts = new Map<string, Set<string>>()
+  for (const run of history.value) {
+    const set = counts.get(run.country) ?? new Set<string>()
+    set.add(run.shop)
+    counts.set(run.country, set)
+  }
+  return counts
+})
+
+function countryNote(code: string): string {
+  const n = shopsByCountry.value.get(code)?.size ?? 0
+  return `${n} ${n === 1 ? 'shop' : 'shops'} read`
+}
+
 // The totals follow the selector. A country's numbers come from the cache's own
 // per-country count (catalog 020), not from adding shops up: a product two shops
 // in one country both sell is one product there. "Sold nowhere" belongs to no
@@ -170,6 +187,8 @@ const shops = computed(() =>
       id: run.id,
       props: {
         name: run.shopName,
+        country: run.country,
+        countryNote: countryNote(run.country),
         tone: pill.tone,
         label: pill.label,
         running: pill.busy,
@@ -224,13 +243,14 @@ watch(
 // and the one a failed row is read for.
 const columns: Column<ScrapeRunRow>[] = [
   { key: 'shopName', label: 'Shop', width: '11%' },
+  { key: 'country', label: 'Country', width: '6%' },
   { key: 'status', label: 'Result', width: '11%' },
   { key: 'started_at', label: 'Started', width: '14%' },
   { key: 'duration', label: 'Took', numeric: true, width: '9%' },
   { key: 'products_found', label: 'Read', numeric: true, width: '8%' },
   { key: 'products_created', label: 'New', numeric: true, width: '6%' },
   { key: 'marked_unavailable', label: 'Marked gone', numeric: true, width: '9%' },
-  { key: 'error', label: 'What it said', width: '32%' },
+  { key: 'error', label: 'What it said', width: '26%' },
 ]
 
 function asRun(row: unknown): ScrapeRunRow {
@@ -325,6 +345,9 @@ function asRun(row: unknown): ScrapeRunRow {
         >
           <template #cell-shopName="{ row }">
             <span class="history__shop">{{ asRun(row).shopName }}</span>
+          </template>
+          <template #cell-country="{ row }">
+            <CountryCode :code="asRun(row).country" :note="countryNote(asRun(row).country)" />
           </template>
           <template #cell-status="{ row }">
             <StatusPill v-bind="runPill(asRun(row), now)" />

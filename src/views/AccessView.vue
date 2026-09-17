@@ -7,6 +7,7 @@ import PanelCard from '../components/PanelCard.vue'
 import DataTable from '../components/DataTable.vue'
 import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
+import UserId from '../components/UserId.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { fetchAdmins, grantAdmin, revokeAdmin, type AdminRow } from '../lib/data/users'
@@ -113,7 +114,10 @@ async function confirmRevoke() {
         </template>
 
         <template #cell-user_id="{ row }">
-          <CopyValue :value="String(row.user_id)" :display="shortUserId(String(row.user_id))" label="Clerk id" />
+          <!-- The copy button is the focusable part, so the card opens from it. -->
+          <UserId :id="String(row.user_id)" wraps>
+            <CopyValue :value="String(row.user_id)" :display="shortUserId(String(row.user_id))" label="Clerk id" />
+          </UserId>
         </template>
 
         <template #cell-note="{ row }">

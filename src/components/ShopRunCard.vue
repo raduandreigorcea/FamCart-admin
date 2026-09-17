@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, type PropType } from 'vue'
 import StatusPill from './StatusPill.vue'
+import CountryCode from './CountryCode.vue'
 import type { Tone } from '../lib/uiTypes'
 import { formatCount } from '../lib/format'
 
@@ -31,6 +32,10 @@ type CardTone = Exclude<Tone, 'accent'>
 
 const props = defineProps({
   name: { type: String, default: '' },
+  /** Market code, shown beside the name: nine shops are called Lidl. */
+  country: { type: String, default: '' },
+  /** A line under the country's name on hover, e.g. how many shops it has. */
+  countryNote: { type: String, default: '' },
   tone: { type: String as PropType<CardTone>, default: 'idle' },
   label: { type: String, default: '' },
   /** The pill's dot becomes a spinner. */
@@ -82,7 +87,10 @@ const percent = computed(() =>
     :class="[`shop--${tone}`, { 'shop--attention': attention, 'shop--running': running }]"
   >
     <div class="shop__head">
-      <h4 class="shop__name">{{ name }}</h4>
+      <h4 class="shop__name">
+        {{ name }}
+        <CountryCode v-if="country" :code="country" :note="countryNote" />
+      </h4>
       <StatusPill :tone="tone" :label="label" :busy="running" />
     </div>
 
