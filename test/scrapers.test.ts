@@ -50,6 +50,7 @@ const {
   ALL_COUNTRIES,
   countriesIn,
   runPill,
+  isRemovalJob,
   splitCards,
   CARD_COUNT,
   STALE_AFTER_MS,
@@ -202,8 +203,8 @@ describe('splitCards', () => {
 
 describe('the sign of life', () => {
   const now = Date.parse('2026-09-17T10:00:00Z')
-  const running = (lastAlive: string | null) =>
-    row({ status: 'running', finished_at: null, started_at: '2026-09-17T08:00:00Z', last_alive_at: lastAlive })
+  const running = (lastAlive: string | null, over: Record<string, unknown> = {}) =>
+    row({ status: 'running', finished_at: null, started_at: '2026-09-17T08:00:00Z', last_alive_at: lastAlive, ...over })
 
   it('asks for the pages read and when the shop was last heard from', async () => {
     await fetchScrapeRuns(signal())
@@ -218,13 +219,14 @@ describe('the sign of life', () => {
     expect(quietFor(run, now)).toBe(20_000)
   })
 
-  // A run from a scraper that predates the sign of life has none, and saying it
-  // is stalled would be an alarm about the deploy, not about the shop.
-  it('says nothing about a run that never reported one', async () => {
-    answer.data = [running(null)]
-    const [run] = await fetchScrapeRuns(signal())
-    expect(quietFor(run, now)).toBeNull()
-    expect(isStalled(run, now)).toBe(false)
+  // Every scraper beats within a minute, so a run with no beat at all two hours
+  // in is dead, not old-fashioned. One just started is given its first minutes.
+  it('measures a run that never reported one from its start', async () => {
+    answer.data = [running(null), running(null, { started_at: new Date(now - 60_000).toISOString() })]
+    const [dead, fresh] = await fetchScrapeRuns(signal())
+    expect(quietFor(dead, now)).toBeNull()
+    expect(isStalled(dead, now)).toBe(true)
+    expect(isStalled(fresh, now)).toBe(false)
   })
 
   it('calls a running run stalled once the shop has been silent too long', async () => {
@@ -261,6 +263,34 @@ describe('the sign of life', () => {
     const [planned, refused] = await fetchScrapeRuns(signal())
     expect(runPill(planned, now)).toEqual({ tone: 'good', label: 'Done', busy: false })
     expect(runPill(refused, now)).toEqual({ tone: 'warn', label: 'Refused to sweep', busy: false })
+  })
+
+  // A removal job is recognised the same whether the catalog said so in its
+  // stats or, on older runs, only in the reason it closed with.
+  it('knows a removal job by its stats or by what it closed with', async () => {
+    answer.data = [
+      row({ id: 'live', status: 'running', finished_at: null, last_alive_at: new Date(now).toISOString(), stats: { removals_only: true } }),
+      row({ id: 'old', status: 'partial', stats: { deliberate: true }, error: 'removals only: trusted the grocery pass of 2026-09-16T00:00:00.000Z' }),
+      row({ id: 'plain', status: 'completed' }),
+    ]
+    const [live, old, plain] = await fetchScrapeRuns(signal())
+    expect(isRemovalJob(live)).toBe(true)
+    expect(isRemovalJob(old)).toBe(true)
+    expect(isRemovalJob(plain)).toBe(false)
+  })
+
+  // The pill reports the OUTCOME and never the kind: a removal job that crashed
+  // has to read as failed, with its kind said beside the shop's name instead.
+  it('leaves the kind of job out of the pill', async () => {
+    answer.data = [
+      row({ id: 'live', status: 'running', finished_at: null, last_alive_at: new Date(now).toISOString(), stats: { removals_only: true } }),
+      row({ id: 'done', status: 'partial', stats: { deliberate: true, removals_only: true } }),
+      row({ id: 'sad', status: 'failed', stats: { removals_only: true } }),
+    ]
+    const [live, done, sad] = await fetchScrapeRuns(signal())
+    expect(runPill(live, now)).toEqual({ tone: 'live', label: 'Running', busy: true })
+    expect(runPill(done, now)).toEqual({ tone: 'good', label: 'Done', busy: false })
+    expect(runPill(sad, now).tone).toBe('bad')
   })
 
   it('never calls a finished run stalled, however old its last sign', async () => {
@@ -323,10 +353,16 @@ describe('runProgress', () => {
     expect(runProgress(now, [now])).toBeNull()
   })
 
-  it('draws nothing for a finished run', async () => {
+  it('draws a finished run as a full bar of what it read', async () => {
     answer.data = [done]
     const [run] = await fetchScrapeRuns(signal())
-    expect(runProgress(run, [run])).toBeNull()
+    expect(runProgress(run, [run])).toEqual({ value: 800, max: 800, label: '800 products' })
+  })
+
+  it('keeps a finished run’s plan, so a failed one shows how far it got', async () => {
+    answer.data = [row({ status: 'failed', progress_done: 223, progress_total: 1490, progress_unit: 'departments' })]
+    const [run] = await fetchScrapeRuns(signal())
+    expect(runProgress(run, [run])).toEqual({ value: 223, max: 1490, label: '223 of 1,490 departments' })
   })
 })
 

@@ -2,6 +2,7 @@
 import { computed, type PropType } from 'vue'
 import StatusPill from './StatusPill.vue'
 import CountryCode from './CountryCode.vue'
+import AppIcon from './AppIcon.vue'
 import type { Tone } from '../lib/uiTypes'
 import { formatCount } from '../lib/format'
 
@@ -65,6 +66,19 @@ const props = defineProps({
    * that was going nowhere.
    */
   indeterminate: { type: Boolean, default: false },
+  /** Finished and held up: a tick beside the bar. */
+  done: { type: Boolean, default: false },
+  /** Ended badly: a cross where the tick would be, in the same place. */
+  failed: { type: Boolean, default: false },
+  /**
+   * What KIND of job this was, when it is not the ordinary one -- "Removal".
+   *
+   * Beside the name rather than in the pill, because the kind and the outcome
+   * are different questions and the pill answers the outcome. Folded into the
+   * pill, a removal job that failed said only "Failed", which is how both real
+   * ones read after they crashed at the end of a successful crawl.
+   */
+  kind: { type: String, default: '' },
   /** Draws the card's shape with nothing in it. */
   loading: { type: Boolean, default: false },
 })
@@ -98,6 +112,7 @@ const percent = computed(() =>
       <h4 class="shop__name">
         {{ name }}
         <CountryCode v-if="country" :code="country" :note="countryNote" />
+        <span v-if="kind" class="shop__kind">{{ kind }}</span>
       </h4>
       <StatusPill :tone="tone" :label="label" :busy="running" />
     </div>
@@ -115,26 +130,41 @@ const percent = computed(() =>
       >{{ delta > 0 ? '+' : '' }}{{ formatCount(delta) }}</span>
     </p>
 
-    <div
-      v-if="progress && percent !== null"
-      class="shop__progress"
-      role="progressbar"
-      :aria-valuenow="progress.value"
-      aria-valuemin="0"
-      :aria-valuemax="progress.max"
-      :aria-label="`${name}: ${percent}%${progressLabel ? `, ${progressLabel}` : ''}`"
-    >
-      <span class="shop__bar" :style="{ width: `${percent}%` }"></span>
+    <!-- Every row is drawn on every card, empty or not, so a row of cards
+         lines up: the bar, its caption and the facts sit at the same height
+         whatever a run has to say. -->
+    <div class="shop__track">
+      <div
+        v-if="progress && percent !== null"
+        class="shop__progress"
+        role="progressbar"
+        :aria-valuenow="progress.value"
+        aria-valuemin="0"
+        :aria-valuemax="progress.max"
+        :aria-label="`${name}: ${percent}%${progressLabel ? `, ${progressLabel}` : ''}`"
+      >
+        <span class="shop__bar" :style="{ width: `${percent}%` }"></span>
+      </div>
+      <div
+        v-else-if="indeterminate"
+        class="shop__progress shop__progress--indeterminate"
+        role="progressbar"
+        :aria-label="`${name}: working, nothing to measure against yet`"
+      >
+        <span class="shop__bar"></span>
+      </div>
+      <div v-else class="shop__progress" aria-hidden="true"></div>
+      <!-- Always there, hidden while a run is still going, so every bar is the
+           same length. One slot for both endings: a run is one or the other. -->
+      <AppIcon
+        class="shop__mark"
+        :class="[failed ? 'shop__mark--bad' : 'shop__mark--good', { 'shop__mark--off': !done && !failed }]"
+        :name="failed ? 'x' : 'check'"
+        :size="14"
+        :label="failed ? 'Failed' : done ? 'Finished' : ''"
+      />
     </div>
-    <div
-      v-else-if="indeterminate"
-      class="shop__progress shop__progress--indeterminate"
-      role="progressbar"
-      :aria-label="`${name}: working, nothing to measure against yet`"
-    >
-      <span class="shop__bar"></span>
-    </div>
-    <p v-if="progress && percent !== null && progressLabel" class="shop__plan u-num">{{ progressLabel }}</p>
+    <p class="shop__plan u-num">{{ progress && percent !== null ? progressLabel : '' }}&nbsp;</p>
 
     <p v-if="when" class="shop__when" :title="whenTitle || undefined">{{ when }}</p>
 
@@ -145,7 +175,12 @@ const percent = computed(() =>
       </div>
     </dl>
 
-    <p v-if="message" class="shop__why" :title="message">{{ message }}</p>
+    <p
+      class="shop__why"
+      :class="{ 'shop__why--empty': !message }"
+      :title="message || undefined"
+      :aria-hidden="message ? undefined : 'true'"
+    >{{ message }}&nbsp;</p>
   </li>
 </template>
 
@@ -165,6 +200,10 @@ const percent = computed(() =>
      does not shift the content by its own width when the state changes. */
   box-shadow: inset 4px 0 0 var(--edge);
   min-width: 0;
+  /* The card answers to its own width, not the window's: the same 240px card
+     turns up in a five-wide row on a laptop and a two-wide one on a narrowed
+     window, and only the card knows which. See the @container rules below. */
+  container-type: inline-size;
 }
 
 .shop--good { --edge: var(--status-good); --tint: var(--status-good-bg); --ink: var(--status-good); }
@@ -204,12 +243,36 @@ const percent = computed(() =>
   white-space: nowrap;
 }
 
+/* Quieter than the name it follows: this says what the run was, and the run's
+   own numbers are what the card is for. `capitalize` on the name would make it
+   "Removal" whatever it is given, so the case here is the caller's. */
+.shop__kind {
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  text-transform: none;
+  vertical-align: middle;
+}
+
 .shop__count {
   margin: 0;
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
+  /* One line on every card: a unit that wrapped pushed the rest down. */
+  flex-wrap: nowrap;
   column-gap: var(--space-2);
+  min-width: 0;
+}
+
+.shop__unit {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .shop__number {
@@ -227,6 +290,10 @@ const percent = computed(() =>
 
 .shop__when {
   margin: 0;
+  /* Room for two lines on every card: "running for 2 h 22 min · alive 57 s
+     ago" wraps where "took 8 min" does not. */
+  line-height: var(--leading-snug);
+  min-height: calc(2em * var(--leading-snug));
 }
 
 .shop__delta {
@@ -237,9 +304,16 @@ const percent = computed(() =>
 .shop__delta--up { color: var(--status-good); }
 .shop__delta--down { color: var(--status-bad); }
 
-.shop__progress {
-  height: 6px;
+.shop__track {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin: var(--space-1) 0;
+}
+
+.shop__progress {
+  flex: 1;
+  height: 6px;
   border-radius: var(--radius-pill);
   background: var(--border-light);
   overflow: hidden;
@@ -249,8 +323,21 @@ const percent = computed(() =>
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--status-live);
+  /* The card's own state: blue while reading, green once done, red where a
+     failed run stopped. */
+  background: var(--edge);
   transition: width 0.6s ease;
+}
+
+.shop__mark {
+  flex: none;
+}
+
+.shop__mark--good { color: var(--status-good); }
+.shop__mark--bad { color: var(--status-bad); }
+
+.shop__mark--off {
+  visibility: hidden;
 }
 
 /* A third of the track, sliding, for a run with nothing to measure against. */
@@ -320,6 +407,41 @@ const percent = computed(() =>
 
 .shop__facts + .shop__why {
   margin-top: var(--space-3);
+}
+
+/* Two lines' worth on every card, a message or not. */
+.shop__why {
+  min-height: calc(2em * var(--leading-snug) + 2 * var(--space-2));
+}
+
+.shop__why--empty {
+  visibility: hidden;
+}
+
+/* ── a narrow card ───────────────────────────────────────────────────────── */
+
+/* Under 17rem "products read so far" no longer fits beside the figure and was
+   ellipsised to "products read so...". So the unit takes its own line -- on
+   EVERY card of that width, which is why this is a container query and not a
+   wrap: cards in a row share a width, so they switch together and still line up,
+   where a wrap would move only the cards whose unit happened to be long.
+
+   The when-line gets a third line's room for the same reason: "running for 1 h
+   13 min · alive 39 s ago" runs to three here, "took 14 min" does not, and the
+   facts under it have to sit level across the row. */
+@container (max-width: 17rem) {
+  .shop__count {
+    flex-wrap: wrap;
+  }
+
+  .shop__unit {
+    flex-basis: 100%;
+    order: 1;
+  }
+
+  .shop__when {
+    min-height: calc(3em * var(--leading-snug));
+  }
 }
 
 /* ── loading ─────────────────────────────────────────────────────────────── */

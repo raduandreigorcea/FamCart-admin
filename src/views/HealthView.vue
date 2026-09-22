@@ -158,7 +158,7 @@ function shopIssue(shop: RetailerHealth): Issue | null {
   if (run.status === 'partial') return { tone: 'warn', text: `${name} refused to sweep`, to }
   // A crawl that stopped hearing back from its shop (catalog 022) is as dead as
   // a failed one, and says nothing on its own.
-  if (isStalled({ status: run.status, last_alive_at: run.last_alive_at ?? null })) {
+  if (isStalled({ status: run.status, last_alive_at: run.last_alive_at ?? null, started_at: run.started_at })) {
     return { tone: 'bad', text: `${name} has gone quiet`, to }
   }
   if (run.status === 'running') return null

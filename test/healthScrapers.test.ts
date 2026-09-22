@@ -173,7 +173,7 @@ describe('the scrapers on Health', () => {
     // Mid-crawl, the count is compared against a finished run, so every crawl in
     // progress would otherwise read as a collapse.
     stats.value = statsFor([
-      shop({ delta: -4375, last_run: { ...shop().last_run, status: 'running', finished_at: null } }),
+      shop({ delta: -4375, last_run: { ...shop().last_run, status: 'running', finished_at: null, last_alive_at: new Date().toISOString() } }),
     ])
     expect((await banner()).banner.text()).not.toContain('Auchan')
   })

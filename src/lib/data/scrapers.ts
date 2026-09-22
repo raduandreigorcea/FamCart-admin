@@ -64,7 +64,13 @@ export interface ScrapeRunRow {
    * since 2026-09-17 -- what it REMOVED as outside groceries. Null or without
    * those keys on older runs.
    */
-  stats: { purged_listings?: number; purged_products?: number; excluded?: number; deliberate?: boolean } | null
+  stats: {
+    purged_listings?: number
+    purged_products?: number
+    excluded?: number
+    deliberate?: boolean
+    removals_only?: boolean
+  } | null
 }
 
 /**
@@ -176,12 +182,17 @@ export function quietFor(run: Pick<ScrapeRunRow, 'last_alive_at'>, now = Date.no
 /**
  * A run that says it is running and has not heard from its shop in a while.
  *
- * Never a run with no sign of life at all: that is a scraper older than the
- * report, and calling it stalled would be an alarm about a deploy.
+ * A run that never reported at all is measured from its start: every scraper
+ * sends a sign of life within a minute, so one that has sent none for ten
+ * minutes is a process that died before the report existed or before its first
+ * beat. Three such rows sat "Running" for eight hours on 2026-09-17.
  */
-export function isStalled(run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'>, now = Date.now()): boolean {
+export function isStalled(
+  run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'> & { started_at?: string },
+  now = Date.now(),
+): boolean {
   if (run.status !== 'running') return false
-  const quiet = quietFor(run, now)
+  const quiet = quietFor(run, now) ?? (run.started_at ? Math.max(0, now - Date.parse(run.started_at)) : null)
   return quiet !== null && quiet > STALE_AFTER_MS
 }
 
@@ -197,11 +208,25 @@ export function isDeliberate(run: { status: string; stats?: { deliberate?: boole
   return run.status === 'partial' && run.stats?.deliberate === true
 }
 
+/**
+ * A Carrefour `--removals-only` job: it reads, imports nothing, and deletes what
+ * is not groceries. Runs from before the catalog said so in `stats` are known by
+ * the reason they closed with (catalog cli/scrape.ts).
+ */
+export function isRemovalJob(run: { stats?: ScrapeRunRow['stats']; error?: string | null }): boolean {
+  return run.stats?.removals_only === true || (run.error?.startsWith('removals only') ?? false)
+}
+
 export function runPill(
-  run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'> & { stats?: ScrapeRunRow['stats'] },
+  run: Pick<ScrapeRunRow, 'status' | 'last_alive_at'> & { stats?: ScrapeRunRow['stats']; error?: string | null },
   now = Date.now(),
 ): { tone: 'good' | 'warn' | 'bad' | 'live'; label: string; busy: boolean } {
   if (isStalled(run, now)) return { tone: 'warn', label: 'No sign of life', busy: false }
+  // NOTHING ABOUT REMOVAL JOBS HERE. The pill says how a run ENDED; that it was
+  // a removal job is a separate label beside the shop's name (ShopRunCard's
+  // `kind`). They were one pill once, and the kind could only win when the run
+  // ended deliberately partial -- so the two real removal jobs, which crashed
+  // after deleting 15,438 listings, showed a bare red "Failed" and nothing else.
   // Partial ON PURPOSE -- Carrefour's nightly groceries-only pass, a slice, a
   // removals-only run -- is a run that did what it was asked. Only a run the
   // database refused to sweep is partial for a reason somebody should read.
@@ -282,8 +307,24 @@ export function removedCount(run: Pick<ScrapeRunRow, 'stats'>): number {
 }
 
 /**
- * What a running card's bar measures, and how to say it: the scraper's own plan
- * when it reported one, else the same shop's last completed run, else nothing.
+ * Products the purge took with the listings, once a product had none left.
+ *
+ * Always the smaller of the two and never derivable from it: 15,115 listings
+ * took 13,421 products on 2026-09-17, and the difference is the articles some
+ * other shop still sells as groceries.
+ */
+export function removedProducts(run: Pick<ScrapeRunRow, 'stats'>): number {
+  const n = run.stats?.purged_products
+  return typeof n === 'number' && n > 0 ? n : 0
+}
+
+/**
+ * What a card's bar measures, and how to say it: the scraper's own plan when it
+ * reported one, else, for a run that finished what it set out to do, its own
+ * count as a full bar, else the same shop's last completed run, else nothing.
+ *
+ * Every card gets a bar, finished ones included: a failed run's bar shows how
+ * far it got, a finished one's shows the whole plan read.
  *
  * The plan comes first because it is the truth, where the last run is a guess
  * about it -- and because it is the only one a first run, or Carrefour, which
@@ -293,7 +334,6 @@ export function runProgress(
   run: ScrapeRunRow,
   runs: ScrapeRunRow[],
 ): { value: number; max: number; label: string } | null {
-  if (run.status !== 'running') return null
   if (run.progress_total && run.progress_total > 0 && run.progress_done !== null) {
     const unit = run.progress_unit || 'steps'
     return {
@@ -301,6 +341,9 @@ export function runProgress(
       max: run.progress_total,
       label: `${formatCount(run.progress_done)} of ${formatCount(run.progress_total)} ${unit}`,
     }
+  }
+  if ((run.status === 'completed' || isDeliberate(run)) && run.products_found > 0) {
+    return { value: run.products_found, max: run.products_found, label: `${formatCount(run.products_found)} products` }
   }
   const expected = expectedCount(run, runs)
   if (expected) {

@@ -113,6 +113,7 @@ describe('the scrapers page', () => {
         shopName: 'Mega Image',
         status: 'running',
         finished_at: null,
+        last_alive_at: new Date().toISOString(),
         products_found: 4700,
       }),
     ]
@@ -322,11 +323,99 @@ describe('the scrapers page', () => {
     expect(bar.classes()).toContain('shop__progress--indeterminate')
   })
 
-  it('shows what a run removed on its card', async () => {
-    state.runs = [run({ stats: { rejections: {}, purged_listings: 14210 } })]
+  it('gives a finished run a full bar and a tick', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('412')
+    expect(wrapper.find('.shop__plan').text()).toBe('412 products')
+    expect(wrapper.find('.shop__mark').classes()).toContain('shop__mark--good')
+    expect(wrapper.find('.shop__mark').classes()).not.toContain('shop__mark--off')
+  })
+
+  // A cross where a finished run's tick is: the same slot, so a row of cards
+  // still lines up, and an ending you can read without parsing the pill.
+  it('marks a failed run with a cross, and shows where it stopped', async () => {
+    state.runs = [run({ status: 'failed', progress_done: 223, progress_total: 1490, progress_unit: 'departments' })]
+    const wrapper = await mountPage()
+    expect(wrapper.find('.shop__plan').text()).toBe('223 of 1,490 departments')
+    expect(wrapper.find('.shop__mark').classes()).toContain('shop__mark--bad')
+    expect(wrapper.find('.shop__mark').classes()).not.toContain('shop__mark--off')
+  })
+
+  it('leaves the mark off a run still going', async () => {
+    state.runs = [run({ status: 'running', finished_at: null, last_alive_at: new Date().toISOString() })]
+    const wrapper = await mountPage()
+    expect(wrapper.find('.shop__mark').classes()).toContain('shop__mark--off')
+  })
+
+  // A row of cards lines up only if every card draws every row.
+  it('draws the same rows on a card with nothing to put in them', async () => {
+    state.runs = [run({ status: 'failed', products_found: 0 })]
+    const wrapper = await mountPage()
+    expect(wrapper.find('.shop__track').exists()).toBe(true)
+    expect(wrapper.find('.shop__plan').exists()).toBe(true)
+    expect(wrapper.find('.shop__why').classes()).toContain('shop__why--empty')
+  })
+
+  it('calls a run that never beat dead, in a sentence that fits', async () => {
+    state.runs = [run({ status: 'running', finished_at: null, started_at: new Date(Date.now() - 8 * 3_600_000).toISOString() })]
+    const text = (await mountPage()).text()
+    expect(text).toContain('No sign of life since it started')
+  })
+
+  it('shows a removal job by what it deleted', async () => {
+    state.runs = [
+      run({
+        shop: 'carrefour', shopName: 'Carrefour', status: 'partial', products_found: 9000,
+        stats: { deliberate: true, removals_only: true, purged_listings: 3120, purged_products: 2904 },
+      }),
+    ]
+    const text = (await mountPage()).text()
+    expect(text).toContain('Removal')
+    expect(text).toContain('3,120')
+    expect(text).toContain('listings removed')
+    expect(text).not.toContain('New')
+    // The products that went with the listings, not `products_found`, which a
+    // job that imports nothing leaves at zero however much it deleted.
+    expect(text).toContain('Products')
+    expect(text).toContain('2,904')
+    expect(text).not.toContain('Read')
+  })
+
+  // The kind of job survives a bad ending. Both real removal jobs crashed at the
+  // very end, after deleting 15,438 listings between them, and a card that put
+  // the kind in the status pill could only say "Failed" about those.
+  it('still says Removal when a removal job failed', async () => {
+    state.runs = [
+      run({
+        shop: 'carrefour', shopName: 'Carrefour', status: 'failed', products_found: 9000,
+        error: 'crawl ended early: carrefour: no product payload on https://carrefour.ro',
+        stats: { removals_only: true, purged_listings: 15115 },
+      }),
+    ]
+    const text = (await mountPage()).text()
+    expect(text).toContain('Removal')
+    expect(text).toContain('Failed')
+    expect(text).toContain('15,115')
+  })
+
+  // An importing run's card says what it added, and nothing about what went
+  // away: the purge count belongs to a removal job, and the sweep count cannot
+  // be acted on -- see the comment beside the facts in ScrapersView.
+  it('says only what an importing run added', async () => {
+    state.runs = [
+      run({ pages_read: 880, updated: 3, marked_unavailable: 27, stats: { rejections: {}, purged_listings: 14210 } }),
+    ]
     const facts = (await mountPage()).find('.shop__facts').text()
-    expect(facts).toContain('Removed')
-    expect(facts).toContain('14,210')
+    // Pages on a run that has finished, not only on one still going: the card
+    // leads with the effort, the way a removal job's card does.
+    expect(facts).toContain('Pages')
+    expect(facts).toContain('880')
+    expect(facts).toContain('New')
+    expect(facts).toContain('Updated')
+    expect(facts).not.toContain('Gone')
+    expect(facts).not.toContain('Removed')
+    expect(facts).not.toContain('14,210')
+    expect(facts).not.toContain('27')
   })
 
   it('says a running shop has gone quiet', async () => {

@@ -292,7 +292,7 @@ export function scrapersCheck(retailers: RetailerHealth[] | null | undefined, no
     const run = shop.last_run
     if (!run) broken.push(`${name} never ran`)
     else if (run.status === 'failed') broken.push(`${name} failed`)
-    else if (isStalled({ status: run.status, last_alive_at: run.last_alive_at ?? null }, now)) {
+    else if (isStalled({ status: run.status, last_alive_at: run.last_alive_at ?? null, started_at: run.started_at }, now)) {
       broken.push(`${name} has gone quiet`)
     } else if (now - Date.parse(run.started_at) > SCRAPE_WINDOW_MS) {
       broken.push(`${name} has not run in ${formatRelative(run.started_at, now).replace(/ ago$/, '')}`)

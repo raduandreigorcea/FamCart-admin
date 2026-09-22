@@ -22,7 +22,9 @@ import {
   formatRunDuration,
   inCountry,
   runProgress,
+  isRemovalJob,
   removedCount,
+  removedProducts,
   splitCards,
   runDurationMs,
   runMessage,
@@ -182,6 +184,7 @@ const shops = computed(() =>
     const stalled = isStalled(run, now.value)
     const alive = quiet === null ? '' : ` · alive ${formatRunDuration(quiet)} ago`
     const pill = runPill(run, now.value)
+    const removal = isRemovalJob(run)
     // The hour it started, which is how a nightly run is read; the relative
     // time is in the tooltip with the full date.
     const started = `Started ${formatClock(run.started_at, now.value)}`
@@ -193,10 +196,17 @@ const shops = computed(() =>
         countryNote: countryNote(run.country),
         tone: pill.tone,
         label: pill.label,
+        // The kind of job, beside the name; the pill keeps the outcome.
+        kind: removal ? 'Removal' : '',
         running: pill.busy,
+        done: pill.tone === 'good',
+        failed: pill.tone === 'bad',
         attention: stalled,
-        count: formatCount(run.products_found),
-        unit: running ? 'products read so far' : 'products read',
+        // A removal job imports nothing, so its headline is what it deleted.
+        count: formatCount(removal ? removedCount(run) : run.products_found),
+        unit: removal
+          ? running ? 'listings removed so far' : 'listings removed'
+          : running ? 'products read so far' : 'products read',
         progress: progress ? { value: progress.value, max: progress.max } : null,
         progressLabel: progress?.label ?? '',
         // Moving, with nothing to measure it by. Not for a run gone quiet: that
@@ -206,19 +216,42 @@ const shops = computed(() =>
           ? `${started} · running for ${length}${alive}`
           : `${started} · took ${length}`,
         whenTitle: `${formatDateTime(run.started_at)}, ${formatRelative(run.started_at, now.value)}`,
-        facts: [
-          ...(running
-            ? [{ label: 'Pages', value: formatCount(run.pages_read), title: 'Pages read so far, products or not' }]
-            : []),
-          { label: 'New', value: formatCount(run.products_created) },
-          // Removed, not Updated: a card holds four facts, and what a run
-          // deleted says more than how many prices moved.
-          { label: 'Removed', value: formatCount(removedCount(run)), title: 'Listings removed as outside groceries' },
-          { label: 'Gone', value: formatCount(run.marked_unavailable), title: 'Listings this run marked as no longer sold' },
-        ],
-        message: stalled && quiet !== null
-          ? `Nothing heard from the shop for ${formatRunDuration(quiet)}. The job may have been killed, or the shop stopped answering.`
-          : runMessage(run),
+        facts: removal
+          ? [
+              { label: 'Pages', value: formatCount(run.pages_read), title: 'Pages read, products or not' },
+              // NOT `products_found`, which a removal job leaves at zero by
+              // construction, because it imports nothing: the slot held a
+              // constant. The products the purge took with the listings is a
+              // second real number, and smaller -- an article another shop still
+              // sells as groceries keeps its product row.
+              { label: 'Products', value: formatCount(removedProducts(run)), title: 'Products deleted, once no listing was left' },
+            ]
+          : [
+              // On a finished run too, so both kinds of card lead with the
+              // effort and then say what it produced. `pages_read` is the
+              // liveness beat's tally (catalog 022), so a run shorter than the
+              // first beat finishes honestly reporting none.
+              {
+                label: 'Pages',
+                value: formatCount(run.pages_read),
+                title: running ? 'Pages read so far, products or not' : 'Pages read, products or not',
+              },
+              { label: 'New', value: formatCount(run.products_created) },
+              { label: 'Updated', value: formatCount(run.updated) },
+              // NO `marked_unavailable` HERE, deliberately. The sweep only sets
+              // `available = false`, and nothing the app asks for filters on it:
+              // search gives an in-stock listing +5 and hides nothing, so a
+              // product swept tonight is still suggested tomorrow and comes back
+              // by itself when the shop lists it again. The number cannot be
+              // acted on, and a run that swept implausibly much is refused by
+              // the 50% floor and arrives here as `partial` instead. It stays a
+              // column in the history table, where one run is read in detail.
+            ],
+        message: !stalled
+          ? runMessage(run)
+          : quiet !== null
+            ? `Nothing heard from the shop for ${formatRunDuration(quiet)}. The job may have been killed, or the shop stopped answering.`
+            : 'No sign of life since it started. The job most likely died.',
       },
     }
   }),
@@ -245,17 +278,25 @@ watch(
 
 // The message gets the room: it is the only column whose content is a sentence,
 // and the one a failed row is read for.
+//
+// NARROWER, THE DELTAS GO FIRST. What a row is read for is whether the run
+// finished and how much of the shop it saw: Result, Read and the sentence. What
+// it changed (gone, removed, new) and how long it took are the detail behind
+// that, and they were holding ten columns at every width -- the only table in
+// the tool that did -- so below 1100px the sentence had 80px and said nothing.
+// `minPx` on the sentence is what stops the survivors crushing it in turn: past
+// that the panel scrolls, it does not squeeze.
 const columns: Column<ScrapeRunRow>[] = [
   { key: 'shopName', label: 'Shop', width: '11%' },
   { key: 'country', label: 'Country', width: '6%' },
   { key: 'status', label: 'Result', width: '11%' },
   { key: 'started_at', label: 'Started', width: '14%' },
-  { key: 'duration', label: 'Took', numeric: true, width: '9%' },
+  { key: 'duration', label: 'Took', numeric: true, width: '9%', hideBelow: 1100 },
   { key: 'products_found', label: 'Read', numeric: true, width: '8%' },
-  { key: 'products_created', label: 'New', numeric: true, width: '6%' },
-  { key: 'marked_unavailable', label: 'Marked gone', numeric: true, width: '9%' },
-  { key: 'removed', label: 'Removed', numeric: true, width: '8%' },
-  { key: 'error', label: 'What it said', width: '18%' },
+  { key: 'products_created', label: 'New', numeric: true, width: '6%', hideBelow: 1100 },
+  { key: 'marked_unavailable', label: 'Marked gone', numeric: true, width: '9%', hideBelow: 1400 },
+  { key: 'removed', label: 'Removed', numeric: true, width: '8%', hideBelow: 1400 },
+  { key: 'error', label: 'What it said', width: '18%', minPx: 160 },
 ]
 
 function asRun(row: unknown): ScrapeRunRow {
@@ -398,17 +439,22 @@ function asRun(row: unknown): ScrapeRunRow {
 /* Cards rather than full-width rows: shops read side by side, so a count that is
    a tenth of its neighbour's is visible without reading a number.
 
-   FIVE COLUMNS, FIXED. As many 14rem columns as fit made narrow cards on a wide
-   screen -- seven or eight to a row, the facts crowded. Five is wide enough to
-   read and still a row of shops at a glance. Fixed rather than auto-fit on
-   purpose: auto-fit hands empty tracks' room to the cards, and one shop -- a
-   country chosen in the selector -- became a banner the width of the page. With
-   fixed tracks a card is a fifth of the row whatever its neighbours.
+   AT MOST FIVE, NEVER UNDER 14rem. As many 14rem columns as fit made narrow
+   cards on a wide screen -- seven or eight to a row, the facts crowded. Five is
+   wide enough to read and still a row of shops at a glance, and it is
+   CARD_COUNT, so on a wide screen they fill the row exactly. The inner max() is
+   the cap: no track may be thinner than a fifth of the row, so a sixth never
+   fits.
 
-   Five is also CARD_COUNT, the runs the page draws as cards, so they fill the
-   row exactly. Below a width where five would crush them the grid falls back to
-   as many as fit -- the dashboard is a desktop tool, but a narrowed window
-   should not break it. */
+   The five used to be fixed down to a 1100px window, so a 1280px laptop drew
+   the narrowest cards on the page (184px, every unit ellipsised) while a 1099px
+   one jumped back to 254px. Now the count steps down as the room does, worked
+   out from the grid's own width rather than the window's, because the sidebar
+   changes that width by 180px and no media query can see it.
+
+   Auto-FILL, not auto-fit: auto-fit hands empty tracks' room to the cards, and
+   one shop -- a country chosen in the selector -- became a banner the width of
+   the page. Auto-fill keeps the empty tracks, so a lone card is one wide. */
 /* The run a link came for. An outline, not a new tint: the card's own state
    colour still has to read. */
 .shop--focus {
@@ -421,14 +467,11 @@ function asRun(row: unknown): ScrapeRunRow {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, max(14rem, (100% - 4 * var(--space-3)) / 5)), 1fr)
+  );
   gap: var(--space-3);
-}
-
-@media (max-width: 1100px) {
-  .shops {
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  }
 }
 
 .totals {
