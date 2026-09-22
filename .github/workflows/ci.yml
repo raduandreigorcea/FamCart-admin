@@ -1,0 +1,49 @@
+name: CI
+
+# The dashboard had no CI at all until this file, which is the one thing that
+# separated it from its two sibling repos: FamCart's own app and the catalog
+# both gate every push and pull request, and this one was green only because
+# whoever pushed had remembered to run the commands by hand.
+#
+# It is not the least important of the three to gate. This is the tool that
+# reads across every household in the production database, and the only one of
+# the three whose screens can ban a user or delete a household.
+#
+# The parent repo cannot stand in for this. It pins a submodule commit, so a
+# job there would test whatever commit happened to be pinned, and only when the
+# parent changed — never the pull request that introduced the regression.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Lint first: its failures are the cheapest to read, and it catches the
+      # template mistakes vue-tsc cannot see. Same ordering as the app's CI.
+      - run: npm run lint
+      # Redundant with `npm run build`, which runs vue-tsc itself before
+      # bundling. Kept separate anyway so a type error fails in a step named
+      # after it rather than inside a build log.
+      - run: npm run typecheck
+      - run: npm test
+      # No environment variables are set, deliberately. Every VITE_ value this
+      # dashboard reads is publishable, and none is needed to prove the bundle
+      # compiles — a build that only works with secrets present would be a
+      # build CI could never check.
+      - run: npm run build
+      # The icons in src/assets are generated from lucide-static, simple-icons
+      # and @iconify-json/logos, and must never be edited by hand. This is the
+      # guard that says so; `npm run icons:sync` is the fix.
+      - run: npm run icons:check
