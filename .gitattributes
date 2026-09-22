@@ -1,0 +1,20 @@
+# Every text file in this repo is LF, in the index and in the working tree, on
+# every machine. A submodule does NOT inherit the parent repo's .gitattributes,
+# so FamCart pinning this for itself did nothing here: a Windows clone has
+# core.autocrlf=true, checks these files out as CRLF, and prints a warning per
+# touched file.
+#
+# That is not only noise. scripts/sync-icons.mjs compares the file on disk
+# against the upstream package byte for byte (`current === svg`), and the
+# upstream copy is LF — so `npm run icons:check` reported three icons as
+# drifted on every Windows checkout while the content was identical, and would
+# have gone on doing it however many times they were re-synced. A drift guard
+# that cries wolf is a drift guard nobody reads.
+* text=auto eol=lf
+
+# Binaries, named so text=auto can never misjudge one. Git usually detects
+# these on its own; being explicit costs nothing and removes "usually".
+*.png binary
+*.webp binary
+*.ico binary
+*.woff2 binary
