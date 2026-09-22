@@ -157,6 +157,9 @@ const icon = computed(() => (typeof route.meta.icon === 'string' ? route.meta.ic
   gap: var(--space-2);
   flex-wrap: wrap;
   flex: none;
+  /* flex: none stops the tools squeezing beside the title; this stops them
+     outgrowing the row once they have wrapped under it. */
+  max-width: 100%;
 }
 
 .head__refresh-wrap {

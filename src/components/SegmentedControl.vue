@@ -63,6 +63,7 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
   align-items: center;
   gap: var(--space-2);
   font-size: var(--text-xs);
+  max-width: 100%;
 }
 
 .seg-field__label {
@@ -71,8 +72,14 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
   white-space: nowrap;
 }
 
+/* Wraps only when it has run out of row. Scrapers' twelve country codes are
+   459px in one line and would not break, so a narrowed window scrolled the whole
+   page sideways to reach the end of them; every other control here is two to
+   four segments and never gets that far. */
 .seg {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   padding: 2px;
   gap: 2px;
   background: var(--bg-main);
