@@ -278,7 +278,7 @@ describe('scrapersCheck', () => {
     expect(check.detail).toContain('Lidl BE failed')
     expect(check.detail).toContain('Carrefour RO has gone quiet')
     expect(check.detail).toContain('Aldi IE never ran')
-    expect(check.detail).toContain('Hofer AT has not run')
+    expect(check.detail).toContain('Hofer AT last ran yesterday')
     expect(check.detail).not.toContain('Lidl RO')
   })
 

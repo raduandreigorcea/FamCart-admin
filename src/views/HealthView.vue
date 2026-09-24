@@ -166,8 +166,12 @@ function shopIssue(shop: RetailerHealth): Issue | null {
   if (Date.now() - Date.parse(run.started_at) > SCRAPE_WINDOW_MS) {
     return { tone: 'bad', text: `${name} has not run in over a day`, to }
   }
-  if ((shop.delta ?? 0) < 0) {
-    return { tone: 'warn', text: `${name} found ${formatCount(-(shop.delta ?? 0))} fewer products than last time`, to }
+  // A small shop's count swings with nothing wrong: Lidl's few hundred online
+  // groceries move by a third from one night to the next (CH 405 -> 256). So a
+  // drop counts once it is 500 products, or half of what the shop had.
+  const drop = -(shop.delta ?? 0)
+  if (drop > 0 && (drop >= 500 || drop * 2 >= (shop.previous_valid ?? 0))) {
+    return { tone: 'warn', text: `${name} found ${formatCount(drop)} fewer products than last time`, to }
   }
   return null
 }
