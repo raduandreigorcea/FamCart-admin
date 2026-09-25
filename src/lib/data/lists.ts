@@ -48,9 +48,9 @@ export interface ListDetail {
     purchases: number
   }[]
   // The items on the list. This key was `list` while the entity was called a
-  // household; after the rename that collided with the `list` key above (jsonb
-  // keeps the last duplicate, so the items silently vanished), so 008_admin.sql
-  // moved them to `items`.
+  // household; after the rename that collided with the `list` key above, and
+  // jsonb keeps the last duplicate, so the list object it overwrote silently
+  // vanished. 008_admin.sql moved this key to `items` to fix it.
   items: {
     id: string
     name: string

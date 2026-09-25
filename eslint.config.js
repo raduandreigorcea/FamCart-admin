@@ -12,7 +12,7 @@ import globals from 'globals'
 // `vue/no-bare-strings-in-template` is OFF here. FamCart has it as an error
 // because every user-facing string in that app goes through t() and a bare word
 // in a template is a missed translation. This dashboard is deliberately English
-// only -- it has one reader, its vocabulary is the schema's ('household_id',
+// only -- it has one reader, its vocabulary is the schema's ('list_id',
 // 'source_version', 'security_events'), and half its copy quotes SQL. Turning the
 // rule on would mean a catalog key per column header for no reader.
 export default ts.config(
