@@ -105,6 +105,12 @@ export function formatClock(value: string | Date | null | undefined, now = Date.
   return sameDay ? time : `${clockDay.format(date)} ${time}`
 }
 
+/** "25 Sept": an axis label, where the year and the hour would collide. */
+export function formatDayMonth(value: string | Date | null | undefined): string {
+  const date = toDate(value)
+  return date ? clockDay.format(date) : '--'
+}
+
 export function formatDate(value: string | Date | null | undefined): string {
   const date = toDate(value)
   return date ? dateOnly.format(date) : '--'

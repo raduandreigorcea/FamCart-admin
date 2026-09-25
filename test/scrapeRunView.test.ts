@@ -43,7 +43,7 @@ const stubs = {
   PanelCard: { props: ['title'], template: '<section :data-title="title"><slot name="actions" /><slot /></section>' },
   StateBlock: { props: ['title', 'message'], template: '<div class="state">{{ title }} {{ message }}</div>' },
   StatusPill: { props: ['label'], template: '<span class="pill">{{ label }}</span>' },
-  LineChart: { props: ['series'], template: '<svg class="chart" />' },
+  LineChart: { props: ['series', 'labels'], template: `<svg class="chart" :data-labels="labels.join('|')" />` },
   SegmentedControl: true,
   DataTable: { props: ['rows'], template: '<table />' },
   TablePager: true,
@@ -113,6 +113,14 @@ describe('ScrapeRunView', () => {
     const wrapper = mount(View, { global: { stubs } })
     await flushPromises()
     expect(wrapper.findAll('.chart').length).toBeGreaterThan(0)
+  })
+
+  it('labels the history by day, short enough not to collide', async () => {
+    const wrapper = mount(View, { global: { stubs } })
+    await flushPromises()
+    for (const label of wrapper.find('.chart').attributes('data-labels')!.split('|')) {
+      expect(label).toMatch(/^\d{2} \S+$/)
+    }
   })
 
   it('asks again while the run is still going, and stops when it is left', async () => {

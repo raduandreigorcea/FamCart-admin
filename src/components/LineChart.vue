@@ -23,7 +23,11 @@ const props = defineProps({
   labels: { type: Array as () => string[], required: true },
   height: { type: Number, default: 240 },
   /** Formatter for the tooltip and the axis. */
-  format: { type: Function as unknown as () => (n: number) => string, default: () => (n: number) => String(n) },
+  // For a Function prop, `default` IS the value, not a factory for it (Vue calls
+  // only object and array defaults). Written as a factory, it handed the axis a
+  // function returning a function, and a chart given no format printed that
+  // function's source as its ticks: "tring(n)".
+  format: { type: Function as unknown as () => (n: number) => string, default: (n: number) => String(n) },
 })
 
 // Fixed order, never cycled. A fifth series is not a generated hue -- the caller
@@ -105,6 +109,17 @@ const paths = computed(() =>
 
 /** Which x-labels to draw, so they never collide however long the range is. */
 const labelStride = computed(() => Math.max(1, Math.ceil(props.labels.length / 8)))
+
+/**
+ * The first and last dates always, and every stride-th between them unless it
+ * would land within a stride of the last: the last is drawn whatever the
+ * stride says, and the one before it sat on top of it ("23 Sept25 Sept").
+ */
+function showLabel(index: number): boolean {
+  const last = props.labels.length - 1
+  if (index === last) return true
+  return index % labelStride.value === 0 && last - index >= labelStride.value
+}
 
 function onMove(event: MouseEvent) {
   const target = event.currentTarget as SVGSVGElement
@@ -197,7 +212,7 @@ const tooltip = computed(() => {
                  the viewBox and was clipped mid-word ("27 Auc"), because the
                  last point sits exactly on the plot's right edge. -->
             <text
-              v-if="index % labelStride === 0 || index === labels.length - 1"
+              v-if="showLabel(index)"
               :x="x(index)"
               :y="height - 8"
               :text-anchor="
