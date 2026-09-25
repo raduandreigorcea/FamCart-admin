@@ -305,13 +305,17 @@ const listingsError = computed(() => (listings.error.value ? describeError(listi
           <template #cell-price="{ row }">{{ money(asListing(row).price, asListing(row).currency) }}</template>
           <template #cell-available="{ row }">{{ asListing(row).available ? 'Yes' : 'No' }}</template>
         </DataTable>
-        <TablePager
-          :total="listings.data.value?.total ?? 0"
-          :offset="offset"
-          :limit="LISTING_PAGE"
-          :loading="listings.fetching.value"
-          @go="(next: number) => (offset = next)"
-        />
+        <!-- In the footer, like every paged table here: the body is flush for
+             the table, and the footer is what carries the padding. -->
+        <template #footer>
+          <TablePager
+            :total="listings.data.value?.total ?? 0"
+            :offset="offset"
+            :limit="LISTING_PAGE"
+            :loading="listings.fetching.value"
+            @go="(next: number) => (offset = next)"
+          />
+        </template>
       </PanelCard>
 
       <RunLogPanel :run-id="run.id" :live="running" />

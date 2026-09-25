@@ -40,13 +40,16 @@ const View = (await import('../src/views/ScrapeRunView.vue')).default as unknown
 
 const stubs = {
   PageHeader: { props: ['title'], template: '<header>{{ title }}<slot name="tools" /></header>' },
-  PanelCard: { props: ['title'], template: '<section :data-title="title"><slot name="actions" /><slot /></section>' },
+  PanelCard: {
+    props: ['title'],
+    template: '<section :data-title="title"><slot name="actions" /><slot /><footer class="panel-footer"><slot name="footer" /></footer></section>',
+  },
   StateBlock: { props: ['title', 'message'], template: '<div class="state">{{ title }} {{ message }}</div>' },
   StatusPill: { props: ['label'], template: '<span class="pill">{{ label }}</span>' },
   LineChart: { props: ['series', 'labels'], template: `<svg class="chart" :data-labels="labels.join('|')" />` },
   SegmentedControl: true,
   DataTable: { props: ['rows'], template: '<table />' },
-  TablePager: true,
+  TablePager: { template: '<nav class="pager" />' },
   RunLogPanel: true,
   CountryCode: { props: ['code'], template: '<abbr>{{ code }}</abbr>' },
 }
@@ -107,6 +110,14 @@ describe('ScrapeRunView', () => {
     }
     expect(text).toContain('466')
     expect(text).toContain('rejections.no_price')
+  })
+
+  // In the panel's footer, like every other paged table here: the footer has the
+  // padding, and a pager dropped into the body sat flush against the edge.
+  it("puts the listings' pager in the panel footer", async () => {
+    const wrapper = mount(View, { global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('.panel-footer .pager').exists()).toBe(true)
   })
 
   it("draws the shop's history", async () => {
