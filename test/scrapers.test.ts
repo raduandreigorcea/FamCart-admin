@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // subtly wrong -- newest first, the shop's slug rather than its uuid, and a
 // running run's duration measured against now rather than read as zero.
 
-const calls = vi.hoisted(() => ({ table: '', select: '', order: null as unknown, limit: 0 }))
+const calls = vi.hoisted(() => ({ table: '', select: '', order: null as unknown, limit: 0, eq: null as unknown }))
 const answer = vi.hoisted(() => ({ data: [] as unknown, error: null as unknown, configured: true }))
 
 vi.mock('../src/lib/supabase', () => ({
@@ -31,7 +31,16 @@ vi.mock('../src/lib/supabase', () => ({
                 calls.limit = n
                 return builder
               },
-              abortSignal: async () => ({ data: answer.data, error: answer.error }),
+              eq: (column: string, value: unknown) => {
+                calls.eq = [column, value]
+                return builder
+              },
+              // Thenable, and chainable into maybeSingle(), which supabase-js
+              // wants after abortSignal().
+              abortSignal: () => {
+                const result = Promise.resolve({ data: answer.data, error: answer.error })
+                return Object.assign(result, { maybeSingle: () => result })
+              },
             }
             return builder
           },
@@ -41,6 +50,10 @@ vi.mock('../src/lib/supabase', () => ({
 
 const {
   fetchScrapeRuns,
+  fetchScrapeRun,
+  fetchShopRuns,
+  isRunId,
+  SHOP_HISTORY_LIMIT,
   runDurationMs,
   formatRunDuration,
   expectedCount,
@@ -94,6 +107,41 @@ beforeEach(() => {
   answer.configured = true
   answer.data = []
   answer.error = null
+})
+
+const RUN_ID = '8f7c3a52-1d3e-4c55-9a53-2f1b7e0c9d11'
+
+// One run, for its own page (ScrapeRunView), and the shop's other runs beside it.
+describe('one run', () => {
+  it('refuses what is not a uuid without asking the database', async () => {
+    expect(isRunId('abc')).toBe(false)
+    expect(isRunId(RUN_ID)).toBe(true)
+    calls.table = ''
+    expect(await fetchScrapeRun('abc', signal())).toBeNull()
+    expect(calls.table).toBe('')
+  })
+
+  it('reads the run by id, flattened like the list', async () => {
+    answer.data = row({ id: RUN_ID })
+    const got = await fetchScrapeRun(RUN_ID, signal())
+    expect(calls.eq).toEqual(['id', RUN_ID])
+    expect(got?.shop).toBe('lidl')
+    expect(got?.shopName).toBe('Lidl')
+  })
+
+  it('is null for a run that is not there', async () => {
+    answer.data = null
+    expect(await fetchScrapeRun(RUN_ID, signal())).toBeNull()
+  })
+
+  it("reads one shop's runs, newest first", async () => {
+    answer.data = [row()]
+    const runs = await fetchShopRuns('ret-1', signal())
+    expect(calls.eq).toEqual(['retailer_id', 'ret-1'])
+    expect(calls.order).toEqual(['started_at', { ascending: false }])
+    expect(calls.limit).toBe(SHOP_HISTORY_LIMIT)
+    expect(runs[0].shop).toBe('lidl')
+  })
 })
 
 describe('fetchScrapeRuns', () => {
