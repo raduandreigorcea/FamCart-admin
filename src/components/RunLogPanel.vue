@@ -2,8 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PanelCard from './PanelCard.vue'
 import StateBlock from './StateBlock.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import { fetchRunLogs, subscribeRunLogs, LOG_PAGE, type RunLogLine } from '../lib/data/runLogs'
 import { describeError } from '../lib/useQuery'
+import type { Segment } from '../lib/uiTypes'
 
 // What a run said while it ran (catalog 023), live while it is running.
 //
@@ -27,7 +29,12 @@ const seen = new Set<number>()
 const loading = ref(true)
 const error = ref('')
 const more = ref(false)
-const level = ref<'all' | 'warn' | 'error'>('all')
+const level = ref<string>('all')
+const levels: Segment[] = [
+  { value: 'all', label: 'All' },
+  { value: 'warn', label: 'Warnings', title: 'Warnings and errors' },
+  { value: 'error', label: 'Errors' },
+]
 const follow = ref(true)
 const box = ref<HTMLElement | null>(null)
 
@@ -123,15 +130,19 @@ const clock = (t: string) => new Date(t).toLocaleTimeString('en-GB', { hour12: f
     flush
   >
     <template #actions>
-      <label class="control">
-        Show
-        <select v-model="level">
-          <option value="all">Everything</option>
-          <option value="warn">Warnings and errors</option>
-          <option value="error">Errors</option>
-        </select>
-      </label>
-      <label class="control"><input v-model="follow" type="checkbox" /> Follow</label>
+      <SegmentedControl v-model="level" :segments="levels" aria-label="Which lines" />
+      <!-- A toggle, so a pressed button rather than a checkbox: it matches the
+           segments beside it, and aria-pressed says the state. -->
+      <button
+        type="button"
+        class="u-btn log__follow"
+        :aria-pressed="follow"
+        title="Keep the newest line in view"
+        @click="follow = !follow"
+      >
+        <span class="log__follow-dot" aria-hidden="true"></span>
+        Follow
+      </button>
     </template>
 
     <!-- Above the lines, not instead of them: one failed poll must not take a
@@ -160,11 +171,20 @@ const clock = (t: string) => new Date(t).toLocaleTimeString('en-GB', { hour12: f
 </template>
 
 <style scoped>
-.control {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-sm);
+.log__follow[aria-pressed='true'] {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.log__follow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-main);
+}
+
+.log__follow[aria-pressed='true'] .log__follow-dot {
+  background: var(--color-primary);
 }
 
 .log {
