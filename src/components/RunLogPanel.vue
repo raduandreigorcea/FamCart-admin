@@ -11,6 +11,12 @@ import { describeError } from '../lib/useQuery'
 // a poll every 30 seconds asks for everything after the last id seen, so a
 // socket that never joined costs half a minute rather than the whole log. A
 // line that comes down both roads is drawn once: `seen` is keyed by id.
+//
+// THE POLL KEEPS ITS OWN CURSOR. Realtime can hand over line 521 before the
+// socket saw 501-520 (a join that took a second, a reconnect: postgres_changes
+// replays nothing). If 521 moved the cursor, the poll would ask for "after
+// 521" and those twenty lines would never be drawn. So only what the poll
+// itself read advances `polledUpTo`; Realtime lines only fill `seen`.
 
 const props = defineProps<{ runId: string; live: boolean }>()
 
@@ -25,6 +31,7 @@ const level = ref<'all' | 'warn' | 'error'>('all')
 const follow = ref(true)
 const box = ref<HTMLElement | null>(null)
 
+let polledUpTo = 0
 const lastId = () => (lines.value.length ? lines.value[lines.value.length - 1].id : 0)
 
 function take(incoming: RunLogLine[]) {
@@ -41,7 +48,8 @@ function take(incoming: RunLogLine[]) {
 
 async function load() {
   try {
-    const page = await fetchRunLogs(props.runId, lastId(), new AbortController().signal)
+    const page = await fetchRunLogs(props.runId, polledUpTo, new AbortController().signal)
+    if (page.length) polledUpTo = page[page.length - 1].id
     take(page)
     more.value = page.length === LOG_PAGE
     error.value = ''
@@ -126,10 +134,12 @@ const clock = (t: string) => new Date(t).toLocaleTimeString('en-GB', { hour12: f
       <label class="control"><input v-model="follow" type="checkbox" /> Follow</label>
     </template>
 
+    <!-- Above the lines, not instead of them: one failed poll must not take a
+         log that is already on screen away. -->
+    <StateBlock v-if="error" state="error" title="Could not read the log" :message="error" compact />
     <StateBlock v-if="loading" state="loading" title="Reading the log" />
-    <StateBlock v-else-if="error" state="error" title="Could not read the log" :message="error" />
     <StateBlock
-      v-else-if="!lines.length && !live"
+      v-else-if="!lines.length && !live && !error"
       state="empty"
       title="No log for this run"
       message="Runs from before the log was kept have none. A run from now on keeps every line for 30 days."

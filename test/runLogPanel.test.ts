@@ -11,12 +11,17 @@ const state = vi.hoisted(() => ({
   onLine: null as null | ((line: Record<string, unknown>) => void),
   unsubscribed: 0,
   fetches: 0,
+  failNext: false,
 }))
 
 vi.mock('../src/lib/data/runLogs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/data/runLogs')>()),
   fetchRunLogs: async (_run: string, afterId: number) => {
     state.fetches++
+    if (state.failNext) {
+      state.failNext = false
+      throw new Error('fetch failed')
+    }
     return state.lines.filter((l) => (l.id as number) > afterId)
   },
   subscribeRunLogs: (_run: string, onLine: (line: Record<string, unknown>) => void) => {
@@ -48,6 +53,7 @@ beforeEach(() => {
   state.onLine = null
   state.unsubscribed = 0
   state.fetches = 0
+  state.failNext = false
 })
 
 describe('RunLogPanel', () => {
@@ -115,5 +121,42 @@ describe('RunLogPanel', () => {
     await flushPromises()
     expect(state.unsubscribed).toBe(1)
     expect(wrapper.text()).toContain('done')
+  })
+
+  // Realtime can deliver a later line before the socket has seen the ones in
+  // between (a join that took a second, a reconnect: postgres_changes does not
+  // replay). The poll is what fills that gap, so Realtime must not move it.
+  it('fills a gap Realtime skipped, on the next poll', async () => {
+    vi.useFakeTimers()
+    try {
+      state.lines = [line(1)]
+      const wrapper = mount(Panel, { props: { runId: 'run-1', live: true }, global: { stubs } })
+      await flushPromises()
+      state.onLine?.(line(5))
+      state.lines = [line(1), line(2), line(3), line(4), line(5)]
+      await vi.advanceTimersByTimeAsync(30_000)
+      await flushPromises()
+      expect(wrapper.findAll('.log__line').map((l) => l.text())).toEqual(
+        [1, 2, 3, 4, 5].map((n) => expect.stringContaining(`line ${n}`)),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the lines on screen when one poll fails', async () => {
+    vi.useFakeTimers()
+    try {
+      state.lines = [line(1)]
+      const wrapper = mount(Panel, { props: { runId: 'run-1', live: true }, global: { stubs } })
+      await flushPromises()
+      state.failNext = true
+      await vi.advanceTimersByTimeAsync(30_000)
+      await flushPromises()
+      expect(wrapper.findAll('.log__line')).toHaveLength(1)
+      expect(wrapper.text()).toContain('Could not read the log')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
