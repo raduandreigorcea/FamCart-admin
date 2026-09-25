@@ -19,6 +19,8 @@ export type RunStatus = 'running' | 'completed' | 'partial' | 'failed'
 
 export interface ScrapeRunRow {
   id: string
+  /** The shop's uuid. The run page reads the shop's other runs by it. */
+  retailer_id: string
   /** The retailer's slug, flattened out of the embedded row. Identity. */
   shop: string
   /** What the shop calls itself -- "Mega Image", not "mega-image". Display. */
@@ -39,6 +41,12 @@ export interface ScrapeRunRow {
   unchanged: number
   products_created: number
   marked_unavailable: number
+  /** GTINs and other identifiers the import attached to products. */
+  identifiers_added: number
+  /** An identifier already held by a different product: a merge nobody made. */
+  conflicts: number
+  /** Rows the importer could not write, each one inside a batch that did land. */
+  error_count: number
   error: string | null
   /**
    * Pages the scraper has read, whether or not they held a product to import
@@ -83,8 +91,9 @@ export interface ScrapeRunRow {
 export const RUN_HISTORY_LIMIT = 200
 
 const COLUMNS =
-  'id, status, started_at, finished_at, products_found, products_valid, products_rejected, ' +
+  'id, retailer_id, status, started_at, finished_at, products_found, products_valid, products_rejected, ' +
   'inserted, updated, unchanged, products_created, marked_unavailable, error, ' +
+  'identifiers_added, conflicts, error_count, ' +
   'pages_read, last_alive_at, progress_done, progress_total, progress_unit, stats, ' +
   'retailer:catalog_retailers(slug, name, country)'
 
@@ -106,17 +115,62 @@ export async function fetchScrapeRuns(signal: AbortSignal): Promise<ScrapeRunRow
     .abortSignal(signal)
   if (error) queryError('catalog_scrape_runs', error)
 
-  return ((data ?? []) as unknown as RawRun[]).map(({ retailer, ...run }) => {
-    // A many-to-one embed arrives as an object; the generated types cannot tell
-    // and allow an array, so both are read rather than one being assumed.
-    const shop = Array.isArray(retailer) ? retailer[0] : retailer
-    return {
-      ...run,
-      shop: shop?.slug ?? 'unknown',
-      shopName: shop?.name || shop?.slug || 'Unknown shop',
-      country: shop?.country ?? '',
-    }
-  })
+  return ((data ?? []) as unknown as RawRun[]).map(toRow)
+}
+
+function toRow({ retailer, ...run }: RawRun): ScrapeRunRow {
+  // A many-to-one embed arrives as an object; the generated types cannot tell
+  // and allow an array, so both are read rather than one being assumed.
+  const shop = Array.isArray(retailer) ? retailer[0] : retailer
+  return {
+    ...run,
+    shop: shop?.slug ?? 'unknown',
+    shopName: shop?.name || shop?.slug || 'Unknown shop',
+    country: shop?.country ?? '',
+  }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Whether a route param can be a run's id at all. Checked before asking, because
+ * Postgres answers a malformed uuid with an error (22P02), and /scrapers/abc
+ * should say "no such run", not "could not read the run".
+ */
+export function isRunId(value: string): boolean {
+  return UUID.test(value)
+}
+
+/** One run, for its own page. Null when there is no such run. */
+export async function fetchScrapeRun(id: string, signal: AbortSignal): Promise<ScrapeRunRow | null> {
+  if (!isRunId(id)) return null
+  const supabase = getCatalogSupabase()
+  if (!supabase) throw new CatalogNotConfigured()
+  const { data, error } = await supabase
+    .from('catalog_scrape_runs')
+    .select(COLUMNS)
+    .eq('id', id)
+    .abortSignal(signal)
+    .maybeSingle()
+  if (error) queryError('catalog_scrape_runs', error)
+  return data ? toRow(data as unknown as RawRun) : null
+}
+
+/** A month of nights for one shop: what the run page's charts are drawn from. */
+export const SHOP_HISTORY_LIMIT = 30
+
+export async function fetchShopRuns(retailerId: string, signal: AbortSignal): Promise<ScrapeRunRow[]> {
+  const supabase = getCatalogSupabase()
+  if (!supabase) throw new CatalogNotConfigured()
+  const { data, error } = await supabase
+    .from('catalog_scrape_runs')
+    .select(COLUMNS)
+    .eq('retailer_id', retailerId)
+    .order('started_at', { ascending: false })
+    .limit(SHOP_HISTORY_LIMIT)
+    .abortSignal(signal)
+  if (error) queryError('catalog_scrape_runs', error)
+  return ((data ?? []) as unknown as RawRun[]).map(toRow)
 }
 
 /**
