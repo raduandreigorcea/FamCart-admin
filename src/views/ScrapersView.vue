@@ -26,6 +26,8 @@ import {
   removedCount,
   removedProducts,
   splitCards,
+  cardsThatFit,
+  CARD_COUNT,
   runDurationMs,
   runMessage,
   runPill,
@@ -51,8 +53,6 @@ import { formatClock, formatCompact, formatCount, formatDateTime, formatRelative
 // row and add load to a database that is already the bottleneck.
 const REFRESH_MS = 30_000
 
-/** Roughly how many shops are live, so the loading row is the shape it will be. */
-const SKELETON_SHOPS = 4
 
 const configured = catalogConfigured()
 const runs = useQuery((signal) => fetchScrapeRuns(signal), { enabled: () => catalogConfigured() })
@@ -170,11 +170,39 @@ const loadError = computed(() => (runs.error.value ? describeError(runs.error.va
 // the History title says the numbers are being asked for again.
 const polling = computed(() => runs.fetching.value && !runs.loading.value)
 
-// THE FIVE NEWEST RUNS ARE CARDS; EVERYTHING OLDER IS THE HISTORY. A run is in
-// one or the other, never both, and one card per shop (see splitCards). This
-// replaced a row sized by measuring the grid with a "+N more" line under it:
-// with the history right below, "more" was already on the page.
-const split = computed(() => splitCards(shown.value))
+// THE NEWEST RUNS THAT FIT ON ONE ROW ARE CARDS; EVERYTHING OLDER IS THE
+// HISTORY. A run is in one or the other, never both (see splitCards).
+//
+// Five on a wide screen, and fewer as the row narrows: five cards on a row with
+// room for three wrapped into three and two, a second row that read as a second
+// kind of thing. So the row is measured, and what does not fit on it goes to the
+// history, which is right below. Measured from the row itself rather than the
+// window, because the sidebar changes its width and no media query can see it.
+// cardsThatFit uses the grid's own rule (see .shops), so the count and the
+// columns always agree.
+const cardRow = ref<HTMLElement | null>(null)
+const fits = ref(CARD_COUNT)
+let rowObserver: ResizeObserver | null = null
+
+function measure(width: number) {
+  if (typeof getComputedStyle === 'undefined') return
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  const list = cardRow.value?.querySelector('.shops')
+  const gap = (list && parseFloat(getComputedStyle(list).columnGap)) || 12
+  fits.value = cardsThatFit(width, rem, gap)
+}
+
+onMounted(() => {
+  if (typeof ResizeObserver === 'undefined' || !cardRow.value) return
+  rowObserver = new ResizeObserver((entries) => {
+    const width = entries[0]?.contentRect.width
+    if (width) measure(width)
+  })
+  rowObserver.observe(cardRow.value)
+})
+onBeforeUnmount(() => rowObserver?.disconnect())
+
+const split = computed(() => splitCards(shown.value, fits.value))
 
 // Everything a card needs, worked out once per refresh rather than per binding.
 const shops = computed(() =>
@@ -369,8 +397,9 @@ function asRun(row: unknown): ScrapeRunRow {
 
       <!-- The cards' own shape while the first read is out, so the page does not
            jump from three grey lines to a row of cards. -->
+      <div ref="cardRow">
       <ul v-if="runs.loading.value" class="shops" aria-busy="true" aria-label="Loading the runs">
-        <ShopRunCard v-for="n in SKELETON_SHOPS" :key="n" loading />
+        <ShopRunCard v-for="n in fits" :key="n" loading />
       </ul>
       <StateBlock v-else-if="loadError" state="error" title="Could not read the runs" :message="loadError" />
       <StateBlock
@@ -393,6 +422,7 @@ function asRun(row: unknown): ScrapeRunRow {
           v-bind="shop.props"
         />
       </ul>
+      </div>
 
       <PanelCard title="History" :note="`Older runs, newest first, from the last ${RUN_HISTORY_LIMIT}.`" :busy="polling" flush>
         <DataTable
@@ -461,7 +491,11 @@ function asRun(row: unknown): ScrapeRunRow {
 
    Auto-FILL, not auto-fit: auto-fit hands empty tracks' room to the cards, and
    one shop -- a country chosen in the selector -- became a banner the width of
-   the page. Auto-fill keeps the empty tracks, so a lone card is one wide. */
+   the page. Auto-fill keeps the empty tracks, so a lone card is one wide.
+
+   The page draws only as many cards as this grid has columns (cardsThatFit, in
+   scrapers.ts, is the same arithmetic), so the row never wraps. Change 14rem or
+   the five here and change CARD_MIN_REM and CARD_COUNT there. */
 /* The run a link came for. An outline, not a new tint: the card's own state
    colour still has to read. */
 .shop--focus {

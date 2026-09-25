@@ -66,6 +66,7 @@ const {
   isRemovalJob,
   splitCards,
   CARD_COUNT,
+  cardsThatFit,
   STALE_AFTER_MS,
   quietFor,
   isStalled,
@@ -246,6 +247,35 @@ describe('splitCards', () => {
     const { cards, history } = splitCards(await fetchScrapeRuns(signal()))
     expect(cards.map((r) => r.id)).toEqual(['a2', 'b1'])
     expect(history).toEqual([])
+  })
+
+  // As many cards as fit on one row, so a narrow window shows three cards and
+  // not five wrapped onto two rows. What does not fit is in the history.
+  it('takes as many cards as it is given room for', async () => {
+    answer.data = runs()
+    const { cards, history } = splitCards(await fetchScrapeRuns(signal()), 3)
+    expect(cards.map((r) => r.id)).toEqual(['a2', 'b1', 'a1'])
+    expect(history.map((r) => r.id)).toEqual(['c1', 'd1', 'e1', 'f1'])
+  })
+})
+
+describe('cardsThatFit', () => {
+  // A card is at least 14rem (224px at 16px) and the gap is 12px.
+  const fit = (width: number) => cardsThatFit(width, 16, 12)
+
+  it('fits one card per 14rem and a gap, up to five', () => {
+    expect(fit(224)).toBe(1)
+    expect(fit(459)).toBe(1)
+    expect(fit(460)).toBe(2)
+    expect(fit(708)).toBe(3)
+    expect(fit(956)).toBe(4)
+    expect(fit(1204)).toBe(5)
+    expect(fit(3000)).toBe(CARD_COUNT)
+  })
+
+  it('always shows at least one', () => {
+    expect(fit(0)).toBe(1)
+    expect(fit(100)).toBe(1)
   })
 })
 
