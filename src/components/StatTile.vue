@@ -102,7 +102,7 @@ const deltaTone = computed(() => {
         {{ deltaText.text }}
         <span class="tile__ratio">{{ deltaText.ratio }}</span>
       </span>
-      <span v-if="footHint" class="tile__hint">{{ footHint }}</span>
+      <span v-if="footHint" class="tile__hint" :title="footHint">{{ footHint }}</span>
     </div>
   </div>
 </template>
@@ -226,6 +226,13 @@ const deltaTone = computed(() => {
   font-size: var(--text-2xs);
   color: var(--text-disabled);
   line-height: var(--leading-snug);
+  /* Two lines at most, then an ellipsis, so a long hint cannot make one tile
+     taller than its row. The whole text is on the title. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 .tile--unrecorded {

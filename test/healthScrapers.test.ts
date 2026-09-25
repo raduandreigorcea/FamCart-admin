@@ -143,6 +143,12 @@ describe('the scrapers on Health', () => {
     expect(b.text()).toContain('Auchan RO found 20,000 fewer products than last time')
   })
 
+  it('leave a small shop that swung by a third alone', async () => {
+    stats.value = statsFor([shop({ delta: -149, previous_valid: 405 })])
+    const { banner: b } = await banner()
+    expect(b.text()).not.toContain('fewer products')
+  })
+
   it('name a run that refused to sweep', async () => {
     stats.value = statsFor([shop({ last_run: { ...shop().last_run, status: 'partial' } })])
     expect((await banner()).banner.text()).toContain('Auchan RO refused to sweep')
