@@ -19,11 +19,11 @@ import type { LocalProductRow } from '../lib/data/types'
 // the promotion gate in 006_product_catalog reads. The RPC will not accept it
 // either; this is the same rule stated where somebody can see it.
 //
-// No household. A scoped row records that a specific household asked for
+// No list. A scoped row records that a specific list asked for
 // something, and one invented here would be a contribution nobody made. Editing
-// an existing scoped row leaves its household alone.
+// an existing scoped row leaves its list alone.
 //
-// Base weight is offered only for global rows. On a household's own row it is
+// Base weight is offered only for global rows. On a list's own row it is
 // meaningless -- nothing ranks a scoped row against anything -- and showing a
 // zero there invites somebody to set it.
 
@@ -49,9 +49,9 @@ const barcode = ref('')
 const baseWeight = ref('')
 
 const editing = computed(() => props.product !== null)
-// A household's own row. Global rows -- promoted, or curated by an admin -- have
-// no household_id, and adding always creates one of those.
-const global = computed(() => !props.product || props.product.household_id === null)
+// A list's own row. Global rows -- promoted, or curated by an admin -- have
+// no list_id, and adding always creates one of those.
+const global = computed(() => !props.product || props.product.list_id === null)
 
 // Reset from the row every time the dialog opens, not on mount: the component
 // stays alive between openings, so without this the second edit would show the
@@ -119,8 +119,8 @@ useModal({
             editing
               ? global
                 ? 'A global product. Everyone sees it.'
-                : 'A household’s own row. Its household, contributor and earned adds are left alone.'
-              : 'Added as a global curated product, visible to every household.'
+                : 'A list’s own row. Its list, contributor and earned adds are left alone.'
+              : 'Added as a global curated product, visible to every list.'
           }}
         </p>
 

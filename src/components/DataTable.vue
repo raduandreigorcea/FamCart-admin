@@ -81,7 +81,7 @@ function ariaSort(column: Column<T>): 'ascending' | 'descending' | 'none' {
  * The one widening cast in this component, and the reason `T extends object`
  * rather than `T extends Record<string, unknown>`: an INTERFACE does not
  * satisfy an index signature in TypeScript, only a type alias does. Constraining
- * to Record would therefore reject AdminUserRow, AdminHouseholdRow and every
+ * to Record would therefore reject AdminUserRow, AdminListRow and every
  * other row shape in the data layer -- which is exactly what silently forced
  * `T` back to `Record<string, unknown>` and kept the eighteen casts alive in
  * the views.
@@ -325,7 +325,7 @@ function cellValue(row: T, key: string): unknown {
    * Auto layout treats a th's width as a hint and lets content overrule it,
    * which means one long value decides the whole grid. A ban reason typed as
    * 368 characters without a space stretched its column to 2272px, pushed the
-   * households count and the Lift ban button off the right-hand edge, wrapped
+   * lists count and the Lift ban button off the right-hand edge, wrapped
    * the date column to three lines and left the panel scrolling sideways --
    * from one row of test data. The reason cell had asked to ellipsize all
    * along; ellipsis needs a bound, and auto layout never gave it one.

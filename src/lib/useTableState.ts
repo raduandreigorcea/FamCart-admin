@@ -2,7 +2,7 @@ import { computed, ref, watch, type Ref, type WatchSource } from 'vue'
 
 // The state every list view keeps, and the three rules it has to get right.
 //
-// Users, Households and Products each held their own `query`, `sort`, `dir` and
+// Users, Lists and Products each held their own `query`, `sort`, `dir` and
 // `offset` refs and their own copies of the same handlers -- near-identical, and
 // commented in three places with the same explanations. That is survivable. What
 // is not is that one of the rules is enforced from the TEMPLATE: ProductsView

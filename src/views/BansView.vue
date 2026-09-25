@@ -10,10 +10,10 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import { useQuery, useQueryGroup, describeError } from '../lib/useQuery'
 import {
-  fetchDeletedHouseholds,
-  restoreHousehold,
-  type DeletedHouseholdRow,
-} from '../lib/data/households'
+  fetchDeletedLists,
+  restoreList,
+  type DeletedListRow,
+} from '../lib/data/lists'
 import { fetchBannedUsers, unbanUser, type BannedUserRow } from '../lib/data/users'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
@@ -23,7 +23,7 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 // Two tables, never merged and never both on screen. They are two different
 // removals that only look alike from a distance: a banned account is refused at
 // the door and still exists everywhere else -- it keeps its memberships, and the
-// households it belongs to carry on without it -- while a withdrawn household is
+// lists it belongs to carry on without it -- while a withdrawn list is
 // hidden wholesale and takes every item and purchase inside it out of view along
 // with itself. One combined table would have to invent a column meaning "thing",
 // and the two halves would still need different actions in it.
@@ -40,7 +40,7 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
 // ─── which list is on screen ─────────────────────────────────────────────────
 
-type Scope = 'people' | 'households'
+type Scope = 'people' | 'lists'
 
 const scope = ref<Scope>('people')
 const onPeople = computed(() => scope.value === 'people')
@@ -50,7 +50,7 @@ const onPeople = computed(() => scope.value === 'people')
 // uses for the same reason: a control that can emit any string must not be able
 // to put any string into this ref.
 function setScope(next: string) {
-  scope.value = next === 'households' ? 'households' : 'people'
+  scope.value = next === 'lists' ? 'lists' : 'people'
 }
 
 // Only the list on screen is fetched. Both used to run on mount, which was
@@ -65,7 +65,7 @@ function setScope(next: string) {
 const banned = useQuery((signal) => fetchBannedUsers(signal), {
   enabled: () => onPeople.value,
 })
-const deleted = useQuery((signal) => fetchDeletedHouseholds(signal), {
+const deleted = useQuery((signal) => fetchDeletedLists(signal), {
   enabled: () => !onPeople.value,
 })
 const page = useQueryGroup([banned, deleted])
@@ -94,12 +94,12 @@ const segments = [
   {
     value: 'people',
     label: 'People',
-    title: 'Accounts the app refuses. They keep their households; a ban is a door, not a delete.',
+    title: 'Accounts the app refuses. They keep their lists; a ban is a door, not a delete.',
   },
   {
-    value: 'households',
-    label: 'Households',
-    title: 'Households an admin withdrew, hidden along with every item and purchase inside them.',
+    value: 'lists',
+    label: 'Lists',
+    title: 'Lists an admin withdrew, hidden along with every item and purchase inside them.',
   },
 ]
 
@@ -107,12 +107,12 @@ const bannedColumns: Column<BannedUserRow>[] = [
   { key: 'display_name', label: 'Account', width: '26%' },
   { key: 'banned_at', label: 'Banned', sortable: false, width: '14%' },
   { key: 'reason', label: 'Reason', sortable: false, width: '30%', title: 'From the audit trail' },
-  { key: 'households', label: 'Households', numeric: true, width: '12%', title: 'Still a member of' },
+  { key: 'lists', label: 'Lists', numeric: true, width: '12%', title: 'Still a member of' },
   { key: 'actions', label: '', align: 'right', width: '18%' },
 ]
 
-const deletedColumns: Column<DeletedHouseholdRow>[] = [
-  { key: 'name', label: 'Household', width: '36%' },
+const deletedColumns: Column<DeletedListRow>[] = [
+  { key: 'name', label: 'List', width: '36%' },
   { key: 'deleted_at', label: 'Withdrawn', sortable: false, width: '22%' },
   { key: 'members', label: 'Members', numeric: true, width: '13%' },
   { key: 'items_total', label: 'Items', numeric: true, width: '13%', title: 'Still inside it' },
@@ -127,7 +127,7 @@ const deletedColumns: Column<DeletedHouseholdRow>[] = [
 
 type Pending =
   | { kind: 'user'; row: BannedUserRow }
-  | { kind: 'household'; row: DeletedHouseholdRow }
+  | { kind: 'list'; row: DeletedListRow }
 
 const pending = ref<Pending | null>(null)
 const busy = ref(false)
@@ -157,14 +157,14 @@ const dialogTitle = computed(() => {
   if (!target) return ''
   return target.kind === 'user'
     ? `Lift the ban on ${target.row.display_name || 'this account'}?`
-    : `Restore ${target.row.name || 'this household'}?`
+    : `Restore ${target.row.name || 'this list'}?`
 })
 
 const dialogMessage = computed(() => {
   const target = pending.value
   if (!target) return ''
   return target.kind === 'user'
-    ? 'They can open FamCart again straight away. Their households and everything in them are untouched — a ban never removed them.'
+    ? 'They can open FamCart again straight away. Their lists and everything in them are untouched — a ban never removed them.'
     : 'Its members get it back, along with every item and purchase inside it.'
 })
 
@@ -181,7 +181,7 @@ async function confirmReversal() {
       pending.value = null
       await banned.refetch()
     } else {
-      await restoreHousehold(target.row.id, new AbortController().signal)
+      await restoreList(target.row.id, new AbortController().signal)
       pending.value = null
       await deleted.refetch()
     }
@@ -197,7 +197,7 @@ async function confirmReversal() {
   <div class="page">
     <PageHeader
       title="Bans"
-      description="Accounts the app refuses and households an admin withdrew. Nothing here has been destroyed — both are flags, and both come off from this page."
+      description="Accounts the app refuses and lists an admin withdrew. Nothing here has been destroyed — both are flags, and both come off from this page."
       :fetched-at="page.fetchedAt.value"
       :busy="page.busy.value"
       @refresh="page.refresh"
@@ -268,7 +268,7 @@ async function confirmReversal() {
             </span>
           </template>
 
-          <template #cell-households="{ row }">{{ formatCount(Number(row.households)) }}</template>
+          <template #cell-lists="{ row }">{{ formatCount(Number(row.lists)) }}</template>
 
           <template #cell-actions="{ row }">
             <button type="button" class="u-btn" @click="ask({ kind: 'user', row })">
@@ -283,7 +283,7 @@ async function confirmReversal() {
           v-if="noneDeleted"
           state="empty"
           title="Nothing withdrawn"
-          message="When an admin deletes a household it waits here until it is restored."
+          message="When an admin deletes a list it waits here until it is restored."
         />
         <DataTable
           v-else
@@ -295,9 +295,9 @@ async function confirmReversal() {
           empty-title="Nothing withdrawn"
         >
           <!-- A link, because a restore is decided by looking at what is inside
-               and this row is the only place a withdrawn household is listed. -->
+               and this row is the only place a withdrawn list is listed. -->
           <template #cell-name="{ row }">
-            <RouterLink :to="`/households/${row.id}`" class="who">
+            <RouterLink :to="`/lists/${row.id}`" class="who">
               <span class="who__name">{{ row.emoji ? `${row.emoji} ` : '' }}{{ row.name }}</span>
             </RouterLink>
           </template>
@@ -312,7 +312,7 @@ async function confirmReversal() {
           <template #cell-items_total="{ row }">{{ formatCount(Number(row.items_total)) }}</template>
 
           <template #cell-actions="{ row }">
-            <button type="button" class="u-btn" @click="ask({ kind: 'household', row })">
+            <button type="button" class="u-btn" @click="ask({ kind: 'list', row })">
               Restore
             </button>
           </template>

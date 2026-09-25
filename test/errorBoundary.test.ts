@@ -89,7 +89,7 @@ describe('ErrorBoundary', () => {
       setup() {
         return () => {
           if (route.fullPath === '/users') throw new Error('users page is broken')
-          return h('p', { class: 'ok' }, 'households page is fine')
+          return h('p', { class: 'ok' }, 'lists page is fine')
         }
       },
     })
@@ -102,7 +102,7 @@ describe('ErrorBoundary', () => {
     expect(wrapper.find('.boundary').exists()).toBe(true)
 
     // Navigating away is what a person tries first. It must work.
-    route.fullPath = '/households'
+    route.fullPath = '/lists'
     await nextTick()
     await nextTick()
 

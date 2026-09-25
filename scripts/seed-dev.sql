@@ -2,7 +2,7 @@
 --
 -- WHY THIS EXISTS
 --
--- famcart-dev is nearly empty: a couple of profiles, a couple of households, one
+-- famcart-dev is nearly empty: a couple of profiles, a couple of lists, one
 -- list item, no purchase history and no audit events. That is fine for the app
 -- and useless for this dashboard, where most panels, charts, sort controls and
 -- pagers cannot be exercised at all against three rows. Running this fills it
@@ -22,18 +22,18 @@
 --
 -- The guard exists because production and development have identical schemas and
 -- the SQL editor does not say loudly which project it is attached to. Running
--- this against `famcart` would invent eight households of people who do not
+-- this against `famcart` would invent eight lists of people who do not
 -- exist, inside real data, with no clean way to tell them apart afterwards.
 --
 -- ─── UNDOING IT ──────────────────────────────────────────────────────────────
 --
 -- Every row this creates is marked: profiles get a user_id starting `seed_`, and
--- households get names starting `Seed `. To remove all of it:
+-- lists get names starting `Seed `. To remove all of it:
 --
---   delete from public.households where name like 'Seed %';
+--   delete from public.lists where name like 'Seed %';
 --   delete from public.profiles where user_id like 'seed\_%';
 --
--- Deleting a household cascades its members, list and history away with it, so
+-- Deleting a list cascades its members, items and history away with it, so
 -- those two statements are the whole cleanup.
 
 do $$
@@ -68,15 +68,15 @@ from (values
 ) as t(n, name)
 on conflict (user_id) do nothing;
 
--- ─── households ──────────────────────────────────────────────────────────────
+-- ─── lists ──────────────────────────────────────────────────────────────
 -- Five, of deliberately different sizes and activity levels, so the
 -- distribution charts have a shape rather than a single bar. One is left empty
--- on purpose: a household nobody has shopped in is a real state and the
+-- on purpose: a list nobody has shopped in is a real state and the
 -- dashboard should be seen rendering it.
 --
 -- The invite code alphabet omits I, O, 0 and 1, matching
--- households_invite_code_format_check.
-insert into public.households (id, name, invite_code, created_by, emoji, max_items_per_member, created_at)
+-- lists_invite_code_format_check.
+insert into public.lists (id, name, invite_code, created_by, emoji, max_items_per_member, created_at)
 select
   ('5eed0000-0000-4000-8000-00000000000' || n::text)::uuid,
   name,
@@ -96,8 +96,8 @@ on conflict (id) do nothing;
 
 -- ─── rosters ─────────────────────────────────────────────────────────────────
 -- Sizes 4, 3, 2, 2 and 1. The owner is always a moderator, matching what
--- create_household() does.
-insert into public.household_members (household_id, user_id, role, joined_at)
+-- create_list() does.
+insert into public.list_members (list_id, user_id, role, joined_at)
 select
   ('5eed0000-0000-4000-8000-00000000000' || hh::text)::uuid,
   'seed_user_' || lpad(member::text, 3, '0'),
@@ -110,15 +110,15 @@ from (values
   (4, 4, 'moderator', 30), (4, 9, 'member', 18),
   (5, 5, 'moderator', 9)
 ) as t(hh, member, role, days)
-on conflict (household_id, user_id) do nothing;
+on conflict (list_id, user_id) do nothing;
 
 -- ─── the active lists ────────────────────────────────────────────────────────
 -- Unchecked items only. Checked ones are not seeded because buy_items() is what
 -- moves rows off a list, and the history below is seeded directly instead.
 --
--- The unique index is on (household_id, lower(name), lower(maker)) where not
--- checked, so no household gets the same product twice.
-insert into public.shopping_list_items (household_id, name, maker, quantity, added_by, created_at)
+-- The unique index is on (list_id, lower(name), lower(maker)) where not
+-- checked, so no list gets the same product twice.
+insert into public.shopping_list_items (list_id, name, maker, quantity, added_by, created_at)
 select
   ('5eed0000-0000-4000-8000-00000000000' || hh::text)::uuid,
   name,
@@ -146,7 +146,7 @@ from (values
 -- something to draw and the daily and weekly buckets differ.
 --
 -- Written directly rather than through buy_items() because that function reads
--- the caller's session to decide which households it may touch, and there is no
+-- the caller's session to decide which lists it may touch, and there is no
 -- session here. purchase_history has no insert policy at all, which is exactly
 -- why this has to be run as the owner and cannot be done from the app.
 --
@@ -156,7 +156,7 @@ with checkouts as (
   select
     gen_random_uuid()                              as checkout_id,
     ('5eed0000-0000-4000-8000-00000000000'
-      || (1 + (n % 4))::text)::uuid                as household_id,
+      || (1 + (n % 4))::text)::uuid                as list_id,
     1 + (n % 10)                                   as buyer,
     now() - ((n * 0.72)::numeric || ' days')::interval as at,
     n
@@ -165,7 +165,7 @@ with checkouts as (
 basket as (
   select
     c.checkout_id,
-    c.household_id,
+    c.list_id,
     c.buyer,
     c.at,
     p.name,
@@ -191,12 +191,12 @@ basket as (
   ) p
 )
 insert into public.purchase_history (
-  checkout_id, household_id, name, maker, quantity,
+  checkout_id, list_id, name, maker, quantity,
   added_by, added_by_name, purchased_by, purchased_at
 )
 select
   b.checkout_id,
-  b.household_id,
+  b.list_id,
   b.name,
   b.maker,
   b.quantity,
@@ -209,10 +209,10 @@ join public.profiles pr on pr.user_id = 'seed_user_' || lpad(b.buyer::text, 3, '
 
 -- ─── contributed products ────────────────────────────────────────────────────
 -- The catalog's misses, which is what the Search Analytics page reads as
--- zero-result searches. One of them is contributed by three distinct households,
+-- zero-result searches. One of them is contributed by three distinct lists,
 -- so the promotion band on that page has an example of a gap that has closed.
 insert into public.product_catalog
-  (name, maker, search_text, household_id, contributed_by, source, add_count, created_at)
+  (name, maker, search_text, list_id, contributed_by, source, add_count, created_at)
 select
   name,
   maker,
@@ -232,13 +232,13 @@ from (values
   ('Must de struguri',   null,          4, 4, 1, 9),
   ('Cozonac cu nuca',    'Boromir',     3, 10, 3, 6)
 ) as t(name, maker, hh, who, adds, days)
-on conflict on constraint product_catalog_name_maker_household_unique do nothing;
+on conflict on constraint product_catalog_name_maker_list_unique do nothing;
 
 -- ─── audit events ────────────────────────────────────────────────────────────
 -- A handful, of mixed severity, so the digest and the severity colouring on the
 -- Health page have something to sort. Written directly for the same reason the
 -- history is: log_security_event() stamps the caller, and there is no caller.
-insert into public.security_events (kind, actor, household_id, detail, created_at)
+insert into public.security_events (kind, actor, list_id, detail, created_at)
 select
   kind,
   case when who is null then null else 'seed_user_' || lpad(who::text, 3, '0') end,
@@ -262,10 +262,10 @@ commit;
 -- What landed.
 select
   (select count(*) from public.profiles where user_id like 'seed\_%')        as profiles,
-  (select count(*) from public.households where name like 'Seed %')          as households,
+  (select count(*) from public.lists where name like 'Seed %')          as lists,
   (select count(*) from public.shopping_list_items si
-     join public.households h on h.id = si.household_id
+     join public.lists h on h.id = si.list_id
      where h.name like 'Seed %')                                             as list_items,
   (select count(*) from public.purchase_history ph
-     join public.households h on h.id = ph.household_id
+     join public.lists h on h.id = ph.list_id
      where h.name like 'Seed %')                                             as purchases;

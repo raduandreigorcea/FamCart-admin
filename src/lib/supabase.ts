@@ -5,17 +5,17 @@ import { useAuth } from '@clerk/vue'
 // Two app databases, one catalog, one Clerk session.
 //
 // FamCart has two projects with IDENTICAL schemas and very different
-// consequences: `famcart` holds real households, `famcart-dev` holds whatever
+// consequences: `famcart` holds real lists, `famcart-dev` holds whatever
 // was last tried. This dashboard can point at either, and switching is a
 // deliberate act rather than a config edit and a restart.
 //
 // The catalog project deliberately does NOT switch with them. There is only one,
 // shared live by both apps, which is the whole reason it exists as its own
-// project. So a switch changes every household number on screen and leaves every
+// project. So a switch changes every list number on screen and leaves every
 // product number exactly where it was, and the UI says so.
 //
 // What this file still does not have is a service-role key, and must never. The
-// dashboard sees across households because public.admin_users says the signed-in
+// dashboard sees across lists because public.admin_users says the signed-in
 // account may, checked inside every admin_* function. The browser holds nothing
 // more privileged than FamCart's own bundle does — twice over now, which changes
 // nothing: an anon key is publishable by design and RLS is what stands behind it.
@@ -101,7 +101,7 @@ export const activeProject: ComputedRef<AppProject> = computed(() => active.valu
  * Everything downstream reacts: App.vue re-runs the admin check (being an admin
  * on one project says nothing about the other), remounts the view so every
  * in-flight query is abandoned and reissued, and leaves any detail route it was
- * on, because a household id from one database means nothing in the other.
+ * on, because a list id from one database means nothing in the other.
  */
 export function setActiveProject(next: AppProject): void {
   if (!isConfigured(PROJECTS[next]) || next === active.value) return

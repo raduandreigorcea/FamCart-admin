@@ -36,7 +36,7 @@ export interface Bar {
  * typo at compile time. But some columns are rendered entirely through a
  * `#cell-<key>` slot and correspond to no field at all -- 'quality' on the
  * catalog table is computed from five other columns, 'scope' on the local table
- * is derived from whether household_id is set. Constraining to `keyof T` would
+ * is derived from whether list_id is set. Constraining to `keyof T` would
  * reject both, and the workaround (widening the row type with fields that do
  * not exist) is worse than the problem.
  *

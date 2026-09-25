@@ -4,7 +4,7 @@ import type { Component } from 'vue'
 
 // The Catalog view. Same shape as ContributedView and a heavier blast radius:
 // this project is shared live by production and development, so one removal here
-// takes the product from every household of both.
+// takes the product from every list of both.
 //
 // What is worth pinning is the wiring nobody sees when it is wrong. A decline
 // that still writes. An edit that creates a second row instead of correcting the

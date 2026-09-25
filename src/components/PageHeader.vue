@@ -114,7 +114,7 @@ const icon = computed(() => (typeof route.meta.icon === 'string' ? route.meta.ic
    a control -- nothing about it should invite a click.
 
    Drawn exactly as FamCart draws the mark beside a dialog title (AppSettingsModal,
-   HouseholdSettingsModal, PurchaseHistoryModal and the rest): a 38px plate, a
+   ListSettingsModal, PurchaseHistoryModal and the rest): a 38px plate, a
    22px icon, the primary mixed 10% into the surface. It had its own 36px plate,
    18px icon and --admin-accent-wash tint, which made the dashboard look like a
    different product from the app it administers. */

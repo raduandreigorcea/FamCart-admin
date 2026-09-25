@@ -13,12 +13,12 @@ import type { Component } from 'vue'
 // They now share one panel behind a toggle, which adds a second such bug: the
 // segment saying one thing while the table below it shows the other.
 
-const fetchDeletedHouseholds = vi.fn()
-const restoreHousehold = vi.fn().mockResolvedValue(undefined)
+const fetchDeletedLists = vi.fn()
+const restoreList = vi.fn().mockResolvedValue(undefined)
 const fetchBannedUsers = vi.fn()
 const unbanUser = vi.fn().mockResolvedValue(undefined)
 
-vi.mock('../src/lib/data/households', () => ({ fetchDeletedHouseholds, restoreHousehold }))
+vi.mock('../src/lib/data/lists', () => ({ fetchDeletedLists, restoreList }))
 vi.mock('../src/lib/data/users', () => ({ fetchBannedUsers, unbanUser }))
 
 const BansView = (await import('../src/views/BansView.vue')).default as unknown as Component
@@ -75,7 +75,7 @@ const stubs = {
   },
 }
 
-const household = {
+const list = {
   id: 'h-1',
   name: 'The Smiths',
   emoji: null,
@@ -89,7 +89,7 @@ const banned = {
   display_name: 'Pip the Plain',
   image_url: null,
   banned_at: '2026-08-25T09:00:00.000Z',
-  households: 1,
+  lists: 1,
   reason: 'posted somebody else’s address',
   banned_by: 'user_admin',
 }
@@ -100,9 +100,9 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 const choose = (wrapper: ReturnType<typeof mount>, value: string) =>
   wrapper.find(`.seg__item[data-value="${value}"]`).trigger('click')
 
-async function mounted(users: unknown, households: unknown) {
+async function mounted(users: unknown, lists: unknown) {
   fetchBannedUsers.mockResolvedValue(users)
-  fetchDeletedHouseholds.mockResolvedValue(households)
+  fetchDeletedLists.mockResolvedValue(lists)
   const wrapper = mount(BansView, { global: { stubs } })
   await flush()
   await wrapper.vm.$nextTick()
@@ -114,10 +114,10 @@ beforeEach(() => {
   // across tests, which is invisible until an assertion counts calls rather than
   // just checking one happened -- and then it fails somewhere unrelated to the
   // change that added the assertion.
-  restoreHousehold.mockClear()
+  restoreList.mockClear()
   unbanUser.mockClear()
   fetchBannedUsers.mockClear()
-  fetchDeletedHouseholds.mockClear()
+  fetchDeletedLists.mockClear()
 })
 
 describe('BansView', () => {
@@ -125,7 +125,7 @@ describe('BansView', () => {
     // The rule TablePager follows: not knowing yet and knowing there is nothing
     // are different answers, and only one is worth reporting.
     fetchBannedUsers.mockReturnValue(new Promise(() => {}))
-    fetchDeletedHouseholds.mockReturnValue(new Promise(() => {}))
+    fetchDeletedLists.mockReturnValue(new Promise(() => {}))
     const wrapper = mount(BansView, { global: { stubs } })
     await wrapper.vm.$nextTick()
 
@@ -140,9 +140,9 @@ describe('BansView', () => {
     wrapper.unmount()
   })
 
-  it('says the household list is empty once switched to it', async () => {
+  it('says the withdrawn list is empty once switched to it', async () => {
     const wrapper = await mounted([], [])
-    await choose(wrapper, 'households')
+    await choose(wrapper, 'lists')
 
     expect(wrapper.find('.state').text()).toContain('Nothing withdrawn')
     wrapper.unmount()
@@ -151,7 +151,7 @@ describe('BansView', () => {
   it('opens on people, and shows only that list', async () => {
     // The whole point of the toggle: the list you did not ask for contributes
     // no rows to the page.
-    const wrapper = await mounted([banned], [household])
+    const wrapper = await mounted([banned], [list])
 
     expect(wrapper.text()).toContain('Pip the Plain')
     expect(wrapper.text()).not.toContain('The Smiths')
@@ -159,8 +159,8 @@ describe('BansView', () => {
   })
 
   it('swaps one list for the other rather than adding to it', async () => {
-    const wrapper = await mounted([banned], [household])
-    await choose(wrapper, 'households')
+    const wrapper = await mounted([banned], [list])
+    await choose(wrapper, 'lists')
 
     expect(wrapper.text()).toContain('The Smiths')
     expect(wrapper.text()).not.toContain('Pip the Plain')
@@ -191,7 +191,7 @@ describe('BansView', () => {
   it('names the account in the confirmation rather than asking abstractly', async () => {
     // "Lift this ban?" is answerable without knowing whose, which is how the
     // wrong one gets lifted. Same reasoning as ConfirmDialog's own.
-    const wrapper = await mounted([banned], [household])
+    const wrapper = await mounted([banned], [list])
 
     await wrapper.find('.u-btn').trigger('click')
     expect(wrapper.find('.dialog').text()).toContain('Pip the Plain')
@@ -199,23 +199,23 @@ describe('BansView', () => {
     wrapper.unmount()
   })
 
-  it('makes the withdrawn household reachable from the row offering to restore it', async () => {
+  it('makes the withdrawn list reachable from the row offering to restore it', async () => {
     // A restore is decided by looking at what is inside, and this row is the
-    // only place a withdrawn household is listed. The link used to land on
-    // "No such household" because admin_household_facts filtered the row out
+    // only place a withdrawn list is listed. The link used to land on
+    // "No such list" because admin_list_facts filtered the row out
     // for every caller, including the detail RPC.
-    const wrapper = await mounted([banned], [household])
-    await choose(wrapper, 'households')
+    const wrapper = await mounted([banned], [list])
+    await choose(wrapper, 'lists')
 
     const link = wrapper.find('.row a')
-    expect(link.attributes('href')).toBe('/households/h-1')
+    expect(link.attributes('href')).toBe('/lists/h-1')
     expect(link.text()).toContain('The Smiths')
     wrapper.unmount()
   })
 
-  it('names the household in the confirmation, and offers to restore rather than to lift', async () => {
-    const wrapper = await mounted([banned], [household])
-    await choose(wrapper, 'households')
+  it('names the list in the confirmation, and offers to restore rather than to lift', async () => {
+    const wrapper = await mounted([banned], [list])
+    await choose(wrapper, 'lists')
 
     await wrapper.find('.u-btn').trigger('click')
     expect(wrapper.find('.dialog').text()).toContain('The Smiths')
@@ -224,26 +224,26 @@ describe('BansView', () => {
   })
 
   it('lifts the ban on the account whose row was pressed, and nothing else', async () => {
-    const wrapper = await mounted([banned], [household])
+    const wrapper = await mounted([banned], [list])
 
     await wrapper.find('.u-btn').trigger('click')
     await wrapper.find('.dialog__go').trigger('click')
     await flush()
 
     expect(unbanUser).toHaveBeenCalledWith('user_abc', expect.anything())
-    expect(restoreHousehold).not.toHaveBeenCalled()
+    expect(restoreList).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  it('restores the household whose row was pressed, and nothing else', async () => {
-    const wrapper = await mounted([banned], [household])
-    await choose(wrapper, 'households')
+  it('restores the list whose row was pressed, and nothing else', async () => {
+    const wrapper = await mounted([banned], [list])
+    await choose(wrapper, 'lists')
 
     await wrapper.find('.u-btn').trigger('click')
     await wrapper.find('.dialog__go').trigger('click')
     await flush()
 
-    expect(restoreHousehold).toHaveBeenCalledWith('h-1', expect.anything())
+    expect(restoreList).toHaveBeenCalledWith('h-1', expect.anything())
     expect(unbanUser).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -251,17 +251,17 @@ describe('BansView', () => {
   it('refetches the list it changed, so the reversed row leaves it', async () => {
     // A reversal that does not reissue its own query leaves the row it just
     // undid sitting on screen, which reads as the action having failed.
-    const wrapper = await mounted([banned], [household])
+    const wrapper = await mounted([banned], [list])
 
     fetchBannedUsers.mockClear()
-    fetchDeletedHouseholds.mockClear()
+    fetchDeletedLists.mockClear()
 
     await wrapper.find('.u-btn').trigger('click')
     await wrapper.find('.dialog__go').trigger('click')
     await flush()
 
     expect(fetchBannedUsers).toHaveBeenCalledTimes(1)
-    expect(fetchDeletedHouseholds).not.toHaveBeenCalled()
+    expect(fetchDeletedLists).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -269,19 +269,19 @@ describe('BansView', () => {
     // Both queries used to run on mount so the segments could carry counts.
     // They do not any more, so fetching the hidden list is a round trip for a
     // table nobody is looking at -- and the bigger that list, the worse it is.
-    const wrapper = await mounted([banned], [household])
+    const wrapper = await mounted([banned], [list])
 
     expect(fetchBannedUsers).toHaveBeenCalledTimes(1)
-    expect(fetchDeletedHouseholds).not.toHaveBeenCalled()
+    expect(fetchDeletedLists).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
   it('fetches the other list only once it is asked for', async () => {
-    const wrapper = await mounted([banned], [household])
-    await choose(wrapper, 'households')
+    const wrapper = await mounted([banned], [list])
+    await choose(wrapper, 'lists')
     await flush()
 
-    expect(fetchDeletedHouseholds).toHaveBeenCalledTimes(1)
+    expect(fetchDeletedLists).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
@@ -289,7 +289,7 @@ describe('BansView', () => {
     // Cancel after a failure and press a different row: the fresh dialog must
     // ask its own question, not report the previous row's error.
     unbanUser.mockRejectedValueOnce(new Error('admin_unban_user: boom'))
-    const wrapper = await mounted([banned], [household])
+    const wrapper = await mounted([banned], [list])
 
     await wrapper.find('.u-btn').trigger('click')
     await wrapper.find('.dialog__go').trigger('click')
@@ -304,7 +304,7 @@ describe('BansView', () => {
   })
 
   it('closes the dialog once the reversal goes through', async () => {
-    const wrapper = await mounted([banned], [household])
+    const wrapper = await mounted([banned], [list])
 
     await wrapper.find('.u-btn').trigger('click')
     expect(wrapper.find('.dialog').exists()).toBe(true)

@@ -11,7 +11,7 @@ import { getAppSupabase } from '../supabase'
 // Its request and response shapes are in FamCart's
 // supabase/functions/_shared/services.ts; the types below mirror them.
 //
-// It follows the project switcher like every household read does, because it
+// It follows the project switcher like every list read does, because it
 // is deployed to both app projects and each answers from its own secrets. So a
 // page on famcart-dev can say "not configured" for a service production has.
 

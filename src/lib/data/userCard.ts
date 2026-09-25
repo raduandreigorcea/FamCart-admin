@@ -14,7 +14,7 @@ export interface UserCard {
   id: string
   name: string
   imageUrl: string | null
-  households: number
+  lists: number
   isAdmin: boolean
 }
 
@@ -33,7 +33,7 @@ export function loadUserCard(userId: string): Promise<UserCard | null> {
           id: detail.profile.user_id,
           name: detail.profile.display_name,
           imageUrl: detail.profile.image_url,
-          households: detail.profile.households,
+          lists: detail.profile.lists,
           isAdmin: detail.is_admin,
         }
       : null,

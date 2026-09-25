@@ -75,7 +75,7 @@ describe('product writes', () => {
 
   // The distinction the RPC reads as "leave it alone". A scoped row is edited
   // without the base-weight field on screen at all, so this is the path every
-  // household-row correction takes.
+  // list-row correction takes.
   it('sends a null base weight rather than zero when none was given', async () => {
     resolving()
     await updateProduct('p-1', { name: 'Bread' }, signal())

@@ -47,7 +47,7 @@ const ICONS = [
   // sidebar sections
   'layout-grid',      // Overview
   'users-round',      // Users
-  'house',            // Households
+  'house',            // Lists
   'package-search',   // Products
   'workflow',         // Pipeline
   'search',           // Search, and every search field
@@ -74,7 +74,7 @@ const ICONS = [
   'copy',
   'check',
   'x',
-  'trash-2',          // the delete action on a household, and withdrawn ones
+  'trash-2',          // the delete action on a list, and withdrawn ones
   'square-pen',       // the edit action, once a row's buttons lose their labels
   'ban',              // Bans
   'circle',           // an unmet quality band

@@ -10,7 +10,7 @@ import { CATEGORIES, UNITS } from '../lib/catalogVocab'
 //
 // Separate from ProductFormDialog rather than one dialog with a mode, because
 // the two tables genuinely differ: this one belongs to a catalog assembled from
-// shop listings and the other to a household's own contributions. A single
+// shop listings and the other to a list's own contributions. A single
 // dialog would have been a form where half the fields were conditional on which
 // database it was pointed at, which is the shape that hides a bug.
 //

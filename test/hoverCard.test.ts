@@ -137,7 +137,7 @@ describe('CountryCode', () => {
 
 describe('UserId', () => {
   const detail = {
-    profile: { user_id: 'user_3D7fKKF1I9xyLOo7JxtSKW5N3WE', display_name: 'Radu', image_url: 'https://img/radu.png', households: 2 },
+    profile: { user_id: 'user_3D7fKKF1I9xyLOo7JxtSKW5N3WE', display_name: 'Radu', image_url: 'https://img/radu.png', lists: 2 },
     is_admin: true,
   }
 
@@ -150,7 +150,7 @@ describe('UserId', () => {
     await flushPromises()
     const card = document.querySelector('.hover__card')!
     expect(card.textContent).toContain('Radu')
-    expect(card.textContent).toContain('2 households')
+    expect(card.textContent).toContain('2 lists')
     expect(card.querySelector('img')?.getAttribute('src')).toBe('https://img/radu.png')
     expect(card.querySelector(`a[href="/users/${detail.profile.user_id}"]`)).not.toBeNull()
     wrapper.unmount()

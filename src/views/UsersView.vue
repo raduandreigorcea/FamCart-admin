@@ -39,13 +39,13 @@ const users = useQuery((signal) => fetchUsers(params.value, signal), { watch: [p
 const columns: Column<AdminUserRow>[] = [
   // Nine columns, and the widest header is over the narrowest column, so these
   // were measured rather than guessed: each one is comfortably above what its
-  // header needs at --text-2xs with its sort caret (Households, the tight one,
+  // header needs at --text-2xs with its sort caret (Lists, the tight one,
   // needs 10.1%). They sum to 100 because fixed layout scales the whole set
-  // down when they do not, which is how Households came to overflow by 7px
+  // down when they do not, which is how Lists came to overflow by 7px
   // while claiming 9% of a set that added up to 105.
   { key: 'display_name', label: 'Account', sortable: true, width: '26%' },
   { key: 'user_id', label: 'Clerk id', width: '12%', hideBelow: 1400 },
-  { key: 'households', label: 'Households', numeric: true, sortable: true, width: '11%' },
+  { key: 'lists', label: 'Lists', numeric: true, sortable: true, width: '11%' },
   { key: 'items_added', label: 'Items', numeric: true, sortable: true, width: '7%', title: 'Items ever added to any list' },
   { key: 'items_open', label: 'Open', numeric: true, width: '6%', hideBelow: 1100, title: 'Unchecked items on a list right now' },
   { key: 'purchases', label: 'Bought', numeric: true, sortable: true, width: '8%' },
@@ -124,7 +124,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
               :link="false"
             />
             <StatusPill v-if="row.is_admin" tone="accent" label="Admin" :dot="false" />
-            <StatusPill v-if="Number(row.owned_households) > 0" tone="idle" label="Owner" :dot="false" />
+            <StatusPill v-if="Number(row.owned_lists) > 0" tone="idle" label="Owner" :dot="false" />
           </div>
         </template>
 

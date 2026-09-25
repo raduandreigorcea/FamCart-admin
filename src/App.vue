@@ -126,7 +126,7 @@ watch(activeProject, () => {
   //    the answer decides whether the shell renders at all.
   void checkAdmin()
 
-  // 2. Leave any detail route. A household uuid or a Clerk id from the database
+  // 2. Leave any detail route. A list uuid or a Clerk id from the database
   //    we just left means nothing in the one we arrived at, so the row would
   //    render its not-found state and read as data loss. The list above it is
   //    the same question asked of the new database, so that is where we go.

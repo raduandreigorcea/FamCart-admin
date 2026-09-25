@@ -11,8 +11,8 @@ import StatusPill from '../components/StatusPill.vue'
 import CopyValue from '../components/CopyValue.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { useTableState } from '../lib/useTableState'
-import { fetchHouseholds, isHouseholdSort } from '../lib/data/households'
-import type { AdminHouseholdRow } from '../lib/data/types'
+import { fetchLists, isListSort } from '../lib/data/lists'
+import type { AdminListRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
@@ -20,16 +20,16 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 const router = useRouter()
 
 const { query, sort, dir, offset, limit, params, onSort } = useTableState({
-  isSort: isHouseholdSort,
+  isSort: isListSort,
   sort: 'last_active',
 })
 
-const households = useQuery((signal) => fetchHouseholds(params.value, signal), {
+const lists = useQuery((signal) => fetchLists(params.value, signal), {
   watch: [params],
 })
 
-const columns: Column<AdminHouseholdRow>[] = [
-  { key: 'name', label: 'Household', sortable: true, width: '23%' },
+const columns: Column<AdminListRow>[] = [
+  { key: 'name', label: 'List', sortable: true, width: '23%' },
   { key: 'owner_name', label: 'Owner', width: '16%' },
   { key: 'invite_code', label: 'Invite', width: '11%', hideBelow: 1400 },
   // 9, not 8: "Members" with its sort caret needs a hair over 8% and the header
@@ -43,15 +43,15 @@ const columns: Column<AdminHouseholdRow>[] = [
   { key: 'last_active', label: 'Last active', sortable: true, width: '11%' },
 ]
 
-const rows = computed(() => households.data.value?.rows ?? [])
-const total = computed(() => households.data.value?.total ?? 0)
-const countUnknown = computed(() => households.data.value === null)
+const rows = computed(() => lists.data.value?.rows ?? [])
+const total = computed(() => lists.data.value?.total ?? 0)
+const countUnknown = computed(() => lists.data.value === null)
 const error = computed(() =>
-  households.error.value ? describeError(households.error.value).detail : '',
+  lists.error.value ? describeError(lists.error.value).detail : '',
 )
 
-function open(row: AdminHouseholdRow) {
-  void router.push(`/households/${row.id}`)
+function open(row: AdminListRow) {
+  void router.push(`/lists/${row.id}`)
 }
 
 const DORMANT_DAYS = 30
@@ -64,11 +64,11 @@ function activityTone(lastActive: string): 'good' | 'idle' {
 <template>
   <div class="page">
     <PageHeader
-      title="Households"
+      title="Lists"
       description="Every group on this database, its roster and how much shopping actually happens in it."
-      :fetched-at="households.fetchedAt.value"
-      :busy="households.fetching.value"
-      @refresh="households.refetch"
+      :fetched-at="lists.fetchedAt.value"
+      :busy="lists.fetching.value"
+      @refresh="lists.refetch"
     />
 
     <PanelCard flush>
@@ -76,12 +76,12 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         <FilterBar
           v-model="query"
           placeholder="Search by name, owner or invite code"
-          :busy="households.fetching.value"
+          :busy="lists.fetching.value"
         >
           <template #end>
             <!-- Withheld until it is known: see the note in TablePager. -->
             <span v-if="!countUnknown" class="u-toolbar__count u-num">
-              {{ formatCount(total) }} households
+              {{ formatCount(total) }} lists
             </span>
           </template>
         </FilterBar>
@@ -93,10 +93,10 @@ function activityTone(lastActive: string): 'good' | 'idle' {
         row-key="id"
         :sort="sort"
         :dir="dir"
-        :loading="households.loading.value"
+        :loading="lists.loading.value"
         :error="error"
         clickable
-        empty-title="No households match"
+        empty-title="No lists match"
         empty-message="Clear the search, or check which database the topbar says you are reading."
         @sort="onSort"
         @select="open"
@@ -108,7 +108,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
           </span>
         </template>
 
-        <!-- Not linked: the row itself opens the household, which is where
+        <!-- Not linked: the row itself opens the list, which is where
              somebody scanning this column is going. -->
         <template #cell-owner_name="{ row }">
           <UserChip
@@ -138,7 +138,7 @@ function activityTone(lastActive: string): 'good' | 'idle' {
           :total="total"
           :offset="offset"
           :limit="limit"
-          :loading="households.fetching.value"
+          :loading="lists.fetching.value"
           @go="offset = $event"
         />
       </template>

@@ -6,14 +6,14 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 // same rule in step with the other two.
 //
 // `crumb` feeds the breadcrumb trail in TopBar. A detail view appends the last
-// segment itself through useLeafCrumb(), so the trail can say "Households / The
-// Smiths" rather than "Households / a uuid".
+// segment itself through useLeafCrumb(), so the trail can say "Lists / The
+// Smiths" rather than "Lists / a uuid".
 //
 // `icon` is the same glyph the sidebar draws beside that section, and PageHeader
 // reads it from here rather than taking it as a prop. That is what keeps the
 // mark on a page and the mark in the rail from drifting apart: they are one
 // string, in one table, and a detail route deliberately carries its parent's --
-// a household's page is still a Households page.
+// a list's page is still a Lists page.
 
 const routes: RouteRecordRaw[] = [
   {
@@ -35,16 +35,16 @@ const routes: RouteRecordRaw[] = [
     meta: { crumb: 'Users', icon: 'users-round' },
   },
   {
-    path: '/households',
-    name: 'households',
-    component: () => import('../views/HouseholdsView.vue'),
-    meta: { crumb: 'Households', icon: 'house' },
+    path: '/lists',
+    name: 'lists',
+    component: () => import('../views/ListsView.vue'),
+    meta: { crumb: 'Lists', icon: 'house' },
   },
   {
-    path: '/households/:householdId',
-    name: 'household-detail',
-    component: () => import('../views/HouseholdDetailView.vue'),
-    meta: { crumb: 'Households', icon: 'house' },
+    path: '/lists/:listId',
+    name: 'list-detail',
+    component: () => import('../views/ListDetailView.vue'),
+    meta: { crumb: 'Lists', icon: 'house' },
   },
   {
     path: '/catalog',
@@ -108,12 +108,23 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/ClerkView.vue'),
     meta: { crumb: 'Clerk', icon: 'brand-clerk' },
   },
-  // This page was /trash while it listed only withdrawn households. The name
+  // This page was /trash while it listed only withdrawn lists. The name
   // stopped being true once banned accounts joined them, and a redirect costs
   // one line against a bookmark that would otherwise land on Not found.
   {
     path: '/trash',
     redirect: '/bans',
+  },
+  // /households was this section's path before the rename. A colleague's
+  // bookmark or an open tab still holds it, so it redirects rather than
+  // falling through to Not found.
+  {
+    path: '/households',
+    redirect: '/lists',
+  },
+  {
+    path: '/households/:listId',
+    redirect: (to) => ({ path: `/lists/${to.params.listId}` }),
   },
   // The Catalog section was four tabs reading a Supabase project that was
   // rebuilt from scratch: not one of the RPCs they called survived it, so they

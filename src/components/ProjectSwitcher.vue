@@ -114,7 +114,7 @@ function apply(project: AppProject) {
                 !option.configured
                   ? 'No credentials in .env'
                   : option.kind === 'production'
-                    ? 'Real households, lists and history'
+                    ? 'Real lists and history'
                     : 'The same schema, development data'
               }}
             </span>
@@ -123,7 +123,7 @@ function apply(project: AppProject) {
         </button>
 
         <!-- Said here rather than discovered later. Switching changes every
-             household number on screen and no product number, and that is
+             list number on screen and no product number, and that is
              surprising unless you know the catalog is one shared project. -->
         <p class="menu__note">
           The catalog project is shared and does not switch. Product and pipeline
@@ -135,7 +135,7 @@ function apply(project: AppProject) {
     <ConfirmDialog
       :open="pendingProduction"
       title="Read the production database?"
-      message="Every household, list and purchase you see next belongs to a real person. This dashboard is read-only apart from granting and revoking admin access, so nothing here can change their data, but it can show all of it."
+      message="Every list and purchase you see next belongs to a real person. This dashboard is read-only apart from granting and revoking admin access, so nothing here can change their data, but it can show all of it."
       confirm-label="Switch to production"
       tone="danger"
       @cancel="pendingProduction = false"

@@ -63,7 +63,7 @@ const stubs = {
       <tr v-for="r in rows" :key="r[rowKey]" class="row">
         <td><slot name="cell-name" :row="r" /></td>
         <td><slot name="cell-scope" :row="r" /></td>
-        <td><slot name="cell-household_name" :row="r" /></td>
+        <td><slot name="cell-list_name" :row="r" /></td>
         <td><slot name="cell-actions" :row="r" /></td>
       </tr>
     </tbody></table>`,
@@ -102,8 +102,8 @@ function row(over: Record<string, unknown> = {}) {
     barcode: null,
     source: 'community',
     source_version: null,
-    household_id: 'h-1',
-    household_name: 'The Smiths',
+    list_id: 'h-1',
+    list_name: 'The Smiths',
     contributed_by: 'user_abc',
     contributor_name: 'Pip',
     contributor_image_url: null,
@@ -161,29 +161,29 @@ describe('ContributedView', () => {
     expect(lastScope()).toBe('promoted')
   })
 
-  // The distinction the page exists to draw: a household row is visible to one
-  // household, a promoted row is visible to everybody.
-  it('separates a household row from a promoted one', async () => {
+  // The distinction the page exists to draw: a list row is visible to one
+  // list, a promoted row is visible to everybody.
+  it('separates a list row from a promoted one', async () => {
     const wrapper = await mounted([
-      row({ id: 'p-1', household_id: 'h-1' }),
-      row({ id: 'p-2', household_id: null, household_name: null }),
+      row({ id: 'p-1', list_id: 'h-1' }),
+      row({ id: 'p-2', list_id: null, list_name: null }),
     ])
 
     const pills = wrapper.findAll('.pill').map((p) => p.text())
-    expect(pills).toEqual(['Household', 'Promoted'])
+    expect(pills).toEqual(['List', 'Promoted'])
   })
 
-  // Only a household-scoped row has a household to go to. A promoted row was
+  // Only a list-scoped row has a list to go to. A promoted row was
   // collapsed out of several and belongs to none of them.
-  it('links a household row back to its household and a promoted row nowhere', async () => {
+  it('links a list row back to its list and a promoted row nowhere', async () => {
     const wrapper = await mounted([
-      row({ id: 'p-1', household_id: 'h-1' }),
-      row({ id: 'p-2', household_id: null, household_name: null }),
+      row({ id: 'p-1', list_id: 'h-1' }),
+      row({ id: 'p-2', list_id: null, list_name: null }),
     ])
 
     const links = wrapper.findAll('.link')
     expect(links).toHaveLength(1)
-    expect(links[0].attributes('href')).toBe('/households/h-1')
+    expect(links[0].attributes('href')).toBe('/lists/h-1')
   })
 
   it('returns to the first page when the scope changes', async () => {

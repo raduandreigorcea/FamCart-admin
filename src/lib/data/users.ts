@@ -15,8 +15,8 @@ export interface UserDetail {
     profile_updated_at: string
     /** Set means the app refuses this account. Comes from admin_user_facts. */
     banned_at: string | null
-    households: number
-    owned_households: number
+    lists: number
+    owned_lists: number
     moderator_of: number
     items_added: number
     items_open: number
@@ -43,7 +43,7 @@ export interface UserDetail {
     by_image_url: string | null
     at: string
   } | null
-  households: {
+  lists: {
     id: string
     name: string
     emoji: string | null
@@ -53,11 +53,11 @@ export interface UserDetail {
     members: number
     items_open: number
     /**
-     * Set means an admin withdrew this household. The row stays in this list
-     * while the profile's `households` count leaves it out, and the two
-     * disagree on purpose: counting a household nobody can open sends whoever
-     * reads the number to a not-found page, and dropping the row would take
-     * away the only route to it from the person it belonged to.
+     * Set means an admin withdrew this list. The row stays here while the
+     * profile's `lists` count leaves it out, and the two disagree on
+     * purpose: counting a list nobody can open sends whoever reads the
+     * number to a not-found page, and dropping the row would take away the
+     * only route to it from the person it belonged to.
      */
     deleted_at: string | null
   }[]
@@ -71,7 +71,7 @@ export interface UserDetail {
   recent_events: {
     created_at: string
     kind: string
-    household_id: string | null
+    list_id: string | null
     detail: Record<string, unknown>
   }[]
 }
@@ -79,7 +79,7 @@ export interface UserDetail {
 /** Columns the list may be sorted by. Mirrors the CASE arms in admin_list_users. */
 export const USER_SORTS = [
   'display_name',
-  'households',
+  'lists',
   'items_added',
   'purchases',
   'first_seen',
@@ -203,7 +203,7 @@ export interface BannedUserRow {
   image_url: string | null
   banned_at: string
   /** From admin_user_facts, so it is the number the Users list shows for them. */
-  households: number
+  lists: number
   /**
    * Why, and who by -- both read out of the audit trail rather than off the
    * profile, because that is the only place admin_ban_user records them.
