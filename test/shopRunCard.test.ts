@@ -62,4 +62,17 @@ describe('ShopRunCard', () => {
     expect(wrapper.text()).toBe('')
     expect(wrapper.findAll('.u-skeleton').length).toBeGreaterThan(0)
   })
+
+  it('is a link to its run when given one, the whole card the target', () => {
+    const wrapper = mount(ShopRunCard, {
+      props: { name: 'lidl', tone: 'good', label: 'Completed', count: '412', to: '/scrapers/run-1' },
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a class="shop__link" :href="to"><slot /></a>' } } },
+    })
+    expect(wrapper.find('a.shop__link').attributes('href')).toBe('/scrapers/run-1')
+    expect(wrapper.find('a.shop__link').text()).toContain('lidl')
+  })
+
+  it('is no link without one', () => {
+    expect(card().find('a').exists()).toBe(false)
+  })
 })

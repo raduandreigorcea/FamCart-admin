@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import PanelCard from '../components/PanelCard.vue'
 import ShopRunCard from '../components/ShopRunCard.vue'
@@ -95,7 +95,11 @@ const history = computed(() => runs.data.value ?? [])
 // A link can name the country and a run -- the Health banner's "Lidl BE failed"
 // is /scrapers?country=BE&run=<id> -- and the page opens there with that run
 // marked. A country with no runs is dropped by the watch below, like any other.
+//
+// A card or a history row opens the run's own page, /scrapers/:runId
+// (ScrapeRunView), where everything the row has no room for is read.
 const route = useRoute()
+const router = useRouter()
 const queryText = (value: unknown): string | null => (typeof value === 'string' && value ? value : null)
 const country = ref<string>(queryText(route.query.country)?.toUpperCase() ?? ALL_COUNTRIES)
 const focusRun = computed(() => queryText(route.query.run))
@@ -385,6 +389,7 @@ function asRun(row: unknown): ScrapeRunRow {
           :id="`run-${shop.id}`"
           :key="shop.id"
           :class="{ 'shop--focus': shop.id === focusRun }"
+          :to="`/scrapers/${shop.id}`"
           v-bind="shop.props"
         />
       </ul>
@@ -395,6 +400,8 @@ function asRun(row: unknown): ScrapeRunRow {
           :rows="split.history"
           :selected-key="focusRun"
           row-key="id"
+          clickable
+          @select="(row: unknown) => router.push(`/scrapers/${asRun(row).id}`)"
           :loading="runs.loading.value"
           :error="loadError"
           empty-title="Nothing older than the cards"

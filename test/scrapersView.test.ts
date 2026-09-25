@@ -17,12 +17,15 @@ const state = vi.hoisted(() => ({
   fetches: 0,
   stats: null as unknown,
   query: {} as Record<string, string>,
+  push: vi.fn(),
 }))
 
 // The page reads ?country= and ?run= from the route: the Health banner links
 // straight to a shop's run.
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: state.query }),
+  useRouter: () => ({ push: state.push }),
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
 
 vi.mock('../src/lib/data/catalog', async (importOriginal) => ({
@@ -46,7 +49,11 @@ const stubs = {
   PanelCard: { props: ['title'], template: '<section>{{ title }}<slot /></section>' },
   StateBlock: { props: ['title', 'message'], template: '<div class="state">{{ title }} {{ message }}</div>' },
   StatusPill: { props: ['label'], template: '<span class="pill">{{ label }}</span>' },
-  DataTable: { props: ['rows'], template: '<table class="history" :data-rows="rows.length" />' },
+  DataTable: {
+    props: ['rows'],
+    emits: ['select'],
+    template: `<table class="history" :data-rows="rows.length" @click="$emit('select', rows[0])" />`,
+  },
   AppIcon: { props: ['name'], template: '<i />' },
 }
 
@@ -517,5 +524,20 @@ describe('the scrapers page', () => {
     const wrapper = await mountPage()
     expect(wrapper.find('.state').exists()).toBe(true)
     expect(state.fetches).toBe(0)
+  })
+
+  it('links every card to its run', async () => {
+    state.runs = [run({ id: 'run-a' })]
+    const wrapper = mount(ScrapersView, { global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('a[href="/scrapers/run-a"]').exists()).toBe(true)
+  })
+
+  it('opens a history row on its own page', async () => {
+    state.runs = Array.from({ length: 7 }, (_, i) => run({ id: `run-${i}`, started_at: `2026-09-1${i}T01:00:00Z` }))
+    const wrapper = mount(ScrapersView, { global: { stubs } })
+    await flushPromises()
+    await wrapper.find('table.history').trigger('click')
+    expect(state.push).toHaveBeenCalledWith(expect.stringMatching(/^\/scrapers\/run-/))
   })
 })

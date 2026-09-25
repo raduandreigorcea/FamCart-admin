@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, type PropType } from 'vue'
+import { RouterLink } from 'vue-router'
 import StatusPill from './StatusPill.vue'
 import CountryCode from './CountryCode.vue'
 import AppIcon from './AppIcon.vue'
@@ -81,6 +82,8 @@ const props = defineProps({
   kind: { type: String, default: '' },
   /** Draws the card's shape with nothing in it. */
   loading: { type: Boolean, default: false },
+  /** The run's own page. The name becomes the link and the whole card its target. */
+  to: { type: String, default: '' },
 })
 
 const percent = computed(() =>
@@ -110,8 +113,10 @@ const percent = computed(() =>
   >
     <div class="shop__head">
       <h4 class="shop__name">
-        {{ name }}
-        <CountryCode v-if="country" :code="country" :note="countryNote" />
+        <!-- One line, and the space spelled out: between two elements the
+             template compiler drops a newline, and the name ran into its
+             country ("LidlRO"). -->
+        <RouterLink v-if="to" :to="to" class="shop__link">{{ name }}</RouterLink><template v-else>{{ name }}</template>{{ ' ' }}<CountryCode v-if="country" :code="country" :note="countryNote" />
         <span v-if="kind" class="shop__kind">{{ kind }}</span>
       </h4>
       <StatusPill :tone="tone" :label="label" :busy="running" />
@@ -204,6 +209,45 @@ const percent = computed(() =>
      turns up in a five-wide row on a laptop and a two-wide one on a narrowed
      window, and only the card knows which. See the @container rules below. */
   container-type: inline-size;
+}
+
+/* One real link, on the name, stretched over the card by ::after. Not a card
+   wrapped in <a>: the card holds a hover card (the country) and a list, and an
+   <a> around those is invalid and reads as one enormous link to a screen
+   reader. The position: relative is what the ::after measures against. */
+.shop {
+  position: relative;
+}
+
+.shop__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.shop__link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.shop__link:focus-visible {
+  outline: none;
+}
+
+.shop:has(.shop__link:focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.shop:has(.shop__link):hover {
+  border-color: var(--color-primary);
+}
+
+/* The country's hover card stays reachable above the stretched link. */
+.shop__name :deep(.hover) {
+  position: relative;
+  z-index: 1;
 }
 
 .shop--good { --edge: var(--status-good); --tint: var(--status-good-bg); --ink: var(--status-good); }
