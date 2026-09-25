@@ -44,7 +44,7 @@ const profile = computed(() => detail.data.value?.profile ?? null)
 // Not a delete. Deleting a profile row does not stick: the app upserts one on
 // every boot, so it returns the moment this person opens FamCart. The ban flag
 // is what those upserts refuse. Their memberships are deliberately untouched --
-// ownership is a membership row, so removing them would strip a household of
+// ownership is a membership row, so removing them would strip a list of
 // its admin.
 const banned = computed(() => Boolean(profile.value?.banned_at))
 const ban = computed(() => detail.data.value?.ban ?? null)
@@ -84,12 +84,12 @@ const topProducts = computed(() =>
 
 const errorInfo = computed(() => describeError(detail.error.value))
 
-// Memberships, and how many of them point at a household an admin withdrew.
+// Memberships, and how many of them point at a list an admin withdrew.
 //
 // The panel counts every membership because it lists every membership. The
-// "Households" tile above counts only the live ones, and this note is what
+// "Lists" tile above counts only the live ones, and this note is what
 // reconciles the two for whoever notices they disagree.
-const memberships = computed(() => detail.data.value?.households ?? [])
+const memberships = computed(() => detail.data.value?.lists ?? [])
 const withdrawnCount = computed(() => memberships.value.filter((h) => h.deleted_at).length)
 
 const membershipNote = computed(() => {
@@ -215,10 +215,10 @@ const membershipNote = computed(() => {
 
       <div class="grid">
         <div class="span-2">
-          <StatTile label="Households" :value="profile.households" hint="Memberships" />
+          <StatTile label="Lists" :value="profile.lists" hint="Memberships" />
         </div>
         <div class="span-2">
-          <StatTile label="Owns" :value="profile.owned_households" hint="Households created" />
+          <StatTile label="Owns" :value="profile.owned_lists" hint="Lists created" />
         </div>
         <div class="span-2">
           <StatTile label="Moderator of" :value="profile.moderator_of" hint="Elevated rank" />
@@ -236,25 +236,25 @@ const membershipNote = computed(() => {
 
       <div class="grid">
         <div class="span-6">
-          <PanelCard title="Households" :note="membershipNote" fill flush>
+          <PanelCard title="Lists" :note="membershipNote" fill flush>
             <StateBlock
               v-if="!memberships.length"
               state="empty"
-              title="In no household"
-              message="This account has signed in but has not created or joined a household."
+              title="In no list"
+              message="This account has signed in but has not created or joined a list."
               compact
             />
             <ul v-else class="hh">
               <li v-for="hh in memberships" :key="hh.id" class="hh__row">
-                <RouterLink :to="`/households/${hh.id}`" class="hh__link">
+                <RouterLink :to="`/lists/${hh.id}`" class="hh__link">
                   <span class="hh__emoji" aria-hidden="true">{{ hh.emoji || '🏠' }}</span>
                   <span class="hh__name u-truncate">{{ hh.name }}</span>
-                  <!-- The Bans section's own glyph, so a withdrawn household
+                  <!-- The Bans section's own glyph, so a withdrawn list
                        carries the mark of the page that can put it back. It
                        goes AFTER the name rather than in front of it: leading
                        the row with a second mark would indent the withdrawn
                        names out of line with every other name in the list.
-                       The row stays a link, because looking at the household is
+                       The row stays a link, because looking at the list is
                        how an operator decides whether to restore it. -->
                   <AppIcon
                     v-if="hh.deleted_at"
@@ -390,7 +390,7 @@ const membershipNote = computed(() => {
         ? `Lift the suspension on ${profile?.display_name ?? 'this account'}?`
         : `Suspend ${profile?.display_name ?? 'this account'}?`"
       :message="banned
-        ? 'They can use FamCart again. Their memberships were never removed, so they return to the households they were already in.'
+        ? 'They can use FamCart again. Their memberships were never removed, so they return to the lists they were already in.'
         : 'FamCart refuses them at sign-in. Nothing is deleted and their memberships are left alone, so lifting this puts them straight back.'"
       :confirm-label="banned ? 'Lift suspension' : 'Suspend'"
       tone="danger"

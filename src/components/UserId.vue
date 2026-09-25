@@ -7,7 +7,7 @@ import { loadUserCard, type UserCard } from '../lib/data/userCard'
 import { formatCount, shortUserId } from '../lib/format'
 
 // A Clerk id, with the person behind it on hover: their photo, their name, how
-// many households they are in, and a way to their page.
+// many lists they are in, and a way to their page.
 //
 // `user_3D7fKKF1I9xyLOo7JxtSKW5N3WE` is not somebody a reader recognises. Where
 // a row already names the person this only confirms it; where it does not --
@@ -50,7 +50,7 @@ async function load() {
         <div class="person__text">
           <p class="person__name">{{ person.name }}</p>
           <p class="person__meta">
-            {{ formatCount(person.households) }} {{ person.households === 1 ? 'household' : 'households' }}
+            {{ formatCount(person.lists) }} {{ person.lists === 1 ? 'list' : 'lists' }}
             <template v-if="person.isAdmin"> · admin</template>
           </p>
           <RouterLink :to="to" class="person__link">Open profile</RouterLink>

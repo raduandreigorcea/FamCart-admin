@@ -5,7 +5,7 @@ import type { Bar } from '../lib/uiTypes'
 // Magnitude across a small number of named things, drawn horizontally.
 //
 // Horizontal rather than vertical, deliberately: every use of this chart here
-// has a text category (a source, a run version, a household size band) and
+// has a text category (a source, a run version, a list size band) and
 // horizontal bars give a label the width to be read without rotating it. A
 // rotated axis label is a chart asking the reader to tilt their head.
 //

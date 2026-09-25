@@ -35,11 +35,11 @@ const { user } = useUser()
 
 /**
  * Where a crumb goes when you click it: the route's own path, with any
- * parameterised tail cut off. `/households/:householdId` points at
- * `/households`, which is the list the detail page came from.
+ * parameterised tail cut off. `/lists/:listId` points at
+ * `/lists`, which is the list the detail page came from.
  *
  * The parameterised routes used to resolve to '' here, so on a detail page the
- * "Households" crumb rendered as inert text -- the one control on the screen
+ * "Lists" crumb rendered as inert text -- the one control on the screen
  * that looks exactly like the way back and was not it. The catch-all route is
  * `/:pathMatch(.*)*`, whose tail starts at index 0, so it still yields '' and
  * still renders as text: Not found has no list to go back to.
@@ -50,7 +50,7 @@ function listPathOf(path: string): string {
 }
 
 // Breadcrumbs from the matched route records rather than from the URL, so a
-// detail page can say "Households / The Smiths" and not "households / a uuid".
+// detail page can say "Lists / The Smiths" and not "lists / a uuid".
 const crumbs = computed(() => {
   const trail = route.matched
     .filter((record) => record.meta?.crumb)
@@ -157,7 +157,7 @@ async function requestSignOut() {
 
     <button type="button" class="topbar__search" @click="emit('search')">
       <AppIcon name="search" :size="14" />
-      <span class="topbar__search-label">Search users, households, products</span>
+      <span class="topbar__search-label">Search users, lists, products</span>
       <kbd class="topbar__kbd">{{ searchHint }}</kbd>
     </button>
 

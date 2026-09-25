@@ -144,7 +144,7 @@ describe('table column widths', () => {
   it('sums to exactly 100% per table', () => {
     // Over 100 and the browser scales every column down to fit, so each one
     // silently gets less than it asked for -- Users summed to 105 and its
-    // Households header, the longest word in the narrowest column, overflowed
+    // Lists header, the longest word in the narrowest column, overflowed
     // by 7px. Under 100 and the slack is shared out to nobody's plan. Either
     // way the numbers stop describing the layout, which is the only reason to
     // write them.

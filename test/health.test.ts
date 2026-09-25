@@ -55,6 +55,6 @@ describe('severityOf', () => {
     // in an error count.
     expect(severityOf('invite_join_succeeded')).toBe('info')
     expect(severityOf('admin_granted')).toBe('info')
-    expect(severityOf('household_created')).toBe('info')
+    expect(severityOf('list_created')).toBe('info')
   })
 })

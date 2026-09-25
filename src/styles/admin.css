@@ -352,7 +352,7 @@ body {
 /* An inline box cannot be clipped, so `overflow: hidden` on one does nothing and
    the text simply runs on into the next column. Every span that wears
    .u-truncate is already a block or a flex item; the two links are not, and a
-   household called ".Radu si Cristina <3" was painting 17px past its cell.
+   list called ".Radu si Cristina <3" was painting 17px past its cell.
    Qualified by the element so the two dozen spans are left exactly as they are. */
 a.u-truncate {
   display: block;
@@ -528,8 +528,8 @@ a.u-truncate {
   cursor: not-allowed;
 }
 
-/* Destructive only. Suspending an account and deleting a household wear this;
- * lifting a suspension and restoring a household do not, because putting things
+/* Destructive only. Suspending an account and deleting a list wear this;
+ * lifting a suspension and restoring a list do not, because putting things
  * back is not the thing to hesitate over. */
 .u-btn--danger {
   border-color: var(--danger-border);

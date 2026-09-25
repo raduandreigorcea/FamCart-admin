@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 import { fetchUsers } from '../lib/data/users'
-import { fetchHouseholds } from '../lib/data/households'
+import { fetchLists } from '../lib/data/lists'
 import { fetchContributedProducts } from '../lib/data/contributed'
 import UserAvatar from './UserAvatar.vue'
 import { shortUserId } from '../lib/format'
@@ -30,12 +30,12 @@ const activeIndex = ref(0)
 
 interface Hit {
   id: string
-  group: 'Users' | 'Households' | 'Contributed'
+  group: 'Users' | 'Lists' | 'Contributed'
   title: string
   subtitle: string
   to: string
   /**
-   * The account this hit is about, where it is about one. Households and
+   * The account this hit is about, where it is about one. Lists and
    * catalog rows leave both null and the row renders without a face, which is
    * right: neither of them is a person.
    */
@@ -88,19 +88,19 @@ async function run(term: string) {
         id: `u-${row.user_id}`,
         group: 'Users' as const,
         title: row.display_name,
-        subtitle: `${shortUserId(row.user_id)} · ${row.households} household${row.households === 1 ? '' : 's'}`,
+        subtitle: `${shortUserId(row.user_id)} · ${row.lists} list${row.lists === 1 ? '' : 's'}`,
         to: `/users/${encodeURIComponent(row.user_id)}`,
         userId: row.user_id,
         imageUrl: row.image_url,
       })),
     ),
-    fetchHouseholds({ query: trimmed, limit: 5 }, signal).then((page) =>
+    fetchLists({ query: trimmed, limit: 5 }, signal).then((page) =>
       page.rows.map((row) => ({
         id: `h-${row.id}`,
-        group: 'Households' as const,
+        group: 'Lists' as const,
         title: `${row.emoji ? `${row.emoji} ` : ''}${row.name}`,
         subtitle: `${row.members} member${row.members === 1 ? '' : 's'} · ${row.invite_code}`,
-        to: `/households/${row.id}`,
+        to: `/lists/${row.id}`,
       })),
     ),
   ]
@@ -112,18 +112,18 @@ async function run(term: string) {
   // users it can search these.
   //
   // There is no detail page for a contributed product, so a hit leads to the
-  // household that added it, which is where anything you would do about it
-  // happens. A promoted row belongs to no household and leads to the list.
+  // list that added it, which is where anything you would do about it
+  // happens. A promoted row belongs to no list and leads to Contributed instead.
   tasks.push(
     fetchContributedProducts({ query: trimmed, limit: 6 }, signal).then((page) =>
       page.rows.map((row) => ({
         id: `p-${row.id}`,
         group: 'Contributed' as const,
         title: row.name,
-        subtitle: [row.maker, row.barcode, row.household_name ?? 'Promoted']
+        subtitle: [row.maker, row.barcode, row.list_name ?? 'Promoted']
           .filter(Boolean)
           .join(' · '),
-        to: row.household_id ? `/households/${row.household_id}` : '/contributed',
+        to: row.list_id ? `/lists/${row.list_id}` : '/contributed',
       })),
     ),
   )
@@ -171,7 +171,7 @@ watch(
 onBeforeUnmount(cancel)
 
 const grouped = computed(() => {
-  const order: Hit['group'][] = ['Users', 'Households', 'Contributed']
+  const order: Hit['group'][] = ['Users', 'Lists', 'Contributed']
   return order
     .map((group) => ({ group, rows: hits.value.filter((h) => h.group === group) }))
     .filter((g) => g.rows.length > 0)
@@ -206,7 +206,7 @@ function choose(hit?: Hit) {
           v-model="query"
           class="palette__input"
           type="text"
-          placeholder="Search users, households and catalog products"
+          placeholder="Search users, lists and catalog products"
           autocomplete="off"
           spellcheck="false"
           @keydown.down.prevent="move(1)"
@@ -378,7 +378,7 @@ function choose(hit?: Hit) {
 }
 
 /* A person's hit carries their face, which means two rows of text beside one
-   square rather than a stack. Only a person's: households and catalog rows have
+   square rather than a stack. Only a person's: lists and catalog rows have
    no face, and giving them the same empty column would indent their titles past
    nothing. */
 .palette__hit--person {

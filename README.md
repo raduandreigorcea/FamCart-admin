@@ -1,12 +1,12 @@
 # FamCart Admin
 
-An internal desktop dashboard over FamCart's households, catalog and ingestion
+An internal desktop dashboard over FamCart's lists, catalog and ingestion
 pipeline. One reader, one screen size, no public audience.
 
 ## What it is for
 
 Answering questions about live data that the app itself cannot answer, because
-the app deliberately shows each household only its own rows: how many households
+the app deliberately shows each list only its own rows: how many lists
 exist and how active they are, which accounts contribute products, what the
 imported catalog actually contains, whether the three Supabase projects are
 answering, and what the audit trail recorded.
@@ -17,7 +17,7 @@ guarded RPC, and there are seven:
 | Write | Where | Reversible |
 |---|---|---|
 | Grant and revoke admin access | Access | yes, by the opposite action |
-| Delete and restore a household | Household detail, Trash | yes, soft delete |
+| Delete and restore a list | List detail, Trash | yes, soft delete |
 | Ban and unban an account | User detail | yes, by the opposite action |
 | Record, clear or bulk-approve a review verdict | Review | yes, and unconfirmed for that reason |
 | Start or cancel a pipeline run | Pipeline | the request is; what a stage writes is not |
@@ -29,7 +29,7 @@ The bulk approve is confirmed, because that one is not row-by-row reversible.
 
 ## What enforces the rules
 
-Not this bundle. Every cross-household read goes through a `security definer`
+Not this bundle. Every cross-list read goes through a `security definer`
 RPC in FamCart's `008_admin.sql`, and each one calls `admin_guard()` before it
 returns a row. The gate in `App.vue` decides what to *render*; the database
 decides what to *answer*. An account that is not in `public.admin_users` gets a

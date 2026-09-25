@@ -23,7 +23,7 @@ import type { Page, PageParams } from './types'
 // functions in 006_admin.sql are the entire surface.
 //
 // A WRITE HERE IS HEAVIER THAN A WRITE TO THE APP DATABASE. Deleting removes the
-// product for every household of both projects immediately, along with its
+// product for every list of both projects immediately, along with its
 // barcodes and every retailer's listing of it, all of which cascade -- though
 // unlike before, the next scrape will simply put it back, which is usually the
 // right answer to "this row is wrong". The view says so at the point of asking.
@@ -102,7 +102,7 @@ export interface CatalogFilters {
   hasListing?: boolean | null
   /** true: at least one shop has it in stock right now. */
   available?: boolean | null
-  /** true: households have added it. false: no one has, whatever the shops say. */
+  /** true: lists have added it. false: no one has, whatever the shops say. */
   earned?: boolean | null
   /**
    * A window rather than an instant, and resolved to a timestamp at request

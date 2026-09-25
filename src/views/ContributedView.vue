@@ -26,7 +26,7 @@ import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 import type { LocalProductRow } from '../lib/data/types'
 import type { Column } from '../lib/uiTypes'
 
-// What households typed for themselves, and what got promoted out of it.
+// What lists typed for themselves, and what got promoted out of it.
 //
 // This page replaced a four-tab Catalog section that read a Supabase project
 // which no longer has any of the RPCs it called. See lib/data/contributed.ts for
@@ -72,7 +72,7 @@ const columns: Column<LocalProductRow>[] = [
   { key: 'maker', label: 'Brand', width: '10%' },
   { key: 'barcode', label: 'Barcode / GTIN', width: '11%', hideBelow: 1100 },
   { key: 'scope', label: 'Scope', width: '9%' },
-  { key: 'household_name', label: 'Household', width: '10%' },
+  { key: 'list_name', label: 'List', width: '10%' },
   { key: 'contributor_name', label: 'Contributed by', width: '10%', hideBelow: 1400 },
   { key: 'add_count', label: 'Adds', numeric: true, width: '6%' },
   { key: 'created_at', label: 'Added', width: '8%', hideBelow: 1100 },
@@ -168,9 +168,9 @@ const SEGMENTS = [
   { value: 'all', label: 'All' },
   {
     value: 'community',
-    label: 'Household-scoped',
+    label: 'List-scoped',
     title:
-      'Contributed by one household and visible only to it. Still short of the three households and three accounts a promotion needs.',
+      'Contributed by one list and visible only to it. Still short of the three lists and three accounts a promotion needs.',
   },
   {
     value: 'promoted',
@@ -185,7 +185,7 @@ const SEGMENTS = [
   <div class="page">
     <PageHeader
       title="Contributed"
-      description="Products a household added itself, and the ones enough households asked for that everybody now sees them."
+      description="Products a list added itself, and the ones enough lists asked for that everybody now sees them."
       :fetched-at="products.fetchedAt.value"
       :busy="products.fetching.value"
       @refresh="products.refetch()"
@@ -241,27 +241,27 @@ const SEGMENTS = [
           <CopyValue v-if="row.barcode" :value="String(row.barcode)" label="barcode" />
           <span v-else class="u-muted">--</span>
         </template>
-        <!-- Household-scoped or global, which is the whole point of the page:
+        <!-- List-scoped or global, which is the whole point of the page:
              a promoted row is one everybody can see. -->
         <template #cell-scope="{ row }">
           <StatusPill
-            :tone="row.household_id ? 'idle' : 'good'"
-            :label="row.household_id ? 'Household' : 'Promoted'"
+            :tone="row.list_id ? 'idle' : 'good'"
+            :label="row.list_id ? 'List' : 'Promoted'"
             :dot="false"
             :title="
-              row.household_id
-                ? 'Visible only to the contributing household'
-                : 'Global in this database: three distinct households asked for it'
+              row.list_id
+                ? 'Visible only to the contributing list'
+                : 'Global in this database: three distinct lists asked for it'
             "
           />
         </template>
-        <template #cell-household_name="{ row }">
+        <template #cell-list_name="{ row }">
           <RouterLink
-            v-if="row.household_id"
-            :to="`/households/${row.household_id}`"
+            v-if="row.list_id"
+            :to="`/lists/${row.list_id}`"
             class="link u-truncate"
           >
-            {{ row.household_name || 'Unknown' }}
+            {{ row.list_name || 'Unknown' }}
           </RouterLink>
           <span v-else class="u-muted">--</span>
         </template>
@@ -333,8 +333,8 @@ const SEGMENTS = [
       :open="removing !== null"
       :title="`Remove ${removing?.name ?? 'product'}?`"
       :message="
-        removing?.household_id
-          ? 'This is one household\u2019s own row. Removing it takes the suggestion away from them; the items already on their list are plain text and are untouched.'
+        removing?.list_id
+          ? 'This is one list\u2019s own row. Removing it takes the suggestion away from them; the items already on their list are plain text and are untouched.'
           : 'This is a global product, so removing it takes the suggestion away from everyone. Items already on any list are plain text and are untouched.'
       "
       confirm-label="Remove"

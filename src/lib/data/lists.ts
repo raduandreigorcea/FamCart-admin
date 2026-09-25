@@ -1,9 +1,9 @@
 import { getAppSupabase } from '../supabase'
 import { sortGuard } from './types'
-import type { AdminHouseholdRow, Page, PageParams } from './types'
+import type { AdminListRow, Page, PageParams } from './types'
 import { queryError } from './errors'
 
-export const HOUSEHOLD_SORTS = [
+export const LIST_SORTS = [
   'name',
   'members',
   'items_open',
@@ -12,10 +12,10 @@ export const HOUSEHOLD_SORTS = [
   'last_active',
 ] as const
 
-export type HouseholdSort = (typeof HOUSEHOLD_SORTS)[number]
+export type ListSort = (typeof LIST_SORTS)[number]
 
-export interface HouseholdDetail {
-  household: {
+export interface ListDetail {
+  list: {
     id: string
     name: string
     emoji: string | null
@@ -33,7 +33,7 @@ export interface HouseholdDetail {
     checkouts: number
     products_added: number
     last_active: string
-    /** Set means an admin withdrew it. It still opens; see admin_household_facts. */
+    /** Set means an admin withdrew it. It still opens; see admin_list_facts. */
     deleted_at: string | null
   }
   members: {
@@ -47,7 +47,11 @@ export interface HouseholdDetail {
     items_added: number
     purchases: number
   }[]
-  list: {
+  // The items on the list. This key was `list` while the entity was called a
+  // household; after the rename that collided with the `list` key above, and
+  // jsonb keeps the last duplicate, so the list object it overwrote silently
+  // vanished. 008_admin.sql moved this key to `items` to fix it.
+  items: {
     id: string
     name: string
     maker: string | null
@@ -88,17 +92,17 @@ export interface HouseholdDetail {
   }[]
 }
 
-export const isHouseholdSort = sortGuard(HOUSEHOLD_SORTS)
+export const isListSort = sortGuard(LIST_SORTS)
 
-export async function fetchHouseholds(
-  params: PageParams<HouseholdSort>,
+export async function fetchLists(
+  params: PageParams<ListSort>,
   signal: AbortSignal,
-): Promise<Page<AdminHouseholdRow>> {
+): Promise<Page<AdminListRow>> {
   const limit = params.limit ?? 25
   const offset = params.offset ?? 0
 
   const { data, error } = await getAppSupabase()
-    .rpc('admin_list_households', {
+    .rpc('admin_lists', {
       p_query: params.query?.trim() || null,
       p_sort: params.sort ?? 'last_active',
       p_dir: params.dir ?? 'desc',
@@ -108,35 +112,35 @@ export async function fetchHouseholds(
     .abortSignal(signal)
 
   if (error) {
-    queryError('admin_list_households', error)
+    queryError('admin_lists', error)
   }
 
-  const rows = (data ?? []) as AdminHouseholdRow[]
+  const rows = (data ?? []) as AdminListRow[]
   return { rows, total: rows[0]?.total_count ?? 0, offset }
 }
 
-export async function fetchHouseholdDetail(
-  householdId: string,
+export async function fetchListDetail(
+  listId: string,
   signal: AbortSignal,
-): Promise<HouseholdDetail | null> {
+): Promise<ListDetail | null> {
   const { data, error } = await getAppSupabase()
-    .rpc('admin_household_detail', { p_household_id: householdId })
+    .rpc('admin_list_detail', { p_list_id: listId })
     .abortSignal(signal)
 
   if (error) {
-    queryError('admin_household_detail', error)
+    queryError('admin_list_detail', error)
   }
-  return (data as HouseholdDetail | null) ?? null
+  return (data as ListDetail | null) ?? null
 }
 
 // ─── deletion, which is a flag and not a delete ──────────────────────────────
 //
-// The RPCs behind these set households.deleted_at and everything inside the
-// household disappears through active_household_ids() in the database. Nothing
+// The RPCs behind these set lists.deleted_at and everything inside the
+// list disappears through active_list_ids() in the database. Nothing
 // is removed, which is what makes the Bans view honest rather than decorative.
 
-/** One row of the Bans view's withdrawn-households table. */
-export interface DeletedHouseholdRow {
+/** One row of the Bans view's withdrawn-lists table. */
+export interface DeletedListRow {
   id: string
   name: string
   emoji: string | null
@@ -146,24 +150,24 @@ export interface DeletedHouseholdRow {
   items_total: number
 }
 
-export async function deleteHousehold(id: string, signal: AbortSignal): Promise<void> {
+export async function deleteList(id: string, signal: AbortSignal): Promise<void> {
   const { error } = await getAppSupabase()
-    .rpc('admin_delete_household', { p_id: id })
+    .rpc('admin_delete_list', { p_id: id })
     .abortSignal(signal)
-  if (error) queryError('admin_delete_household', error)
+  if (error) queryError('admin_delete_list', error)
 }
 
-export async function restoreHousehold(id: string, signal: AbortSignal): Promise<void> {
+export async function restoreList(id: string, signal: AbortSignal): Promise<void> {
   const { error } = await getAppSupabase()
-    .rpc('admin_restore_household', { p_id: id })
+    .rpc('admin_restore_list', { p_id: id })
     .abortSignal(signal)
-  if (error) queryError('admin_restore_household', error)
+  if (error) queryError('admin_restore_list', error)
 }
 
-export async function fetchDeletedHouseholds(signal: AbortSignal): Promise<DeletedHouseholdRow[]> {
+export async function fetchDeletedLists(signal: AbortSignal): Promise<DeletedListRow[]> {
   const { data, error } = await getAppSupabase()
-    .rpc('admin_deleted_households')
+    .rpc('admin_deleted_lists')
     .abortSignal(signal)
-  if (error) queryError('admin_deleted_households', error)
-  return (data ?? []) as DeletedHouseholdRow[]
+  if (error) queryError('admin_deleted_lists', error)
+  return (data ?? []) as DeletedListRow[]
 }

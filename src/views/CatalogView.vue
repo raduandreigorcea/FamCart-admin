@@ -27,7 +27,7 @@ import { retailerLabel } from '../lib/catalogVocab'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 import type { Column } from '../lib/uiTypes'
 
-// The reference catalog. Everything the app can suggest that no household typed.
+// The reference catalog. Everything the app can suggest that no list typed.
 //
 // This is not the Catalog section that was removed. That one called thirteen
 // RPCs the rebuilt project never had, and read a table under a name it no longer
@@ -111,7 +111,7 @@ const chips = computed<{ key: keyof CatalogFilters; label: string }[]>(() => {
   }
   if (f.hasQuantity != null) out.push({ key: 'hasQuantity', label: has('size', f.hasQuantity) })
   if (f.earned != null) {
-    out.push({ key: 'earned', label: f.earned ? 'Added by households' : 'Never added' })
+    out.push({ key: 'earned', label: f.earned ? 'Added by lists' : 'Never added' })
   }
   if (f.addedWithinDays != null) {
     out.push({
@@ -199,7 +199,7 @@ const columns: Column<CatalogProductRow>[] = [
 //
 // So the split instead, which is self-contained per row and is the interesting
 // part anyway: how much of this number was set by hand and how much was earned
-// by households actually adding the thing.
+// by lists actually adding the thing.
 function earned(row: CatalogProductRow): string {
   if (row.add_count === 0) return `${row.listing_count} shop${row.listing_count === 1 ? '' : 's'}`
   return `${row.add_count} earned`
@@ -288,14 +288,14 @@ function confirmRemove() {
 }
 
 // Spelled out rather than summarised. This project is shared live by production
-// and development, so the blast radius of one click here is every household of
+// and development, so the blast radius of one click here is every list of
 // both, and the aliases are how the product is findable in five languages it is
 // not named in.
 const removalMessage = computed(() => {
   const row = removing.value
   if (!row) return ''
   const parts = [
-    'This is the shared reference catalog, so it disappears for every household of production and development at once.',
+    'This is the shared reference catalog, so it disappears for every list of production and development at once.',
   ]
   if (row.listing_count > 0) {
     parts.push(

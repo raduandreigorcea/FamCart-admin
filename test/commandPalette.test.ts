@@ -20,8 +20,8 @@ function record(signal: AbortSignal) {
 vi.mock('../src/lib/data/users', () => ({
   fetchUsers: (_params: unknown, signal: AbortSignal) => record(signal),
 }))
-vi.mock('../src/lib/data/households', () => ({
-  fetchHouseholds: (_params: unknown, signal: AbortSignal) => record(signal),
+vi.mock('../src/lib/data/lists', () => ({
+  fetchLists: (_params: unknown, signal: AbortSignal) => record(signal),
 }))
 // Contributed products, which used to be catalog products behind a
 // catalogConfigured() guard. The guard is gone with the catalog section: these

@@ -75,23 +75,23 @@ const sparks = computed(() => ({
   joins: buckets.value.map((b) => b.members_joined),
 }))
 
-const householdSizes = computed(() =>
-  (overview.data.value?.distribution.household_sizes ?? []).map((row) => ({
+const listSizes = computed(() =>
+  (overview.data.value?.distribution.list_sizes ?? []).map((row) => ({
     key: `size-${row.members}`,
     label: row.members === 1 ? '1 member' : `${row.members} members`,
-    value: row.households,
+    value: row.lists,
   })),
 )
 
 const membershipSpread = computed(() =>
   (overview.data.value?.distribution.members_per_user ?? []).map((row) => ({
-    key: `hh-${row.households}`,
+    key: `hh-${row.lists}`,
     label:
-      row.households === 0
-        ? 'In no household'
-        : row.households === 1
-          ? 'In 1 household'
-          : `In ${row.households} households`,
+      row.lists === 0
+        ? 'In no list'
+        : row.lists === 1
+          ? 'In 1 list'
+          : `In ${row.lists} lists`,
     value: row.users,
   })),
 )
@@ -104,7 +104,7 @@ const overviewError = computed(() => describeError(overview.error.value))
 function toneOf(kind: string): 'good' | 'warn' | 'bad' | 'idle' | 'accent' {
   if (kind === 'security_event') return 'warn'
   if (kind === 'checkout') return 'good'
-  if (kind === 'household_created' || kind === 'member_joined') return 'accent'
+  if (kind === 'list_created' || kind === 'member_joined') return 'accent'
   return 'idle'
 }
 
@@ -114,8 +114,8 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
       return `Bought ${row.detail.items ?? '?'} item${row.detail.items === 1 ? '' : 's'}`
     case 'member_joined':
       return `Joined as ${row.detail.role ?? 'member'}`
-    case 'household_created':
-      return `Created ${row.subject ?? 'a household'}`
+    case 'list_created':
+      return `Created ${row.subject ?? 'a list'}`
     case 'item_added':
       return `Added ${row.subject ?? 'an item'}`
     case 'item_checked':
@@ -153,7 +153,7 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
 
     <template v-else>
       <!-- Totals. These ignore the range on purpose: a 24h view should not make
-           it look as though there are three households in the world. -->
+           it look as though there are three lists in the world. -->
       <div class="grid">
         <div class="span-2">
           <StatTile
@@ -176,9 +176,9 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
         </div>
         <div class="span-2">
           <StatTile
-            label="Households"
-            :value="overview.data.value?.totals.households ?? null"
-            :delta="delta('new_households')"
+            label="Lists"
+            :value="overview.data.value?.totals.lists ?? null"
+            :delta="delta('new_lists')"
             :spark="sparks.joins"
             spark-color="var(--chart-2)"
             hint="Groups that exist"
@@ -237,7 +237,7 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
         </div>
 
         <div class="span-4">
-          <PanelCard title="Recent activity" note="Across every household, newest first." fill flush>
+          <PanelCard title="Recent activity" note="Across every list, newest first." fill flush>
             <StateBlock v-if="activity.loading.value" state="loading" :lines="6" />
             <StateBlock
               v-else-if="activity.error.value"
@@ -249,7 +249,7 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
               v-else-if="!activity.data.value?.length"
               state="empty"
               title="Nothing yet"
-              message="No households have been created and no lists have been touched on this database."
+              message="No lists have been created and no items have been touched on this database."
             />
             <ul v-else class="feed">
               <li v-for="(row, index) in activity.data.value" :key="`${row.kind}-${row.occurred_at}-${index}`" class="feed__row">
@@ -263,8 +263,8 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
                       :src="row.actor_image_url"
                       :size="16"
                     />
-                    <span v-if="row.household_name" class="feed__where u-truncate">
-                      · {{ row.household_name }}
+                    <span v-if="row.list_name" class="feed__where u-truncate">
+                      · {{ row.list_name }}
                     </span>
                   </span>
                 </div>
@@ -279,20 +279,20 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
 
       <div class="grid">
         <div class="span-4">
-          <PanelCard title="Household sizes" note="How many households have how many members." fill>
+          <PanelCard title="List sizes" note="How many lists have how many members." fill>
             <StateBlock v-if="overview.loading.value" state="loading" :lines="4" />
             <StateBlock
-              v-else-if="!householdSizes.length"
+              v-else-if="!listSizes.length"
               state="empty"
-              title="No households"
+              title="No lists"
               message="Nothing to distribute yet."
             />
-            <BarChart v-else :bars="householdSizes" :format="formatCount" dense />
+            <BarChart v-else :bars="listSizes" :format="formatCount" dense />
           </PanelCard>
         </div>
 
         <div class="span-4">
-          <PanelCard title="Membership spread" note="How many households each account belongs to." fill>
+          <PanelCard title="Membership spread" note="How many lists each account belongs to." fill>
             <StateBlock v-if="overview.loading.value" state="loading" :lines="4" />
             <StateBlock
               v-else-if="!membershipSpread.length"
@@ -382,7 +382,7 @@ function describeRow(row: { kind: string; subject: string | null; detail: Record
  *
  * UserChip is inline-flex and its first child is an image, so a browser asked
  * for its baseline synthesises one from that image's bottom edge -- which sat
- * the name nearly four pixels above the household name printed right next to
+ * the name nearly four pixels above the list name printed right next to
  * it, at the same size. Making both of them flex items centres them on each
  * other instead, and at one font size that is the same thing as sharing a
  * baseline. Any line that puts a chip beside loose text needs this. */

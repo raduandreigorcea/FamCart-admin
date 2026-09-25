@@ -15,43 +15,43 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useQuery, describeError } from '../lib/useQuery'
 import { crumbOf, useLeafCrumb } from '../lib/breadcrumb'
 import {
-  deleteHousehold,
-  fetchHouseholdDetail,
-  restoreHousehold,
-  type HouseholdDetail,
-} from '../lib/data/households'
+  deleteList,
+  fetchListDetail,
+  restoreList,
+  type ListDetail,
+} from '../lib/data/lists'
 import { formatCount, formatDateTime, formatRelative } from '../lib/format'
 
 const route = useRoute()
 const router = useRouter()
 
-const householdId = computed(() => String(route.params.householdId ?? ''))
+const listId = computed(() => String(route.params.listId ?? ''))
 
-const detail = useQuery((signal) => fetchHouseholdDetail(householdId.value, signal), {
-  watch: [householdId],
+const detail = useQuery((signal) => fetchListDetail(listId.value, signal), {
+  watch: [listId],
 })
 
 useLeafCrumb(() =>
-  crumbOf(householdId.value, detail.data.value?.household, (h) => h.id, (h) => h.name),
+  crumbOf(listId.value, detail.data.value?.list, (h) => h.id, (h) => h.name),
 )
 
-const household = computed(() => detail.data.value?.household ?? null)
+const list = computed(() => detail.data.value?.list ?? null)
 
 // ─── withdrawing it, and putting it back ─────────────────────────────────────
 //
 // Soft: the RPC sets deleted_at and the database hides everything inside the
-// household through active_household_ids(). It reappears under Bans, and nothing
+// list through active_list_ids(). It reappears under Bans, and nothing
 // is destroyed.
 //
-// This page opens a withdrawn household rather than refusing it, which is the
+// This page opens a withdrawn list rather than refusing it, which is the
 // whole point of a reversible delete: the decision to restore is made by looking
-// at what is inside, and until admin_household_facts() carried deleted_at
+// at what is inside, and until admin_list_facts() carried deleted_at
 // instead of filtering on it, every route here -- a member's profile, the Bans
-// row offering the restore -- landed on "No such household".
+// row offering the restore -- landed on "No such list".
 //
 // So the page has two states and one button, and the button is the way out of
 // whichever state it is in.
-const withdrawn = computed(() => Boolean(household.value?.deleted_at))
+const withdrawn = computed(() => Boolean(list.value?.deleted_at))
 
 const confirming = ref(false)
 const working = ref(false)
@@ -64,15 +64,15 @@ async function confirmReversal() {
   try {
     const signal = new AbortController().signal
     if (withdrawn.value) {
-      await restoreHousehold(householdId.value, signal)
+      await restoreList(listId.value, signal)
     } else {
-      await deleteHousehold(householdId.value, signal)
+      await deleteList(listId.value, signal)
     }
     confirming.value = false
     // Stay, and read the row back.
     //
-    // The delete used to push to /households, because the page could not render
-    // what it had just done and would have shown its own "no such household"
+    // The delete used to push to /lists, because the page could not render
+    // what it had just done and would have shown its own "no such list"
     // state -- which reads as the delete having failed. It can render it now,
     // so staying is the honest ending: the same page, marked Withdrawn, with
     // the way back on it.
@@ -86,12 +86,12 @@ async function confirmReversal() {
 const errorInfo = computed(() => describeError(detail.error.value))
 
 // The list is shown filtered rather than in two blocks: an operator looking at a
-// household usually wants "what is outstanding", and the checked rows are
+// list usually wants "what is outstanding", and the checked rows are
 // history that purchase_history already tells better.
 const listFilter = ref('open')
 
 const listRows = computed(() => {
-  const rows = detail.data.value?.list ?? []
+  const rows = detail.data.value?.items ?? []
   if (listFilter.value === 'open') return rows.filter((r) => !r.checked)
   if (listFilter.value === 'checked') return rows.filter((r) => r.checked)
   return rows
@@ -107,7 +107,7 @@ const topProducts = computed(() =>
 )
 
 // The checkout drawer: one shop, its items and who did it.
-const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(null)
+const openCheckout = ref<ListDetail['recent_checkouts'][number] | null>(null)
 </script>
 
 <template>
@@ -122,19 +122,19 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
     />
 
     <StateBlock
-      v-else-if="!household"
+      v-else-if="!list"
       state="empty"
-      title="No such household"
-      :message="`Nothing on this database has the id ${householdId}. It may have been deleted, which cascades its lists and history away with it.`"
+      title="No such list"
+      :message="`Nothing on this database has the id ${listId}. It may have been deleted, which cascades its lists and history away with it.`"
     >
       <template #action>
-        <RouterLink to="/households" class="back">Back to households</RouterLink>
+        <RouterLink to="/lists" class="back">Back to lists</RouterLink>
       </template>
     </StateBlock>
 
     <template v-else>
       <PageHeader
-        :title="`${household.emoji ? `${household.emoji} ` : ''}${household.name}`"
+        :title="`${list.emoji ? `${list.emoji} ` : ''}${list.name}`"
         :fetched-at="detail.fetchedAt.value"
         :busy="detail.fetching.value"
         @refresh="detail.refetch"
@@ -144,7 +144,7 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
             v-if="withdrawn"
             tone="bad"
             label="Withdrawn"
-            :title="`Withdrawn ${formatDateTime(household.deleted_at as string)}`"
+            :title="`Withdrawn ${formatDateTime(list.deleted_at as string)}`"
           />
           <button
             type="button"
@@ -163,43 +163,43 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
             <dt>Owner</dt>
             <dd>
               <UserChip
-                :id="household.created_by"
-                :name="household.owner_name"
-                :src="household.owner_image_url"
+                :id="list.created_by"
+                :name="list.owner_name"
+                :src="list.owner_image_url"
                 :size="20"
               />
             </dd>
           </div>
           <div>
             <dt>Invite code</dt>
-            <dd><CopyValue :value="household.invite_code" label="invite code" /></dd>
+            <dd><CopyValue :value="list.invite_code" label="invite code" /></dd>
           </div>
           <div>
             <dt>Item cap per member</dt>
-            <dd class="u-num">{{ household.max_items_per_member }}</dd>
+            <dd class="u-num">{{ list.max_items_per_member }}</dd>
           </div>
           <div>
             <dt>Created</dt>
-            <dd :title="formatDateTime(household.created_at)">{{ formatRelative(household.created_at) }}</dd>
+            <dd :title="formatDateTime(list.created_at)">{{ formatRelative(list.created_at) }}</dd>
           </div>
           <div>
             <dt>Last active</dt>
-            <dd :title="formatDateTime(household.last_active)">{{ formatRelative(household.last_active) }}</dd>
+            <dd :title="formatDateTime(list.last_active)">{{ formatRelative(list.last_active) }}</dd>
           </div>
           <div>
-            <dt>Household id</dt>
-            <dd><CopyValue :value="household.id" :display="`${household.id.slice(0, 8)}…`" label="household id" /></dd>
+            <dt>List id</dt>
+            <dd><CopyValue :value="list.id" :display="`${list.id.slice(0, 8)}…`" label="list id" /></dd>
           </div>
         </dl>
       </div>
 
       <div class="grid">
-        <div class="span-2"><StatTile label="Members" :value="household.members" hint="On the roster" /></div>
-        <div class="span-2"><StatTile label="Moderators" :value="household.moderators" hint="Elevated rank" /></div>
-        <div class="span-2"><StatTile label="Open items" :value="household.items_open" hint="Unchecked now" /></div>
-        <div class="span-2"><StatTile label="Items ever" :value="household.items_total" hint="Added all time" /></div>
-        <div class="span-2"><StatTile label="Checkouts" :value="household.checkouts" hint="Completed shops" /></div>
-        <div class="span-2"><StatTile label="Products" :value="household.products_added" hint="Contributed rows" /></div>
+        <div class="span-2"><StatTile label="Members" :value="list.members" hint="On the roster" /></div>
+        <div class="span-2"><StatTile label="Moderators" :value="list.moderators" hint="Elevated rank" /></div>
+        <div class="span-2"><StatTile label="Open items" :value="list.items_open" hint="Unchecked now" /></div>
+        <div class="span-2"><StatTile label="Items ever" :value="list.items_total" hint="Added all time" /></div>
+        <div class="span-2"><StatTile label="Checkouts" :value="list.checkouts" hint="Completed shops" /></div>
+        <div class="span-2"><StatTile label="Products" :value="list.products_added" hint="Contributed rows" /></div>
       </div>
 
       <div class="grid">
@@ -236,7 +236,7 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
               v-if="!topProducts.length"
               state="empty"
               title="Nothing bought yet"
-              message="This household has never completed a checkout."
+              message="This list has never completed a checkout."
               compact
             />
             <BarChart v-else :bars="topProducts" :format="formatCount" dense :limit="10" />
@@ -335,8 +335,8 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
 
       <PanelCard
         v-if="detail.data.value?.contributed_products.length"
-        title="Products this household contributed"
-        note="Rows in the app database's product_catalog, scoped to this household until three distinct households ask for the same thing."
+        title="Products this list contributed"
+        note="Rows in the app database's product_catalog, scoped to this list until three distinct lists ask for the same thing."
         flush
       >
         <ul class="rows">
@@ -411,8 +411,8 @@ const openCheckout = ref<HouseholdDetail['recent_checkouts'][number] | null>(nul
       :open="confirming"
       :title="
         withdrawn
-          ? `Restore ${household?.name ?? 'this household'}?`
-          : `Delete ${household?.name ?? 'this household'}?`
+          ? `Restore ${list?.name ?? 'this list'}?`
+          : `Delete ${list?.name ?? 'this list'}?`
       "
       :message="
         withdrawn

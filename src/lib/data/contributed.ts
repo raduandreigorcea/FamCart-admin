@@ -2,7 +2,7 @@ import { getAppSupabase } from '../supabase'
 import { queryError } from './errors'
 import type { LocalProductRow, Page, PageParams } from './types'
 
-// Products a household typed for itself, and the ones promoted out of them.
+// Products a list typed for itself, and the ones promoted out of them.
 //
 // This is the app database's own `product_catalog`, and it is the only product
 // table this dashboard reads. The reference catalog is a separate Supabase
@@ -11,18 +11,18 @@ import type { LocalProductRow, Page, PageParams } from './types'
 // being rebuilt.
 //
 // WHY THIS IS WORTH A PAGE. Every row here started as free text somebody typed
-// into the add box. Once three distinct households in three distinct accounts
+// into the add box. Once three distinct lists in three distinct accounts
 // ask for the same thing, promote_product_from_scoped() in 006_product_catalog
 // collapses their scoped rows into one GLOBAL row and deletes the originals in
 // the same statement -- so a name one person invented becomes a suggestion
 // everybody sees. That is the only path in FamCart by which user-authored text
-// reaches other households, which makes this table the place you look when
+// reaches other lists, which makes this table the place you look when
 // something needs to be caught.
 //
-// The RPC carries the contributor and the household precisely so that a bad row
+// The RPC carries the contributor and the list precisely so that a bad row
 // can be traced back to an account worth banning, rather than only deleted.
 
-/** Which rows to show: everything, household-scoped only, or promoted only. */
+/** Which rows to show: everything, list-scoped only, or promoted only. */
 export type ContributedScope = 'all' | 'community' | 'promoted'
 
 export async function fetchContributedProducts(
@@ -93,7 +93,7 @@ export async function createProduct(draft: ProductDraft, signal: AbortSignal): P
  *
  * A null baseWeight means "leave it alone" rather than "set it to zero", which
  * is the RPC's own reading of the argument: the edit form does not offer the
- * knob for a household's own row, and sending 0 there would quietly erase an
+ * knob for a list's own row, and sending 0 there would quietly erase an
  * editorial weight somebody set deliberately.
  */
 export async function updateProduct(

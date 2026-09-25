@@ -6,8 +6,8 @@ name: CI
 # whoever pushed had remembered to run the commands by hand.
 #
 # It is not the least important of the three to gate. This is the tool that
-# reads across every household in the production database, and the only one of
-# the three whose screens can ban a user or delete a household.
+# reads across every list in the production database, and the only one of
+# the three whose screens can ban a user or delete a list.
 #
 # The parent repo cannot stand in for this. It pins a submodule commit, so a
 # job there would test whatever commit happened to be pinned, and only when the

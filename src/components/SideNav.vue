@@ -6,7 +6,7 @@ import AppIcon from './AppIcon.vue'
 //
 // Overview first because it is where you land. Then the three nouns the system
 // is made of, in the order they depend on each other: users belong to
-// households, households consume products. Then the two things that ACT on
+// lists, lists consume products. Then the two things that ACT on
 // products -- the pipeline that fills the catalog and the searches that read it.
 // Health last, because it is where you go when one of the others looked wrong.
 
@@ -32,8 +32,8 @@ const route = useRoute()
  * Whether a section owns the page you are on.
  *
  * Not vue-router's `router-link-exact-active`, which was what this used, and
- * which is exact in the way that matters here: opening a household from the list
- * unlit Households and left the whole rail dark, so a detail page looked like it
+ * which is exact in the way that matters here: opening a list from its index
+ * page unlit Lists and left the whole rail dark, so a detail page looked like it
  * belonged to no section at all. A detail page belongs to its list -- the same
  * claim router/index.ts makes when it gives every detail route its parent's
  * `icon` -- so the match is by prefix.
@@ -59,8 +59,8 @@ const groups: { heading: string; items: NavItem[] }[] = [
     heading: 'People',
     items: [
       { to: '/users', label: 'Users', icon: 'users-round', title: 'Every account, what it belongs to and what it does' },
-      { to: '/households', label: 'Households', icon: 'house', title: 'Groups, rosters, lists and buying patterns' },
-      { to: '/contributed', label: 'Contributed', icon: 'package-search', title: 'Products households typed themselves, and the ones promoted out of them' },
+      { to: '/lists', label: 'Lists', icon: 'house', title: 'Groups, rosters, lists and buying patterns' },
+      { to: '/contributed', label: 'Contributed', icon: 'package-search', title: 'Products lists typed themselves, and the ones promoted out of them' },
     ],
   },
   {
@@ -68,7 +68,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/health', label: 'Health', icon: 'activity', title: 'Reachability, database condition and the audit trail' },
       { to: '/access', label: 'Access', icon: 'key-round', title: 'Who can use this dashboard' },
-      { to: '/bans', label: 'Bans', icon: 'ban', title: 'Accounts the app refuses and households an admin withdrew' },
+      { to: '/bans', label: 'Bans', icon: 'ban', title: 'Accounts the app refuses and lists an admin withdrew' },
     ],
   },
   // Last, because these are not FamCart's own data: they are what the services

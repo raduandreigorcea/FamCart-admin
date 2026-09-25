@@ -13,8 +13,8 @@ vi.mock('../src/lib/supabase', () => ({
   getCatalogSupabase: () => null,
 }))
 
-const { deleteHousehold, restoreHousehold, fetchDeletedHouseholds } = await import(
-  '../src/lib/data/households'
+const { deleteList, restoreList, fetchDeletedLists } = await import(
+  '../src/lib/data/lists'
 )
 const { banUser, unbanUser, fetchBannedUsers } = await import('../src/lib/data/users')
 
@@ -25,37 +25,37 @@ function resolving(data: unknown = null, error: unknown = null) {
 
 const signal = () => new AbortController().signal
 
-describe('household deletion calls', () => {
-  it('names the household by p_id when deleting', async () => {
+describe('list deletion calls', () => {
+  it('names the list by p_id when deleting', async () => {
     resolving()
-    await deleteHousehold('h-1', signal())
-    expect(rpc).toHaveBeenCalledWith('admin_delete_household', { p_id: 'h-1' })
+    await deleteList('h-1', signal())
+    expect(rpc).toHaveBeenCalledWith('admin_delete_list', { p_id: 'h-1' })
   })
 
-  it('names the household by p_id when restoring', async () => {
+  it('names the list by p_id when restoring', async () => {
     resolving()
-    await restoreHousehold('h-1', signal())
-    expect(rpc).toHaveBeenCalledWith('admin_restore_household', { p_id: 'h-1' })
+    await restoreList('h-1', signal())
+    expect(rpc).toHaveBeenCalledWith('admin_restore_list', { p_id: 'h-1' })
   })
 
   it('returns an empty list rather than null when nothing is deleted', async () => {
     // A view that has to guard against null AND empty is a view with two empty
     // states, and one of them will be wrong.
     resolving(null)
-    await expect(fetchDeletedHouseholds(signal())).resolves.toEqual([])
+    await expect(fetchDeletedLists(signal())).resolves.toEqual([])
   })
 
   it('passes the abort signal through to PostgREST', async () => {
     resolving([])
     const s = signal()
-    await fetchDeletedHouseholds(s)
+    await fetchDeletedLists(s)
     expect(abortSignal).toHaveBeenCalledWith(s)
   })
 
   it('names the failing RPC and keeps the code when the database refuses', async () => {
     resolving(null, { message: 'not an admin', code: '42501' })
-    await expect(deleteHousehold('h-1', signal())).rejects.toMatchObject({
-      message: expect.stringContaining('admin_delete_household'),
+    await expect(deleteList('h-1', signal())).rejects.toMatchObject({
+      message: expect.stringContaining('admin_delete_list'),
       code: '42501',
     })
   })
@@ -97,7 +97,7 @@ describe('ban calls', () => {
   })
 
   it('returns an empty list rather than null when nobody is banned', async () => {
-    // Same rule as fetchDeletedHouseholds: a view that has to guard against
+    // Same rule as fetchDeletedLists: a view that has to guard against
     // null AND empty is a view with two empty states, and one will be wrong.
     resolving(null)
     await expect(fetchBannedUsers(signal())).resolves.toEqual([])

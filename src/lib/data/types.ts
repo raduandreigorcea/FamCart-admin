@@ -63,7 +63,7 @@ export interface PageParams<Sort extends string = string> {
  * A type guard for a list's sort keys, built from the const array that already
  * mirrors the RPC's CASE arms.
  *
- * Those arrays -- USER_SORTS, HOUSEHOLD_SORTS, CATALOG_SORTS -- existed with a
+ * Those arrays -- USER_SORTS, LIST_SORTS, CATALOG_SORTS -- existed with a
  * comment saying exactly which server-side contract they mirror, and then went
  * unused: every view declared `ref('last_active')`, TypeScript inferred
  * `string`, and PageParams.sort was `string` too. The guard rail was built and
@@ -87,8 +87,8 @@ export interface AdminUserRow {
   user_id: string
   display_name: string
   image_url: string | null
-  households: number
-  owned_households: number
+  lists: number
+  owned_lists: number
   moderator_of: number
   items_added: number
   items_open: number
@@ -100,7 +100,7 @@ export interface AdminUserRow {
   total_count: number
 }
 
-export interface AdminHouseholdRow {
+export interface AdminListRow {
   id: string
   name: string
   emoji: string | null
@@ -127,15 +127,15 @@ export interface AdminEventRow {
   actor: string | null
   actor_name: string | null
   actor_image_url: string | null
-  household_id: string | null
-  household_name: string | null
+  list_id: string | null
+  list_name: string | null
   detail: Record<string, unknown>
   total_count: number
 }
 
 export interface ActivityBucket {
   bucket: string
-  new_households: number
+  new_lists: number
   members_joined: number
   items_added: number
   items_checked: number
@@ -150,15 +150,15 @@ export interface RecentActivityRow {
   actor: string | null
   actor_name: string | null
   actor_image_url: string | null
-  household_id: string | null
-  household_name: string | null
+  list_id: string | null
+  list_name: string | null
   subject: string | null
   detail: Record<string, unknown>
 }
 
 export interface OverviewTotals {
   users: number
-  households: number
+  lists: number
   memberships: number
   list_items: number
   list_items_open: number
@@ -173,7 +173,7 @@ export interface OverviewTotals {
 export interface OverviewWindow {
   new_users: number
   active_users: number
-  new_households: number
+  new_lists: number
   members_joined: number
   items_added: number
   items_checked: number
@@ -189,8 +189,8 @@ export interface OverviewPayload {
   totals: OverviewTotals
   window: OverviewWindow
   distribution: {
-    household_sizes: { members: number; households: number }[]
-    members_per_user: { households: number; users: number }[]
+    list_sizes: { members: number; lists: number }[]
+    members_per_user: { lists: number; users: number }[]
   }
 }
 
@@ -219,8 +219,8 @@ export interface LocalProductRow {
   barcode: string | null
   source: string
   source_version: string | null
-  household_id: string | null
-  household_name: string | null
+  list_id: string | null
+  list_name: string | null
   contributed_by: string | null
   contributor_name: string | null
   contributor_image_url: string | null

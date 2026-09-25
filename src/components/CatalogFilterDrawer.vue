@@ -130,7 +130,7 @@ const ADDED_OPTIONS = [
 
 const EARNED_OPTIONS = [
   { value: null, label: 'Any popularity' },
-  { value: 'yes', label: 'Households have added it' },
+  { value: 'yes', label: 'Lists have added it' },
   { value: 'no', label: 'Editorial weight only' },
 ]
 </script>

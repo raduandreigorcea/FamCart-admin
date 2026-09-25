@@ -267,7 +267,7 @@ const tableColumns: Column<TableHealth>[] = [
 const eventColumns: Column<AdminEventRow>[] = [
   { key: 'kind', label: 'Event', width: '20%' },
   { key: 'actor_name', label: 'Account', width: '20%' },
-  { key: 'household_name', label: 'Household', width: '18%', hideBelow: 1100 },
+  { key: 'list_name', label: 'List', width: '18%', hideBelow: 1100 },
   { key: 'detail', label: 'Detail', width: '26%' },
   { key: 'created_at', label: 'When', width: '16%' },
 ]
@@ -667,9 +667,9 @@ const allClear = computed(() =>
           />
           <span v-else class="u-muted">unauthenticated</span>
         </template>
-        <template #cell-household_name="{ row }">
-          <RouterLink v-if="row.household_id" :to="`/households/${row.household_id}`" class="link u-truncate">
-            {{ row.household_name || 'Deleted household' }}
+        <template #cell-list_name="{ row }">
+          <RouterLink v-if="row.list_id" :to="`/lists/${row.list_id}`" class="link u-truncate">
+            {{ row.list_name || 'Deleted list' }}
           </RouterLink>
           <span v-else class="u-muted">--</span>
         </template>
