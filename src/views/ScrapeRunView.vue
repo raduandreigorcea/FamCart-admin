@@ -397,7 +397,9 @@ const listingsError = computed(() => (listings.error.value ? describeError(listi
 
 .groups {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  /* auto-FIT: the four groups share the whole row. auto-fill kept an empty
+     fifth track on a wide screen and left a quarter of the row blank. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: var(--space-3);
 }
 
