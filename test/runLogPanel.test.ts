@@ -68,12 +68,13 @@ describe('RunLogPanel', () => {
     const wrapper = mount(Panel, { props: { runId: 'run-1', live: false }, global: { stubs } })
     await flushPromises()
     expect(wrapper.findAll('.log__line')).toHaveLength(3)
-    await wrapper.find('select').setValue('warn')
+    const segment = (label: string) => wrapper.findAll('[role="radio"]').find((b) => b.text() === label)!
+    await segment('Warnings').trigger('click')
     expect(wrapper.findAll('.log__line').map((l) => l.text())).toEqual([
       expect.stringContaining('careful'),
       expect.stringContaining('boom'),
     ])
-    await wrapper.find('select').setValue('error')
+    await segment('Errors').trigger('click')
     expect(wrapper.findAll('.log__line')).toHaveLength(1)
   })
 
@@ -158,5 +159,19 @@ describe('RunLogPanel', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // The admin's own controls, not the browser's: a native <select> and a bare
+  // checkbox were the only unstyled things on the page.
+  it('follows by default, and the button says whether it is on', async () => {
+    state.lines = [line(1)]
+    const wrapper = mount(Panel, { props: { runId: 'run-1', live: false }, global: { stubs } })
+    await flushPromises()
+    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    const follow = wrapper.find('button.log__follow')
+    expect(follow.attributes('aria-pressed')).toBe('true')
+    await follow.trigger('click')
+    expect(follow.attributes('aria-pressed')).toBe('false')
   })
 })

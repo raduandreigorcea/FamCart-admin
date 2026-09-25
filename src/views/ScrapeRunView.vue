@@ -31,7 +31,7 @@ import {
 } from '../lib/data/scrapers'
 import { fetchRunListings, LISTING_PAGE, type ListingKind, type RunListing } from '../lib/data/runLogs'
 import type { Column, Segment } from '../lib/uiTypes'
-import { formatCount, formatDateTime, formatRelative } from '../lib/format'
+import { formatCount, formatDateTime, formatDayMonth, formatRelative } from '../lib/format'
 
 // One scrape run, everything about it: the numbers the card and the history
 // row have no room for, when it started and last answered and ended, how it
@@ -150,7 +150,7 @@ const timeline = computed(() => {
 
 // The shop's nights, oldest first so the line reads left to right.
 const history = computed(() => [...(shopRuns.data.value ?? [])].reverse())
-const historyLabels = computed(() => history.value.map((r) => formatDateTime(r.started_at)))
+const historyLabels = computed(() => history.value.map((r) => formatDayMonth(r.started_at)))
 const readSeries = computed(() => [
   { key: 'read', label: 'Products read', values: history.value.map((r) => r.products_found) },
 ])
@@ -305,13 +305,17 @@ const listingsError = computed(() => (listings.error.value ? describeError(listi
           <template #cell-price="{ row }">{{ money(asListing(row).price, asListing(row).currency) }}</template>
           <template #cell-available="{ row }">{{ asListing(row).available ? 'Yes' : 'No' }}</template>
         </DataTable>
-        <TablePager
-          :total="listings.data.value?.total ?? 0"
-          :offset="offset"
-          :limit="LISTING_PAGE"
-          :loading="listings.fetching.value"
-          @go="(next: number) => (offset = next)"
-        />
+        <!-- In the footer, like every paged table here: the body is flush for
+             the table, and the footer is what carries the padding. -->
+        <template #footer>
+          <TablePager
+            :total="listings.data.value?.total ?? 0"
+            :offset="offset"
+            :limit="LISTING_PAGE"
+            :loading="listings.fetching.value"
+            @go="(next: number) => (offset = next)"
+          />
+        </template>
       </PanelCard>
 
       <RunLogPanel :run-id="run.id" :live="running" />
@@ -397,7 +401,9 @@ const listingsError = computed(() => (listings.error.value ? describeError(listi
 
 .groups {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  /* auto-FIT: the four groups share the whole row. auto-fill kept an empty
+     fifth track on a wide screen and left a quarter of the row blank. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: var(--space-3);
 }
 

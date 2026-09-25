@@ -6,6 +6,7 @@ import {
   formatDate,
   formatDateTime,
   formatClock,
+  formatDayMonth,
   formatDuration,
   formatPercent,
   formatRelative,
@@ -177,5 +178,17 @@ describe('formatClock', () => {
 
   it('is the placeholder for nothing', () => {
     expect(formatClock(null, now)).toBe('--')
+  })
+})
+
+// An axis label: a chart of thirty nights has room for the day and the month,
+// not the year and the hour.
+describe('formatDayMonth', () => {
+  it('says only the day and the month', () => {
+    expect(formatDayMonth(new Date(2026, 8, 25, 10, 23))).toBe('25 Sept')
+  })
+
+  it('says nothing for nothing', () => {
+    expect(formatDayMonth(null)).toBe('--')
   })
 })

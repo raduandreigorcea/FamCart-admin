@@ -288,8 +288,23 @@ export function runPill(
   return { tone: runTone(run.status), label: runLabel(run.status), busy: run.status === 'running' }
 }
 
-/** How many runs the Scrapers page draws as cards: one row of its grid. */
+/** The most runs the Scrapers page draws as cards: one row of its grid, on a wide screen. */
 export const CARD_COUNT = 5
+
+/** A card is never narrower than this, in rem: below it the facts crowd. */
+export const CARD_MIN_REM = 14
+
+/**
+ * How many cards fit on one row of `width` px, from one to CARD_COUNT.
+ *
+ * The row is never allowed to wrap: five cards on a window with room for three
+ * drew three and then two under them, a second row that read as a second kind
+ * of thing. Whatever does not fit goes to the history instead (splitCards).
+ */
+export function cardsThatFit(width: number, remPx: number, gapPx: number): number {
+  const card = CARD_MIN_REM * remPx
+  return Math.max(1, Math.min(CARD_COUNT, Math.floor((width + gapPx) / (card + gapPx))))
+}
 
 /**
  * The newest runs as cards, everything else as history, and never a run in both.
@@ -299,8 +314,11 @@ export const CARD_COUNT = 5
  * showed four cards over a long history. Takes the rows newest first, as
  * fetchScrapeRuns returns them.
  */
-export function splitCards(runs: ScrapeRunRow[]): { cards: ScrapeRunRow[]; history: ScrapeRunRow[] } {
-  return { cards: runs.slice(0, CARD_COUNT), history: runs.slice(CARD_COUNT) }
+export function splitCards(
+  runs: ScrapeRunRow[],
+  count = CARD_COUNT,
+): { cards: ScrapeRunRow[]; history: ScrapeRunRow[] } {
+  return { cards: runs.slice(0, count), history: runs.slice(count) }
 }
 
 /** One country's runs, or every run for ALL_COUNTRIES. */

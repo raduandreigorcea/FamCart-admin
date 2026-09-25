@@ -251,6 +251,36 @@ describe('the scrapers page', () => {
     expect(wrapper.find('.history').attributes('data-rows')).toBe('2')
   })
 
+  // One row of cards, however wide the window: what does not fit on it goes to
+  // the history rather than onto a second row.
+  it('draws only as many cards as fit on one row', async () => {
+    type Report = (entries: Array<{ contentRect: { width: number } }>) => void
+    const observed: { report: Report } = { report: () => {} }
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: Report) {
+          observed.report = callback
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    try {
+      state.runs = Array.from({ length: 7 }, (_, i) =>
+        run({ id: `${i}`, shop: `s${i}`, shopName: `S${i}`, started_at: `2026-09-17T0${9 - i}:00:00Z` }),
+      )
+      const wrapper = await mountPage()
+      // Room for three 14rem cards and their gaps at 16px, not four.
+      observed.report([{ contentRect: { width: 720 } }])
+      await flushPromises()
+      expect(wrapper.findAll('.shop__name')).toHaveLength(3)
+      expect(wrapper.find('.history').attributes('data-rows')).toBe('4')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('does the same inside a chosen country', async () => {
     state.runs = [1, 2, 3, 4, 5, 6]
       .map((n) => run({ id: `a${n}`, shop: `at${n}`, country: 'AT', started_at: `2026-09-17T0${9 - n}:00:00Z` }))
